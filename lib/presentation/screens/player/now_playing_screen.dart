@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -27,7 +28,6 @@ class NowPlayingScreen extends ConsumerStatefulWidget {
 class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     with SingleTickerProviderStateMixin {
   bool _showQueue = false;
-  bool _showLyrics = false;
   late final AnimationController _recordSpinController;
 
   @override
@@ -97,11 +97,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
 
           // Main Screen Content
           SafeArea(
-            child: _showLyrics
-                ? _buildLyricsView(track, isPlaying, audioHandler, theme, primaryColor)
-                : (_showQueue
-                    ? _buildQueueView(audioHandler, theme)
-                    : _buildMainPlayerView(track, isPlaying, audioHandler, theme, primaryColor)),
+            child: _showQueue
+                ? _buildQueueView(audioHandler, theme)
+                : _buildMainPlayerView(track, isPlaying, audioHandler, theme, primaryColor),
           ),
         ],
       ),
@@ -130,9 +128,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                 icon: Icons.arrow_back_rounded,
                 onTap: () {
                   HapticFeedback.lightImpact();
-                  if (_showLyrics) {
-                    setState(() => _showLyrics = false);
-                  } else if (_showQueue) {
+                  if (_showQueue) {
                     setState(() => _showQueue = false);
                   } else {
                     widget.onMinimize();
@@ -175,14 +171,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final availableHeight = constraints.maxHeight;
-                final showLyrics = availableHeight > 540;
-                final lyricsHeight = showLyrics ? 40.0 : 0.0;
-                final bottomLift = (availableHeight * 0.04).clamp(14.0, 30.0);
+                const lyricsHeight = 78.0;
+                final bottomLift = (availableHeight * 0.04).clamp(14.0, 24.0);
 
-                // Reserve fixed vertical space for controls, title, seekbar, margins
-                final reservedHeight = 50.0 + lyricsHeight + 42.0 + 72.0 + bottomLift + 36.0;
-                final maxArtFromH = (availableHeight - reservedHeight).clamp(130.0, 260.0);
-                final maxArtFromW = screenWidth * 0.65;
+                // Reserve fixed vertical space for controls, title, seekbar, lyrics, margins
+                final reservedHeight = 55.0 + lyricsHeight + 42.0 + 72.0 + bottomLift + 32.0;
+                final maxArtFromH = (availableHeight - reservedHeight).clamp(110.0, 240.0);
+                final maxArtFromW = screenWidth * 0.62;
                 final artSize = math.min(maxArtFromH, maxArtFromW);
 
                 return Column(
@@ -267,19 +262,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                       ),
                     ),
 
-                    if (showLyrics) ...[
-                      const SizedBox(height: 10),
-                      // 5. Live Lyrics Preview Pill (tapping opens full lyrics screen)
-                      _MiniLyricsPreview(
-                        onTap: () {
-                          setState(() {
-                            _showLyrics = true;
-                            _showQueue = false;
-                          });
-                        },
-                        primaryColor: primaryColor,
-                      ),
-                    ],
+                    const SizedBox(height: 10),
+
+                    // 5. Live Sliding Lyrics (embedded directly below song & artist, slides up smoothly)
+                    _SlidingLyricsWidget(
+                      audioHandler: audioHandler,
+                      primaryColor: primaryColor,
+                    ),
 
                     const Spacer(flex: 1),
 
@@ -391,23 +380,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
           },
         ),
 
-        // Lyrics Toggle
-        IconButton(
-          tooltip: 'Lyrics',
-          icon: Icon(
-            _showLyrics ? Icons.lyrics_rounded : Icons.lyrics_outlined,
-            size: 22,
-            color: _showLyrics ? primaryColor : inactiveControlColor,
-          ),
-          onPressed: () {
-            HapticFeedback.selectionClick();
-            setState(() {
-              _showLyrics = !_showLyrics;
-              if (_showLyrics) _showQueue = false;
-            });
-          },
-        ),
-
         // Queue Toggle
         IconButton(
           tooltip: 'Playing Queue',
@@ -420,7 +392,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
             HapticFeedback.selectionClick();
             setState(() {
               _showQueue = !_showQueue;
-              if (_showQueue) _showLyrics = false;
             });
           },
         ),
@@ -526,568 +497,210 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     );
   }
 
-  Widget _buildLyricsView(
-    Track track,
-    bool isPlaying,
-    dynamic audioHandler,
-    ThemeData theme,
-    Color primaryColor,
-  ) {
-    final isDark = theme.brightness == Brightness.dark;
-    final lyricsAsync = ref.watch(currentTrackLyricsProvider);
-
-    return Column(
-      children: [
-        // 1. Top Bar: (←)  Lyrics (badge)  (♡)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _GlassCircleButton(
-                icon: Icons.arrow_back_rounded,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  setState(() => _showLyrics = false);
-                },
-              ),
-              lyricsAsync.when(
-                data: (l) => Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Lyrics',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 17,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    if (l != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                        decoration: BoxDecoration(
-                          color: primaryColor.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          l.source,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: primaryColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                loading: () => Text(
-                  'Lyrics',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 17),
-                ),
-                error: (_, _) => Text(
-                  'Lyrics',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 17),
-                ),
-              ),
-              _GlassCircleButton(
-                icon: track.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                iconColor: track.isLiked
-                    ? const Color(0xFFFF5252)
-                    : (isDark ? Colors.white.withValues(alpha: 0.85) : Colors.black87),
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  ref.read(audioRepositoryProvider).toggleLike(track);
-                },
-              ),
-            ],
-          ),
-        ),
-
-        // 2. Compact Playing Bar at top of lyrics view
-        Container(
-          margin: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF161822) : Colors.white.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: 42,
-                  height: 42,
-                  child: TrackArtwork(
-                    artworkUrl: track.artworkUrl,
-                    size: 42,
-                    ambientGlow: false,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      track.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      track.artistName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: Icon(
-                  isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
-                  size: 36,
-                  color: primaryColor,
-                ),
-                onPressed: () {
-                  HapticFeedback.selectionClick();
-                  if (isPlaying) {
-                    audioHandler.pause();
-                  } else {
-                    audioHandler.play();
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-
-        // 3. Compact seek bar
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
-          child: _IsolatedPlayerSeekBar(),
-        ),
-
-        // 4. Main Lyrics Body
-        Expanded(
-          child: lyricsAsync.when(
-            data: (lyrics) {
-              if (lyrics == null || lyrics.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.lyrics_outlined,
-                          size: 54,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No lyrics found',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Lyrics could not be found for "${track.title}" on JioSaavn or online catalog.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        FilledButton.tonalIcon(
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            ref.invalidate(currentTrackLyricsProvider);
-                          },
-                          icon: const Icon(Icons.refresh_rounded, size: 18),
-                          label: const Text('Retry Search'),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              if (lyrics.isSynced) {
-                return _SyncedLyricsView(
-                  lyrics: lyrics,
-                  audioHandler: audioHandler,
-                  primaryColor: primaryColor,
-                );
-              } else {
-                return _PlainLyricsView(
-                  lyrics: lyrics,
-                  primaryColor: primaryColor,
-                );
-              }
-            },
-            loading: () => Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Fetching lyrics from JioSaavn...',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            error: (err, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.error_outline_rounded,
-                      size: 42,
-                      color: theme.colorScheme.error.withValues(alpha: 0.7),
-                    ),
-                    const SizedBox(height: 12),
-                    Text('Failed to load lyrics: $err'),
-                    const SizedBox(height: 16),
-                    TextButton.icon(
-                      onPressed: () => ref.invalidate(currentTrackLyricsProvider),
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-class _SyncedLyricsView extends ConsumerStatefulWidget {
-  final Lyrics lyrics;
+/// Live 3-line sliding lyrics widget embedded directly beneath the song title & artist.
+/// Visual styling matching reference UI:
+/// - Top line: previous line, smaller font, faded (slides up and away when finished).
+/// - Center line: active playing line, larger font (15.5px), bold (w800), bright white/high contrast.
+/// - Bottom line: upcoming line, smaller font, faded.
+/// - Smooth vertical sliding animation with ShaderMask gradient fade on edges.
+class _SlidingLyricsWidget extends ConsumerStatefulWidget {
   final dynamic audioHandler;
   final Color primaryColor;
 
-  const _SyncedLyricsView({
-    required this.lyrics,
+  const _SlidingLyricsWidget({
     required this.audioHandler,
     required this.primaryColor,
   });
 
   @override
-  ConsumerState<_SyncedLyricsView> createState() => _SyncedLyricsViewState();
+  ConsumerState<_SlidingLyricsWidget> createState() => _SlidingLyricsWidgetState();
 }
 
-class _SyncedLyricsViewState extends ConsumerState<_SyncedLyricsView> {
+class _SlidingLyricsWidgetState extends ConsumerState<_SlidingLyricsWidget> {
   final ScrollController _scrollController = ScrollController();
-  final Map<int, GlobalKey> _lineKeys = {};
   int _lastActiveIndex = -1;
   bool _userIsScrolling = false;
+  Timer? _userScrollTimer;
+
+  static const double _lineExtent = 26.0;
+  static const double _viewHeight = 78.0;
 
   @override
   void dispose() {
+    _userScrollTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _scrollToIndex(int index) {
-    if (_userIsScrolling) return;
-    final key = _lineKeys[index];
-    if (key?.currentContext != null) {
-      Scrollable.ensureVisible(
-        key!.currentContext!,
-        alignment: 0.4,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
+  void _scrollToActiveIndex(int index, {bool animate = true}) {
+    if (_userIsScrolling || !_scrollController.hasClients) return;
+
+    final targetOffset = (index * _lineExtent).clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+
+    if (animate) {
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 550),
+        curve: Curves.easeInOutCubic,
       );
+    } else {
+      _scrollController.jumpTo(targetOffset);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final position = ref.watch(playerStateStreamProvider.select((s) => s.value?.position ?? Duration.zero));
-    final activeIndex = widget.lyrics.findCurrentLineIndex(position);
-
-    if (activeIndex != _lastActiveIndex && activeIndex >= 0) {
-      _lastActiveIndex = activeIndex;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _scrollToIndex(activeIndex);
-      });
-    }
-
-    return NotificationListener<UserScrollNotification>(
-      onNotification: (notification) {
-        if (notification.direction != ScrollDirection.idle) {
-          _userIsScrolling = true;
-        } else {
-          Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) _userIsScrolling = false;
-          });
-        }
-        return false;
-      },
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
-        itemCount: widget.lyrics.lines.length,
-        itemBuilder: (context, index) {
-          final line = widget.lyrics.lines[index];
-          final isActive = index == activeIndex;
-          _lineKeys[index] ??= GlobalKey();
-
-          return GestureDetector(
-            key: _lineKeys[index],
-            onTap: () {
-              HapticFeedback.lightImpact();
-              widget.audioHandler.seek(line.timestamp);
-              _userIsScrolling = false;
-              _scrollToIndex(index);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: isActive
-                    ? widget.primaryColor.withValues(alpha: isDark ? 0.18 : 0.12)
-                    : Colors.transparent,
-              ),
-              child: Text(
-                line.text,
-                textAlign: TextAlign.left,
-                style: TextStyle(
-                  fontSize: isActive ? 20.0 : 16.5,
-                  fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-                  color: isActive
-                      ? (isDark ? Colors.white : Colors.black)
-                      : theme.colorScheme.onSurface.withValues(alpha: 0.38),
-                  height: 1.45,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _PlainLyricsView extends StatelessWidget {
-  final Lyrics lyrics;
-  final Color primaryColor;
-
-  const _PlainLyricsView({
-    required this.lyrics,
-    required this.primaryColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-      itemCount: lyrics.lines.length,
-      itemBuilder: (context, index) {
-        final line = lyrics.lines[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Text(
-            line.text,
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028),
-              height: 1.6,
-              letterSpacing: -0.2,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _MiniLyricsPreview extends ConsumerWidget {
-  final VoidCallback onTap;
-  final Color primaryColor;
-
-  const _MiniLyricsPreview({
-    required this.onTap,
-    required this.primaryColor,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final lyricsAsync = ref.watch(currentTrackLyricsProvider);
 
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : Colors.black.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.06),
-            width: 1,
-          ),
-        ),
-        child: lyricsAsync.when(
-          data: (lyrics) {
-            if (lyrics == null || lyrics.isEmpty) {
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.lyrics_outlined, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.45)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Tap to view lyrics',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            if (lyrics.isSynced) {
-              final position = ref.watch(playerStateStreamProvider.select((s) => s.value?.position ?? Duration.zero));
-              final activeIdx = lyrics.findCurrentLineIndex(position);
-              final activeText = (activeIdx >= 0 && activeIdx < lyrics.lines.length)
-                  ? lyrics.lines[activeIdx].text
-                  : lyrics.lines.first.text;
-
-              return Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: primaryColor.withValues(alpha: 0.18),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.mic_external_on_rounded, size: 13, color: primaryColor),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      activeText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.95),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(Icons.chevron_right_rounded, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
-                ],
-              );
-            }
-
-            final previewText = lyrics.lines.isNotEmpty ? lyrics.lines.first.text : lyrics.plainLyrics;
-            return Row(
-              children: [
-                Icon(Icons.lyrics_rounded, size: 15, color: primaryColor),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    previewText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Icon(Icons.chevron_right_rounded, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
-              ],
-            );
-          },
-          loading: () => Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(strokeWidth: 1.5),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Loading lyrics...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                ),
-              ),
-            ],
-          ),
-          error: (_, _) => Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.lyrics_outlined, size: 15, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
-              const SizedBox(width: 8),
-              Text(
+    return SizedBox(
+      height: _viewHeight,
+      child: lyricsAsync.when(
+        data: (Lyrics? lyrics) {
+          if (lyrics == null || lyrics.isEmpty) {
+            return Center(
+              child: Text(
                 'Lyrics unavailable',
                 style: TextStyle(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.32),
                 ),
               ),
-            ],
+            );
+          }
+
+          final position = ref.watch(
+            playerStateStreamProvider.select((s) => s.value?.position ?? Duration.zero),
+          );
+          final duration = ref.watch(
+            playerStateStreamProvider.select((s) => s.value?.duration ?? Duration.zero),
+          );
+
+          final int activeIndex;
+          if (lyrics.isSynced) {
+            activeIndex = lyrics.findCurrentLineIndex(position);
+          } else {
+            // For unsynced plain lyrics, map position proportion to lines so they also slide smoothly
+            if (duration.inMilliseconds > 0 && lyrics.lines.isNotEmpty) {
+              final progress = position.inMilliseconds / duration.inMilliseconds;
+              activeIndex = (progress * lyrics.lines.length).floor().clamp(0, lyrics.lines.length - 1);
+            } else {
+              activeIndex = 0;
+            }
+          }
+
+          if (activeIndex != _lastActiveIndex && activeIndex >= 0) {
+            _lastActiveIndex = activeIndex;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _scrollToActiveIndex(activeIndex);
+            });
+          }
+
+          return ShaderMask(
+            shaderCallback: (Rect bounds) {
+              return const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.white,
+                  Colors.white,
+                  Colors.transparent,
+                ],
+                stops: [0.0, 0.28, 0.72, 1.0],
+              ).createShader(bounds);
+            },
+            blendMode: BlendMode.dstIn,
+            child: NotificationListener<UserScrollNotification>(
+              onNotification: (notification) {
+                if (notification.direction != ScrollDirection.idle) {
+                  _userIsScrolling = true;
+                  _userScrollTimer?.cancel();
+                } else {
+                  _userScrollTimer?.cancel();
+                  _userScrollTimer = Timer(const Duration(seconds: 3), () {
+                    if (mounted) {
+                      setState(() => _userIsScrolling = false);
+                      _scrollToActiveIndex(activeIndex);
+                    }
+                  });
+                }
+                return false;
+              },
+              child: ListView.builder(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(vertical: _lineExtent),
+                itemExtent: _lineExtent,
+                itemCount: lyrics.lines.length,
+                itemBuilder: (context, index) {
+                  final line = lyrics.lines[index];
+                  final isActive = index == activeIndex;
+
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      if (line.timestamp != Duration.zero) {
+                        widget.audioHandler.seek(line.timestamp);
+                      }
+                      _userIsScrolling = false;
+                      _userScrollTimer?.cancel();
+                      _scrollToActiveIndex(index);
+                    },
+                    child: Center(
+                      child: AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isActive ? 15.5 : 13.5,
+                          fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
+                          color: isActive
+                              ? (isDark ? Colors.white : Colors.black87)
+                              : (isDark
+                                  ? Colors.white.withValues(alpha: 0.38)
+                                  : Colors.black.withValues(alpha: 0.40)),
+                          letterSpacing: isActive ? -0.2 : -0.1,
+                        ),
+                        child: Text(
+                          line.text,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+        },
+        loading: () => Center(
+          child: SizedBox(
+            height: 14,
+            width: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.6,
+              color: widget.primaryColor.withValues(alpha: 0.6),
+            ),
+          ),
+        ),
+        error: (_, _) => Center(
+          child: Text(
+            'Lyrics unavailable',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.32),
+            ),
           ),
         ),
       ),
