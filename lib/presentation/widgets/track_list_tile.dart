@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/domain/models/track.dart';
+import '../providers/audio_providers.dart';
 import 'track_artwork.dart';
+import 'track_menu_bottom_sheet.dart';
 
-class TrackListTile extends StatelessWidget {
+class TrackListTile extends ConsumerWidget {
   final Track track;
   final bool isCurrent;
   final bool isPlaying;
@@ -29,7 +33,7 @@ class TrackListTile extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
     final durationStr = _formatDuration(track.durationMs);
@@ -135,8 +139,10 @@ class TrackListTile extends StatelessWidget {
               ),
             ),
 
-            if (onMoreOptions != null) ...[
-              const SizedBox(width: 2),
+            const SizedBox(width: 2),
+
+            // 3-Dot Dropdown Menu Button — always positioned precisely at this song's button
+            if (onMoreOptions != null)
               IconButton(
                 icon: Icon(
                   Icons.more_vert_rounded,
@@ -144,10 +150,130 @@ class TrackListTile extends StatelessWidget {
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
                 ),
                 onPressed: onMoreOptions,
+              )
+            else
+              _TrackTilePopupMenu(
+                track: track,
+                isDark: isDark,
+                onLikeToggle: onLikeToggle,
               ),
-            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TrackTilePopupMenu extends ConsumerWidget {
+  final Track track;
+  final bool isDark;
+  final VoidCallback? onLikeToggle;
+
+  const _TrackTilePopupMenu({
+    required this.track,
+    required this.isDark,
+    this.onLikeToggle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+
+    return Theme(
+      data: theme.copyWith(
+        popupMenuTheme: PopupMenuThemeData(
+          color: isDark ? const Color(0xFF1E212B) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          elevation: 10,
+        ),
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'More options',
+        position: PopupMenuPosition.under,
+        offset: const Offset(0, 4),
+        padding: EdgeInsets.zero,
+        icon: Icon(
+          Icons.more_vert_rounded,
+          size: 20,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+        ),
+        onSelected: (value) {
+          HapticFeedback.selectionClick();
+          if (value == 'next') {
+            ref.read(audioHandlerProvider).insertNextInQueue(track);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Playing next in queue')),
+            );
+          } else if (value == 'queue') {
+            ref.read(audioHandlerProvider).addToQueue(track);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Added to queue')),
+            );
+          } else if (value == 'playlist') {
+            showAddToPlaylistDropdownDialog(context, ref, track);
+          } else if (value == 'like') {
+            if (onLikeToggle != null) {
+              onLikeToggle!();
+            } else {
+              ref.read(audioRepositoryProvider).toggleLike(track);
+            }
+          }
+        },
+        itemBuilder: (ctx) => [
+          PopupMenuItem(
+            value: 'next',
+            child: Row(
+              children: [
+                Icon(Icons.playlist_play_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+                const SizedBox(width: 12),
+                const Text('Play Next', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'queue',
+            child: Row(
+              children: [
+                Icon(Icons.queue_music_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+                const SizedBox(width: 12),
+                const Text('Add to Queue', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'playlist',
+            child: Row(
+              children: [
+                Icon(Icons.playlist_add_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+                const SizedBox(width: 12),
+                const Text('Add to Playlist', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(height: 1),
+          PopupMenuItem(
+            value: 'like',
+            child: Row(
+              children: [
+                Icon(
+                  track.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  size: 20,
+                  color: track.isLiked ? primaryColor : theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  track.isLiked ? 'Remove from Liked' : 'Save to Liked',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: track.isLiked ? primaryColor : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

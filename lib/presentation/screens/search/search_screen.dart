@@ -7,7 +7,6 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/compact_card.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
-import 'package:musify/presentation/widgets/track_menu_bottom_sheet.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -443,7 +442,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final filteredResults = _getFilteredResults();
 
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    final bottomPadding = keyboardHeight > 0 ? keyboardHeight + 20.0 : 160.0;
+    final bottomPadding = keyboardHeight > 0 ? keyboardHeight + 84.0 : 160.0;
 
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
@@ -670,13 +669,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                   },
                                   onLikeToggle: () {
                                     ref.read(audioRepositoryProvider).toggleLike(track);
-                                  },
-                                  onMoreOptions: () {
-                                    showTrackDropdownMenu(
-                                      context: context,
-                                      ref: ref,
-                                      track: track,
-                                    );
                                   },
                                 );
                               },

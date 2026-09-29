@@ -4,7 +4,6 @@ import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/models/track.dart';
 import '../../providers/audio_providers.dart';
 import '../../widgets/track_list_tile.dart';
-import '../../widgets/track_menu_bottom_sheet.dart';
 
 class PlaylistDetailScreen extends ConsumerWidget {
   final String title;
@@ -212,13 +211,6 @@ class PlaylistDetailScreen extends ConsumerWidget {
                           isPlaying: isPl,
                           onTap: () {
                             audioHandler.playTrackList(tracks, startIndex: idx);
-                          },
-                          onMoreOptions: () {
-                            showTrackDropdownMenu(
-                              context: context,
-                              ref: ref,
-                              track: track,
-                            );
                           },
                         );
                       },

@@ -10,6 +10,7 @@ void showTrackDropdownMenu({
   required WidgetRef ref,
   required Track track,
   Offset? tapPosition,
+  BuildContext? buttonContext,
 }) async {
   HapticFeedback.selectionClick();
   final theme = Theme.of(context);
@@ -19,16 +20,39 @@ void showTrackDropdownMenu({
   final repo = ref.read(audioRepositoryProvider);
 
   final screenSize = MediaQuery.of(context).size;
-  final dx = tapPosition?.dx ?? (screenSize.width - 20);
-  final dy = tapPosition?.dy ?? (screenSize.height * 0.4);
+  double dx = screenSize.width - 24;
+  double dy = screenSize.height * 0.4;
+
+  final targetCtx = buttonContext ?? context;
+  try {
+    final box = targetCtx.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      final pos = box.localToGlobal(Offset.zero);
+      final size = box.size;
+      if (size.height < screenSize.height * 0.7) {
+        dx = pos.dx + size.width;
+        dy = pos.dy + size.height;
+      }
+    }
+  } catch (_) {}
+
+  if (tapPosition != null) {
+    dx = tapPosition.dx;
+    dy = tapPosition.dy;
+  }
+
+  // Clamp menu positioning so it stays elegantly on-screen
+  final double menuWidth = 220;
+  final double left = (dx - menuWidth).clamp(12.0, screenSize.width - menuWidth - 12);
+  final double top = (dy).clamp(60.0, screenSize.height - 260);
 
   final selected = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(
-      dx - 220,
-      dy,
-      screenSize.width - dx,
-      screenSize.height - dy,
+      left,
+      top,
+      screenSize.width - left - menuWidth,
+      screenSize.height - top,
     ),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     color: isDark ? const Color(0xFF1E212B) : Colors.white,

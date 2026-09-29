@@ -59,7 +59,8 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final isKeyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final isKeyboardUp = keyboardHeight > 0;
 
     return PopScope(
       canPop: false,
@@ -114,43 +115,44 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
             ),
 
             // 2. Docked Bottom Shell: Mini-Player & Custom Bottom Navigation Bar
-            // Hidden smoothly when keyboard is open so it does not block the screen
-            Positioned(
+            // Bottom navigation bar collapses smoothly when keyboard is open; MiniPlayer remains visible and docked above keyboard!
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
               left: 0,
               right: 0,
-              bottom: 0,
-              child: AnimatedSlide(
-                offset: isKeyboardUp ? const Offset(0, 1.2) : Offset.zero,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOutCubic,
-                child: AnimatedOpacity(
-                  opacity: isKeyboardUp ? 0.0 : 1.0,
-                  duration: const Duration(milliseconds: 180),
-                  child: AnimatedBuilder(
-                    animation: _expandAnimation,
-                    builder: (context, child) {
-                      // When NowPlaying is expanding or expanded, disable touches on the bottom shell
-                      return IgnorePointer(
-                        ignoring: isKeyboardUp || _expandAnimation.value > 0.05,
-                        child: child,
-                      );
-                    },
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        MiniPlayer(
-                          onExpand: _expandPlayer,
-                        ),
-                        _CustomBottomNavBar(
-                          activeIndex: activeIndex,
-                          onTap: (index) {
-                            HapticFeedback.selectionClick();
-                            ref.read(currentTabIndexProvider.notifier).setIndex(index);
-                          },
-                        ),
-                      ],
+              bottom: isKeyboardUp ? keyboardHeight : 0,
+              child: AnimatedBuilder(
+                animation: _expandAnimation,
+                builder: (context, child) {
+                  // When NowPlaying is expanding or expanded, disable touches on the bottom shell
+                  return IgnorePointer(
+                    ignoring: _expandAnimation.value > 0.05,
+                    child: child,
+                  );
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MiniPlayer(
+                      onExpand: _expandPlayer,
                     ),
-                  ),
+                    ClipRect(
+                      child: AnimatedSize(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        child: isKeyboardUp
+                            ? const SizedBox.shrink()
+                            : _CustomBottomNavBar(
+                                activeIndex: activeIndex,
+                                onTap: (index) {
+                                  HapticFeedback.selectionClick();
+                                  ref.read(currentTabIndexProvider.notifier).setIndex(index);
+                                },
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

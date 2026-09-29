@@ -5,7 +5,6 @@ import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/models/track_sort_option.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
-import 'package:musify/presentation/widgets/track_menu_bottom_sheet.dart';
 import 'package:musify/presentation/widgets/scan_progress_dialog.dart';
 import '../playlist/playlist_detail_screen.dart';
 
@@ -462,13 +461,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onLikeToggle: () {
                   ref.read(audioRepositoryProvider).toggleLike(track);
                 },
-                onMoreOptions: () {
-                  showTrackDropdownMenu(
-                    context: context,
-                    ref: ref,
-                    track: track,
-                  );
-                },
               );
             },
             childCount: tracks.length,
@@ -585,13 +577,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   },
                                   onLikeToggle: () {
                                     ref.read(audioRepositoryProvider).toggleLike(track);
-                                  },
-                                  onMoreOptions: () {
-                                    showTrackDropdownMenu(
-                                      context: context,
-                                      ref: ref,
-                                      track: track,
-                                    );
                                   },
                                 );
                               },
