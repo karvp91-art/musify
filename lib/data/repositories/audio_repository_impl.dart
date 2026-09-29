@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
+import 'package:musify/core/utils/audio_name_sanitizer.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/repositories/audio_repository.dart';
@@ -12,11 +13,37 @@ class AudioRepositoryImpl implements AudioRepository {
   AudioRepositoryImpl(this._db);
 
   Track _toDomainTrack(LocalTrack item) {
+    var title = item.title;
+    var artist = item.artistName;
+    var album = item.albumTitle;
+
+    if (item.source == AudioSourceType.local.name) {
+      final disambiguated = AudioNameSanitizer.disambiguateTitleAndArtist(
+        title: title,
+        artist: artist,
+        album: album,
+      );
+      title = disambiguated.title;
+      artist = disambiguated.artist;
+      album = disambiguated.album ?? album;
+
+      if (title != item.title || artist != item.artistName) {
+        // Correct the stored database record asynchronously
+        _db.update(_db.localTracks)
+          ..where((tbl) => tbl.id.equals(item.id))
+          ..write(LocalTracksCompanion(
+            title: Value(title),
+            artistName: Value(artist),
+            albumTitle: Value(album),
+          ));
+      }
+    }
+
     return Track(
       id: item.id,
-      title: item.title,
-      artistName: item.artistName,
-      albumTitle: item.albumTitle,
+      title: title,
+      artistName: artist,
+      albumTitle: album,
       albumId: item.albumId,
       artistId: item.artistId,
       source: AudioSourceType.values.firstWhere(

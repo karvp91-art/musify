@@ -253,11 +253,26 @@ class LocalFilesScanner {
       String artist = '';
       String? album = id3?.album;
 
+      if (id3?.artist != null && !AudioNameSanitizer.isJunkArtist(id3!.artist)) {
+        artist = AudioNameSanitizer.cleanText(id3.artist!);
+      }
       if (id3?.title != null && id3!.title!.trim().isNotEmpty) {
         title = AudioNameSanitizer.cleanText(id3.title!);
       }
-      if (id3?.artist != null && id3!.artist!.trim().isNotEmpty) {
-        artist = AudioNameSanitizer.cleanText(id3.artist!);
+
+      // If ID3 title contains separators (e.g. YouTube full video title dumped into ID3 title)
+      // and artist is empty or junk, parse the combined title
+      if (title.isNotEmpty && AudioNameSanitizer.hasSeparator(title) && (artist.isEmpty || AudioNameSanitizer.isJunkArtist(artist))) {
+        final parsedFromTitle = AudioNameSanitizer.parseFileName(
+          title,
+          folderName: parentFolder,
+          fallbackAlbum: album,
+        );
+        title = parsedFromTitle.title;
+        artist = parsedFromTitle.artist;
+        if (parsedFromTitle.album != null && (album == null || album.isEmpty || album == 'Local Audio')) {
+          album = parsedFromTitle.album;
+        }
       }
 
       // 2. If ID3 title is missing or generic, parse from filename
@@ -266,22 +281,40 @@ class LocalFilesScanner {
           fileName,
           folderName: parentFolder,
           fallbackArtist: artist.isNotEmpty ? artist : null,
+          fallbackAlbum: album,
         );
         title = parsed.title;
-        if (artist.isEmpty || artist.toLowerCase() == 'unknown artist') {
+        if (artist.isEmpty || AudioNameSanitizer.isJunkArtist(artist)) {
           artist = parsed.artist;
         }
-      } else if (artist.isEmpty || artist.toLowerCase() == 'unknown artist') {
+        if (parsed.album != null && (album == null || album.isEmpty || album == 'Local Audio')) {
+          album = parsed.album;
+        }
+      } else if (artist.isEmpty || AudioNameSanitizer.isJunkArtist(artist)) {
         final parsed = AudioNameSanitizer.parseFileName(
           fileName,
           folderName: parentFolder,
+          fallbackAlbum: album,
         );
         if (parsed.artist != 'Unknown Artist') {
           artist = parsed.artist;
         } else {
           artist = 'Unknown Artist';
         }
+        if (parsed.album != null && (album == null || album.isEmpty || album == 'Local Audio')) {
+          album = parsed.album;
+        }
       }
+
+      // 3. Disambiguate title and artist (fixes swapped tags and separates movie/album)
+      final disambiguated = AudioNameSanitizer.disambiguateTitleAndArtist(
+        title: title,
+        artist: artist,
+        album: album,
+      );
+      title = disambiguated.title;
+      artist = disambiguated.artist;
+      album = disambiguated.album ?? album;
 
       // 3. Extract and cache album artwork if present
       String? artworkPath;

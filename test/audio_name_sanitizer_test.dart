@@ -20,12 +20,73 @@ void main() {
       expect(parsed.title, 'Tum Hi Ho');
     });
 
+    test('Parses Title - Artist format correctly for Indian / Bollywood songs', () {
+      final parsed = AudioNameSanitizer.parseFileName(
+        'Tu Chahiye - Atif Aslam Pritam Bajrangi Bhaijaan',
+      );
+      expect(parsed.title, 'Tu Chahiye');
+      expect(parsed.artist, 'Atif Aslam, Pritam');
+      expect(parsed.album, 'Bajrangi Bhaijaan');
+    });
+
+    test('Resolves reverse ordering Title - Artist without feat tags', () {
+      final parsed = AudioNameSanitizer.parseFileName(
+        'Tum Hi Ho - Arijit Singh',
+      );
+      expect(parsed.title, 'Tum Hi Ho');
+      expect(parsed.artist, 'Arijit Singh');
+    });
+
     test('Parses Title - Artist format with feat correctly', () {
       final parsed = AudioNameSanitizer.parseFileName(
         'Despacito (feat. Daddy Yankee) - Luis Fonsi',
       );
       expect(parsed.title, 'Despacito (feat. Daddy Yankee)');
       expect(parsed.artist, 'Luis Fonsi');
+    });
+
+    test('Parses 3-part multi-delimiter string (Title | Album | Artist)', () {
+      final parsed = AudioNameSanitizer.parseFileName(
+        'Tu Chahiye | Bajrangi Bhaijaan | Atif Aslam',
+      );
+      expect(parsed.title, 'Tu Chahiye');
+      expect(parsed.artist, 'Atif Aslam');
+      expect(parsed.album, 'Bajrangi Bhaijaan');
+    });
+
+    test('Disambiguates and fixes swapped ID3 tags', () {
+      final disambiguated = AudioNameSanitizer.disambiguateTitleAndArtist(
+        title: 'Atif Aslam Pritam Bajrangi Bhaijaan',
+        artist: 'Tu Chahiye',
+      );
+      expect(disambiguated.title, 'Tu Chahiye');
+      expect(disambiguated.artist, 'Atif Aslam, Pritam');
+      expect(disambiguated.album, 'Bajrangi Bhaijaan');
+    });
+
+    test('Identifies and discards junk downloader artists', () {
+      expect(AudioNameSanitizer.isJunkArtist('SnapTube Audio'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('PagalWorld.com'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('www.Songs.pk'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('Unknown Artist'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('Atif Aslam'), isFalse);
+    });
+
+    test('Disambiguates ID3 title with separator when artist is junk downloader tag', () {
+      final disambiguated = AudioNameSanitizer.disambiguateTitleAndArtist(
+        title: 'Tu Chahiye - Atif Aslam',
+        artist: 'SnapTube Audio',
+      );
+      expect(disambiguated.title, 'Tu Chahiye');
+      expect(disambiguated.artist, 'Atif Aslam');
+    });
+
+    test('Parses bracketed artist when no hyphen separator exists', () {
+      final parsed = AudioNameSanitizer.parseFileName(
+        'Tu Chahiye (Atif Aslam)',
+      );
+      expect(parsed.title, 'Tu Chahiye');
+      expect(parsed.artist, 'Atif Aslam');
     });
 
     test('Strips leading track numbers from filename', () {
