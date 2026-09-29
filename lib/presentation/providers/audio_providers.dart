@@ -7,6 +7,8 @@ import 'package:musify/data/repositories/search_history_repository.dart';
 import 'package:musify/data/sources/local_source_adapter.dart';
 import 'package:musify/data/sources/saavn_source_adapter.dart';
 import 'package:musify/data/sources/source_router.dart';
+import 'package:musify/data/repositories/lyrics_repository.dart';
+import 'package:musify/domain/models/lyrics.dart';
 import 'package:musify/domain/models/playback_state.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/models/track.dart';
@@ -218,5 +220,18 @@ class IsScanningNotifier extends Notifier<bool> {
 }
 
 final isScanningProvider = NotifierProvider<IsScanningNotifier, bool>(IsScanningNotifier.new);
+
+// Lyrics Providers
+final lyricsRepositoryProvider = Provider<LyricsRepository>((ref) {
+  final saavn = ref.watch(saavnAdapterProvider);
+  return LyricsRepository(saavnAdapter: saavn);
+});
+
+final currentTrackLyricsProvider = FutureProvider<Lyrics?>((ref) async {
+  final track = ref.watch(currentPlayingTrackProvider);
+  if (track == null) return null;
+  final repo = ref.watch(lyricsRepositoryProvider);
+  return repo.getLyrics(track);
+});
 
 

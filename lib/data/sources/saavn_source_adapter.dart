@@ -211,4 +211,45 @@ class SaavnSourceAdapter implements SourceAdapter {
     final track = await getMetadata(sourceId);
     return track?.artworkUrl;
   }
+
+  /// Fetches free lyrics from JioSaavn for a given songId.
+  Future<Map<String, dynamic>?> getLyrics(String songId) async {
+    try {
+      final response = await _dio.get(
+        '',
+        queryParameters: {
+          '__call': 'lyrics.getLyrics',
+          'lyrics_id': songId,
+          '_format': 'json',
+          'ctx': 'web6dot0',
+        },
+      );
+
+      dynamic data = response.data;
+      if (data is String) {
+        data = jsonDecode(data);
+      }
+      if (data is Map<String, dynamic> && data['lyrics'] != null) {
+        return data;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Searches JioSaavn by title and artist, then attempts to fetch lyrics.
+  Future<Map<String, dynamic>?> searchAndGetLyrics(String title, String artist) async {
+    try {
+      final query = '$title $artist'.trim();
+      final results = await search(query, limit: 5);
+      for (final track in results) {
+        if (track.sourceId.isNotEmpty) {
+          final lyrics = await getLyrics(track.sourceId);
+          if (lyrics != null && lyrics['lyrics'] != null) {
+            return lyrics;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
 }
