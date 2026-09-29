@@ -1,0 +1,56 @@
+import 'package:audio_service/audio_service.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/constants/app_constants.dart';
+import 'core/theme/app_theme.dart';
+import 'presentation/providers/audio_providers.dart';
+import 'presentation/screens/shell/app_shell.dart';
+import 'services/audio_player_handler.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Bound image memory cache to prevent memory spikes on low-RAM devices
+  PaintingBinding.instance.imageCache.maximumSize = 250;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 60 * 1024 * 1024; // 60 MB
+
+  // Initialize background Audio Service
+  final audioHandler = await AudioService.init(
+    builder: () => MusifyAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: AppConstants.audioChannelId,
+      androidNotificationChannelName: AppConstants.audioChannelName,
+      androidNotificationChannelDescription: AppConstants.audioChannelDescription,
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+    ),
+  );
+
+  runApp(
+    ProviderScope(
+      overrides: [
+        audioHandlerProvider.overrideWithValue(audioHandler),
+      ],
+      child: const MusifyApp(),
+    ),
+  );
+}
+
+class MusifyApp extends ConsumerWidget {
+  const MusifyApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+
+    return MaterialApp(
+      title: AppConstants.appName,
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
+      home: const AppShell(),
+    );
+  }
+}
