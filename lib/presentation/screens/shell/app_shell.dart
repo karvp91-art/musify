@@ -50,6 +50,8 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     _playerExpandController.reverse();
   }
 
+  DateTime? _lastBackPressTime;
+
   @override
   Widget build(BuildContext context) {
     final currentTabIndex = ref.watch(currentTabIndexProvider);
@@ -57,73 +59,126 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final isKeyboardUp = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    return Scaffold(
-      backgroundColor: isDark ? Colors.black : Colors.white,
-      body: Stack(
-        children: [
-          // 1. Main Body Screens with IndexedStack for instant state preservation
-          IndexedStack(
-            index: activeIndex,
-            children: _screens,
-          ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
 
-          // 2. Docked Bottom Shell: Mini-Player & Custom Bottom Navigation Bar
-          // Positioned at the very bottom so NowPlayingScreen sits on top of it.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: AnimatedBuilder(
+        // 1. If keyboard is open, back button/gesture closes keyboard
+        if (MediaQuery.of(context).viewInsets.bottom > 0) {
+          FocusManager.instance.primaryFocus?.unfocus();
+          return;
+        }
+
+        // 2. If full now playing player is open, back button minimizes player
+        if (_playerExpandController.value > 0.05) {
+          _minimizePlayer();
+          return;
+        }
+
+        // 3. If currently on Search tab, back button returns to Home tab
+        final tabIndex = ref.read(currentTabIndexProvider);
+        if (tabIndex != 0) {
+          ref.read(currentTabIndexProvider.notifier).setIndex(0);
+          return;
+        }
+
+        // 4. If on Home tab root, double-tap back to exit safely without abrupt termination
+        final now = DateTime.now();
+        if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Press back again to exit'),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+          return;
+        }
+
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        body: Stack(
+          children: [
+            // 1. Main Body Screens with IndexedStack for instant state preservation
+            IndexedStack(
+              index: activeIndex,
+              children: _screens,
+            ),
+
+            // 2. Docked Bottom Shell: Mini-Player & Custom Bottom Navigation Bar
+            // Hidden smoothly when keyboard is open so it does not block the screen
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedSlide(
+                offset: isKeyboardUp ? const Offset(0, 1.2) : Offset.zero,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOutCubic,
+                child: AnimatedOpacity(
+                  opacity: isKeyboardUp ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 180),
+                  child: AnimatedBuilder(
+                    animation: _expandAnimation,
+                    builder: (context, child) {
+                      // When NowPlaying is expanding or expanded, disable touches on the bottom shell
+                      return IgnorePointer(
+                        ignoring: isKeyboardUp || _expandAnimation.value > 0.05,
+                        child: child,
+                      );
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        MiniPlayer(
+                          onExpand: _expandPlayer,
+                        ),
+                        _CustomBottomNavBar(
+                          activeIndex: activeIndex,
+                          onTap: (index) {
+                            HapticFeedback.selectionClick();
+                            ref.read(currentTabIndexProvider.notifier).setIndex(index);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // 3. Expanding Full Now Playing Screen Overlay
+            // Sits at the very top of the Stack, completely covering the bottom navigation bar when expanded.
+            AnimatedBuilder(
               animation: _expandAnimation,
               builder: (context, child) {
-                // When NowPlaying is expanding or expanded, disable touches on the bottom shell
-                return IgnorePointer(
-                  ignoring: _expandAnimation.value > 0.05,
+                if (_expandAnimation.value == 0.0) {
+                  return const SizedBox.shrink();
+                }
+                final screenHeight = MediaQuery.of(context).size.height;
+                final translateY = screenHeight * (1.0 - _expandAnimation.value);
+
+                return Transform.translate(
+                  offset: Offset(0, translateY),
                   child: child,
                 );
               },
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  MiniPlayer(
-                    onExpand: _expandPlayer,
-                  ),
-                  _CustomBottomNavBar(
-                    activeIndex: activeIndex,
-                    onTap: (index) {
-                      HapticFeedback.selectionClick();
-                      ref.read(currentTabIndexProvider.notifier).setIndex(index);
-                    },
-                  ),
-                ],
+              child: RepaintBoundary(
+                child: NowPlayingScreen(
+                  onMinimize: _minimizePlayer,
+                ),
               ),
             ),
-          ),
-
-          // 3. Expanding Full Now Playing Screen Overlay
-          // Sits at the very top of the Stack, completely covering the bottom navigation bar when expanded.
-          AnimatedBuilder(
-            animation: _expandAnimation,
-            builder: (context, child) {
-              if (_expandAnimation.value == 0.0) {
-                return const SizedBox.shrink();
-              }
-              final screenHeight = MediaQuery.of(context).size.height;
-              final translateY = screenHeight * (1.0 - _expandAnimation.value);
-
-              return Transform.translate(
-                offset: Offset(0, translateY),
-                child: child,
-              );
-            },
-            child: RepaintBoundary(
-              child: NowPlayingScreen(
-                onMinimize: _minimizePlayer,
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

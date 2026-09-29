@@ -38,19 +38,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     'Rock',
   ];
 
-  final List<String> _popularTags = const [
-    'Arijit Singh',
-    'Bollywood',
-    'Lo-Fi',
-    'Pop',
-    'Punjabi',
-    'Anirudh',
-    'Indie',
-    'EDM',
-    'Acoustic',
-    'Rock',
-  ];
-
   @override
   void dispose() {
     _searchController.dispose();
@@ -58,7 +45,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
-  void _performSearch(String query) async {
+  void _performSearch(String query, {bool addToHistory = true}) async {
     _debounceTimer?.cancel();
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
@@ -67,6 +54,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         _isSearching = false;
       });
       return;
+    }
+
+    if (addToHistory) {
+      ref.read(searchHistoryProvider.notifier).addQuery(trimmed);
     }
 
     setState(() {
@@ -95,7 +86,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
 
     _debounceTimer = Timer(AppConstants.debounceSearchDuration, () {
-      _performSearch(query);
+      _performSearch(query, addToHistory: false);
     });
   }
 
@@ -126,7 +117,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               if (_searchController.text.isNotEmpty) {
                 HapticFeedback.lightImpact();
                 _searchController.clear();
-                _performSearch('');
+                _performSearch('', addToHistory: false);
               }
             },
           ),
@@ -148,7 +139,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onTap: () {
               HapticFeedback.lightImpact();
               if (_searchController.text.isNotEmpty) {
-                _performSearch(_searchController.text);
+                _performSearch(_searchController.text, addToHistory: true);
               } else {
                 ref.invalidate(saavnTrendingTracksProvider);
                 ref.invalidate(saavnGenreTracksProvider);
@@ -173,7 +164,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: TextField(
           controller: _searchController,
           onChanged: _onSearchChanged,
-          onSubmitted: _performSearch,
+          onSubmitted: (query) => _performSearch(query, addToHistory: true),
           style: TextStyle(
             color: isDark ? Colors.white : const Color(0xFF1E2028),
             fontSize: 14,
@@ -199,7 +190,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ),
                     onPressed: () {
                       _searchController.clear();
-                      _performSearch('');
+                      _performSearch('', addToHistory: false);
                     },
                   )
                 : null,
@@ -262,63 +253,173 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  // --- Popular Searches Tags matching borderless rounded pills ---
-  Widget _buildPopularTags(ThemeData theme, bool isDark) {
-    final chipBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
-    final textColor = isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028);
+  // --- Search History Section (replaces popular searches) ---
+  Widget _buildSearchHistory(ThemeData theme, bool isDark) {
+    final historyAsync = ref.watch(searchHistoryProvider);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'POPULAR SEARCHES & ARTISTS',
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: _popularTags.map((tag) {
-              return GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  _searchController.text = tag;
-                  _performSearch(tag);
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: chipBg,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+    return historyAsync.when(
+      data: (history) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header: RECENT SEARCHES & Clear all
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
                     children: [
                       Icon(
-                        Icons.trending_up_rounded,
-                        size: 15,
+                        Icons.history_rounded,
+                        size: 16,
                         color: theme.colorScheme.primary,
                       ),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 8),
                       Text(
-                        tag,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: textColor,
+                        'RECENT SEARCHES',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                          color: theme.colorScheme.primary,
                         ),
                       ),
                     ],
                   ),
+                  if (history.isNotEmpty)
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        _showClearHistoryDialog(context);
+                      },
+                      child: Text(
+                        'Clear all',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              if (history.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.search_rounded,
+                          size: 36,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.25),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'No recent searches',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Searches you perform will appear here',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  children: history.map((item) {
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        _searchController.text = item;
+                        _performSearch(item, addToHistory: true);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.history_rounded,
+                              size: 18,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                item,
+                                style: TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                ref.read(searchHistoryProvider.notifier).removeQuery(item);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  size: 17,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
-              );
-            }).toList(),
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox(height: 40),
+      error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+
+  void _showClearHistoryDialog(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1A1C24) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Clear Search History?'),
+        content: const Text('This will remove all recent searches from your history.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              ref.read(searchHistoryProvider.notifier).clearAll();
+              Navigator.pop(ctx);
+            },
+            child: const Text('Clear'),
           ),
         ],
       ),
@@ -340,6 +441,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final isDark = theme.brightness == Brightness.dark;
     final primaryColor = theme.colorScheme.primary;
     final filteredResults = _getFilteredResults();
+
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = keyboardHeight > 0 ? keyboardHeight + 20.0 : 160.0;
 
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
@@ -375,7 +479,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           },
                           child: ListView(
                             physics: const ClampingScrollPhysics(),
-                            padding: const EdgeInsets.only(bottom: 160),
+                            padding: EdgeInsets.only(bottom: bottomPadding),
                             children: [
                               // JioSaavn Discovery Header
                               Padding(
@@ -485,6 +589,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                           subtitle: track.artistName,
                                           imageUrl: track.artworkUrl,
                                           onTap: () {
+                                            ref.read(searchHistoryProvider.notifier).addQuery(track.title);
                                             audioHandler.playTrackList(saavnTracks, startIndex: index);
                                           },
                                         );
@@ -509,8 +614,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
                               const SizedBox(height: 28),
 
-                              // Popular Searches Section
-                              _buildPopularTags(theme, isDark),
+                              // Recent Searches History Section
+                              _buildSearchHistory(theme, isDark),
                             ],
                           ),
                         )
@@ -546,7 +651,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             )
                           : ListView.builder(
                               physics: const ClampingScrollPhysics(),
-                              padding: const EdgeInsets.only(bottom: 160),
+                              padding: EdgeInsets.only(bottom: bottomPadding),
                               itemExtent: 76.0,
                               itemCount: filteredResults.length,
                               itemBuilder: (context, index) {
@@ -560,6 +665,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                   isCurrent: isCurrent,
                                   isPlaying: isTilePlaying,
                                   onTap: () {
+                                    ref.read(searchHistoryProvider.notifier).addQuery(_searchController.text.trim().isNotEmpty ? _searchController.text.trim() : track.title);
                                     audioHandler.playTrackList(filteredResults, startIndex: index);
                                   },
                                   onLikeToggle: () {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/data/database/app_database.dart' hide Playlist;
 import 'package:musify/data/repositories/audio_repository_impl.dart';
 import 'package:musify/data/repositories/local_files_scanner.dart';
+import 'package:musify/data/repositories/search_history_repository.dart';
 import 'package:musify/data/sources/local_source_adapter.dart';
 import 'package:musify/data/sources/saavn_source_adapter.dart';
 import 'package:musify/data/sources/source_router.dart';
@@ -159,4 +160,42 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
 }
 
 final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+
+// Search History Provider
+final searchHistoryRepositoryProvider = Provider<SearchHistoryRepository>((ref) {
+  return SearchHistoryRepositoryImpl();
+});
+
+class SearchHistoryNotifier extends AsyncNotifier<List<String>> {
+  @override
+  Future<List<String>> build() async {
+    final repo = ref.watch(searchHistoryRepositoryProvider);
+    return repo.getSearchHistory();
+  }
+
+  Future<void> addQuery(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    final repo = ref.read(searchHistoryRepositoryProvider);
+    await repo.addSearchQuery(trimmed);
+    state = AsyncData(await repo.getSearchHistory());
+  }
+
+  Future<void> removeQuery(String query) async {
+    final repo = ref.read(searchHistoryRepositoryProvider);
+    await repo.removeSearchQuery(query);
+    state = AsyncData(await repo.getSearchHistory());
+  }
+
+  Future<void> clearAll() async {
+    final repo = ref.read(searchHistoryRepositoryProvider);
+    await repo.clearSearchHistory();
+    state = const AsyncData([]);
+  }
+}
+
+final searchHistoryProvider = AsyncNotifierProvider<SearchHistoryNotifier, List<String>>(
+  SearchHistoryNotifier.new,
+);
+
 
