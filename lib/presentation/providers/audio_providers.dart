@@ -138,6 +138,11 @@ final playlistsStreamProvider = StreamProvider<List<Playlist>>((ref) {
   return repo.watchPlaylists();
 });
 
+final playlistTracksProvider = FutureProvider.family<List<Track>, String>((ref, playlistId) async {
+  final repo = ref.watch(audioRepositoryProvider);
+  return repo.getPlaylistTracks(playlistId);
+});
+
 // Navigation Bar Tab Index
 class TabIndexNotifier extends Notifier<int> {
   @override
@@ -197,5 +202,21 @@ class SearchHistoryNotifier extends AsyncNotifier<List<String>> {
 final searchHistoryProvider = AsyncNotifierProvider<SearchHistoryNotifier, List<String>>(
   SearchHistoryNotifier.new,
 );
+
+class ScanProgressNotifier extends Notifier<ScanProgress?> {
+  @override
+  ScanProgress? build() => null;
+  void setProgress(ScanProgress? progress) => state = progress;
+}
+
+final scanProgressProvider = NotifierProvider<ScanProgressNotifier, ScanProgress?>(ScanProgressNotifier.new);
+
+class IsScanningNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void setScanning(bool scanning) => state = scanning;
+}
+
+final isScanningProvider = NotifierProvider<IsScanningNotifier, bool>(IsScanningNotifier.new);
 
 

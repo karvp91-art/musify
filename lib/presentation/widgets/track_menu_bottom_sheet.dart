@@ -4,182 +4,200 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/domain/models/track.dart';
 import '../providers/audio_providers.dart';
 
+/// Displays a dropdown popup menu for track actions instead of a modal bottom sheet.
+void showTrackDropdownMenu({
+  required BuildContext context,
+  required WidgetRef ref,
+  required Track track,
+  Offset? tapPosition,
+}) async {
+  HapticFeedback.selectionClick();
+  final theme = Theme.of(context);
+  final isDark = theme.brightness == Brightness.dark;
+  final primaryColor = theme.colorScheme.primary;
+  final audioHandler = ref.read(audioHandlerProvider);
+  final repo = ref.read(audioRepositoryProvider);
+
+  final screenSize = MediaQuery.of(context).size;
+  final dx = tapPosition?.dx ?? (screenSize.width - 20);
+  final dy = tapPosition?.dy ?? (screenSize.height * 0.4);
+
+  final selected = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(
+      dx - 220,
+      dy,
+      screenSize.width - dx,
+      screenSize.height - dy,
+    ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    color: isDark ? const Color(0xFF1E212B) : Colors.white,
+    elevation: 10,
+    items: [
+      PopupMenuItem(
+        value: 'next',
+        child: Row(
+          children: [
+            Icon(Icons.playlist_play_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+            const SizedBox(width: 12),
+            const Text('Play Next', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: 'queue',
+        child: Row(
+          children: [
+            Icon(Icons.queue_music_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+            const SizedBox(width: 12),
+            const Text('Add to Queue', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: 'playlist',
+        child: Row(
+          children: [
+            Icon(Icons.playlist_add_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+            const SizedBox(width: 12),
+            const Text('Add to Playlist', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+      const PopupMenuDivider(height: 1),
+      PopupMenuItem(
+        value: 'like',
+        child: Row(
+          children: [
+            Icon(
+              track.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              size: 20,
+              color: track.isLiked ? primaryColor : theme.colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              track.isLiked ? 'Remove from Liked' : 'Save to Liked',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: track.isLiked ? primaryColor : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  if (selected == 'next') {
+    audioHandler.insertNextInQueue(track);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Playing next in queue')),
+      );
+    }
+  } else if (selected == 'queue') {
+    audioHandler.addToQueue(track);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Added to queue')),
+      );
+    }
+  } else if (selected == 'playlist') {
+    if (context.mounted) {
+      showAddToPlaylistDropdownDialog(context, ref, track);
+    }
+  } else if (selected == 'like') {
+    repo.toggleLike(track);
+  }
+}
+
+/// Backward compatibility alias — redirects to the dropdown menu to eliminate bottom sheets
 void showTrackOptionsBottomSheet({
   required BuildContext context,
   required WidgetRef ref,
   required Track track,
 }) {
-  HapticFeedback.selectionClick();
-  final theme = Theme.of(context);
-  final audioHandler = ref.read(audioHandlerProvider);
-  final repo = ref.read(audioRepositoryProvider);
-
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: theme.scaffoldBackgroundColor,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (sheetCtx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Drag handle
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 10),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          // Track Header summary in sheet
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    color: theme.colorScheme.surface,
-                    child: track.artworkUrl != null
-                        ? Image.network(
-                            track.artworkUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.music_note_rounded),
-                          )
-                        : const Icon(Icons.music_note_rounded),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        track.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        track.artistName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const Divider(height: 1),
-
-          // Menu Actions
-          ListTile(
-            leading: const Icon(Icons.playlist_play_rounded),
-            title: const Text('Play Next'),
-            onTap: () {
-              audioHandler.insertNextInQueue(track);
-              Navigator.pop(sheetCtx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Playing next in queue')),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.queue_music_rounded),
-            title: const Text('Add to Queue'),
-            onTap: () {
-              audioHandler.addToQueue(track);
-              Navigator.pop(sheetCtx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Added to queue')),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.playlist_add_rounded),
-            title: const Text('Add to Playlist'),
-            onTap: () {
-              Navigator.pop(sheetCtx);
-              _showAddToPlaylistDialog(context, ref, track);
-            },
-          ),
-          ListTile(
-            leading: Icon(
-              track.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-              color: track.isLiked ? theme.colorScheme.primary : null,
-            ),
-            title: Text(track.isLiked ? 'Remove from Liked Songs' : 'Save to Liked Songs'),
-            onTap: () {
-              repo.toggleLike(track);
-              Navigator.pop(sheetCtx);
-            },
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    ),
-  );
+  showTrackDropdownMenu(context: context, ref: ref, track: track);
 }
 
-void _showAddToPlaylistDialog(BuildContext context, WidgetRef ref, Track track) async {
+/// Dialog for selecting playlist (replaces bottom sheet with a clean dialog)
+void showAddToPlaylistDropdownDialog(BuildContext context, WidgetRef ref, Track track) async {
   final repo = ref.read(audioRepositoryProvider);
   final playlists = await repo.getPlaylists();
 
   if (!context.mounted) return;
+  final theme = Theme.of(context);
+  final isDark = theme.brightness == Brightness.dark;
+  final primaryColor = theme.colorScheme.primary;
 
-  showModalBottomSheet(
+  showDialog(
     context: context,
-    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Text(
-              'Add to Playlist',
-              style: Theme.of(ctx).textTheme.headlineSmall,
-            ),
-          ),
-          if (playlists.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: Text('No playlists created yet. Create one in Library.')),
-            )
-          else
-            ...playlists.map((pl) => ListTile(
-                  leading: const Icon(Icons.playlist_play_rounded),
-                  title: Text(pl.name),
-                  onTap: () async {
-                    await repo.addTrackToPlaylist(pl.id, track);
-                    if (ctx.mounted) {
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Added to "${pl.name}"')),
-                      );
-                    }
-                  },
-                )),
-          const SizedBox(height: 12),
-        ],
+    builder: (dialogCtx) => AlertDialog(
+      backgroundColor: isDark ? const Color(0xFF1E212B) : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      title: const Text(
+        'Add to Playlist',
+        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
       ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: playlists.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Text(
+                    'No playlists created yet.\nCreate one in Library tab.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              )
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: playlists.length,
+                itemBuilder: (ctx, idx) {
+                  final pl = playlists[idx];
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.queue_music_rounded, color: primaryColor, size: 20),
+                    ),
+                    title: Text(
+                      pl.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                    ),
+                    subtitle: pl.description != null && pl.description!.isNotEmpty
+                        ? Text(pl.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
+                        : null,
+                    onTap: () async {
+                      await repo.addTrackToPlaylist(pl.id, track);
+                      if (dialogCtx.mounted) {
+                        Navigator.pop(dialogCtx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Added to "${pl.name}"')),
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx),
+          child: const Text('Cancel'),
+        ),
+      ],
     ),
   );
 }

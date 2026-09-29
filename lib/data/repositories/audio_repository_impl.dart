@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import 'package:musify/core/utils/audio_name_sanitizer.dart';
 import 'package:musify/domain/models/track.dart';
@@ -18,6 +19,21 @@ class AudioRepositoryImpl implements AudioRepository {
     var album = item.albumTitle;
 
     if (item.source == AudioSourceType.local.name) {
+      if (AudioNameSanitizer.isBitrateOrQuality(title) || AudioNameSanitizer.isJunkTitle(title)) {
+        // Automatically recover original title from filePath if it was corrupted to a bitrate (e.g. "256k")
+        if (item.filePath != null && item.filePath!.isNotEmpty) {
+          final fileName = p.basenameWithoutExtension(item.filePath!);
+          final parent = p.basename(p.dirname(item.filePath!));
+          final parsed = AudioNameSanitizer.parseFileName(fileName, folderName: parent);
+          title = parsed.title;
+          if (artist == 'Unknown Artist' ||
+              AudioNameSanitizer.isJunkArtist(artist) ||
+              AudioNameSanitizer.isBitrateOrQuality(artist)) {
+            artist = parsed.artist;
+          }
+        }
+      }
+
       final disambiguated = AudioNameSanitizer.disambiguateTitleAndArtist(
         title: title,
         artist: artist,

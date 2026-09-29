@@ -11,20 +11,21 @@ class SanitizedTrackInfo {
 }
 
 class AudioNameSanitizer {
-  // Regex to remove downloader domains / website watermarks
+  // Regex to remove downloader domains / website watermarks e.g. [PagalWorld.com], (www.Songs.pk), [y2mate.is]
   static final RegExp _domainTagsRegExp = RegExp(
-    r'\[.*?(\.com|\.pk|\.is|\.net|\.in|\.org|\.co|world|music|songs|download|mp3|m4a|pagal|djpunjab|starmusiq|masstamilan|hungama|gaana|wynk|jiosaavn).*?\]|\(.*?(www\.|\.com|\.pk|\.is|\.net|\.in|\.org|\.co|world|music|songs|download|mp3|m4a|pagal|djpunjab|starmusiq|masstamilan|hungama|gaana|wynk|jiosaavn).*?\)',
+    r'\[.*?(www\.[a-z0-9\-]+|[a-z0-9\-]+\.(com|pk|is|net|in|org|co|info|biz|xyz)|pagalworld|djpunjab|starmusiq|masstamilan|hungama|gaana|wynk|jiosaavn|snaptube|y2mate|tubidy|downloadming).*?\]|\(.*?(www\.[a-z0-9\-]+|[a-z0-9\-]+\.(com|pk|is|net|in|org|co|info|biz|xyz)|pagalworld|djpunjab|starmusiq|masstamilan|hungama|gaana|wynk|jiosaavn|snaptube|y2mate|tubidy|downloadming).*?\)',
     caseSensitive: false,
   );
 
   // Regex to remove common YouTube / audio ripper junk phrases with surrounding brackets or delimiters
+  // Universal bitrate detection: 48k, 64k, 96k, 128k, 160k, 192k, 256k, 320k, 128kbps, 256kbps, 320kbps, etc.
   static final RegExp _bracketedJunkRegExp = RegExp(
-    r'(\[|\()(full\s*audio\s*song|full\s*video\s*song|full\s*audio|full\s*song|full\s*video|official\s*music\s*video|official\s*video\s*song|official\s*lyrical\s*video|official\s*lyric\s*video|official\s*video|official\s*audio|official\s*track|lyrics?\s*video|lyric\s*video|lyrics?|visualizer|audio\s*song|audio|video|320\s*kbps|128\s*kbps|64\s*kbps|320kbps|128kbps|64kbps|320k|128k|hd\s*video|hd|hq|4k|1080p|720p|slowed\s*\+\s*reverb|slowed\s*&\s*reverb|bass\s*boosted|remastered|extended\s*mix|pagalworld|songs\.pk|djpunjab|snaptube)(\]|\))',
+    r'(\[|\()\s*(full\s*audio\s*song|full\s*video\s*song|full\s*audio|full\s*song|full\s*video|official\s*music\s*video|official\s*video\s*song|official\s*lyrical\s*video|official\s*lyric\s*video|official\s*video|official\s*audio|official\s*track|lyrics?\s*video|lyric\s*video|lyrics?|visualizer|audio\s*song|audio|video|\d{2,4}\s*k(?:bps)?|\d{3,4}p|hd\s*video|hd|hq|4k|1080p|720p|slowed\s*\+\s*reverb|slowed\s*&\s*reverb|bass\s*boosted|remastered|extended\s*mix|pagalworld|songs\.pk|djpunjab|snaptube|mp3|m4a|flac|wav)\s*(\]|\))',
     caseSensitive: false,
   );
 
   static final RegExp _bareJunkPhrasesRegExp = RegExp(
-    r'\b(full\s*audio\s*song|full\s*video\s*song|full\s*audio|full\s*song|full\s*video|official\s*music\s*video|official\s*video\s*song|official\s*lyrical\s*video|official\s*lyric\s*video|official\s*video|official\s*audio|lyrics?\s*video|lyric\s*video|320\s*kbps|128\s*kbps|64\s*kbps|320kbps|128kbps|64kbps|320k|128k|slowed\s*\+\s*reverb|slowed\s*&\s*reverb|bass\s*boosted|pagalworld|songs\.pk|djpunjab|snaptube)\b',
+    r'\b(full\s*audio\s*song|full\s*video\s*song|full\s*audio|full\s*song|full\s*video|official\s*music\s*video|official\s*video\s*song|official\s*lyrical\s*video|official\s*lyric\s*video|official\s*video|official\s*audio|lyrics?\s*video|lyric\s*video|\d{2,4}\s*k(?:bps)?|slowed\s*\+\s*reverb|slowed\s*&\s*reverb|bass\s*boosted|pagalworld|songs\.pk|djpunjab|snaptube)\b',
     caseSensitive: false,
   );
 
@@ -40,6 +41,24 @@ class AudioNameSanitizer {
   static final RegExp _separatorRegExp = RegExp(r'\s+[\-–—~•]\s+|\s*\|\s*|\s+_-_+\s*');
 
   static bool hasSeparator(String text) => _separatorRegExp.hasMatch(text);
+
+  /// Checks if a string is solely a bitrate, video quality, or audio format indicator (e.g. "256k", "320kbps", "1080p", "mp3")
+  static bool isBitrateOrQuality(String? text) {
+    if (text == null) return false;
+    final clean = text.trim().toLowerCase();
+    if (clean.isEmpty) return false;
+    return RegExp(r'^(\d{2,4}\s*k(?:bps)?|\d{3,4}p|hd|hq|4k|flac|mp3|m4a|wav|aac|ogg|opus|vbr|cbr)$', caseSensitive: false).hasMatch(clean);
+  }
+
+  /// Checks if a title is invalid, empty, or purely a bitrate/audio artifact
+  static bool isJunkTitle(String? text) {
+    if (text == null) return true;
+    final clean = text.trim().toLowerCase();
+    if (clean.isEmpty) return true;
+    if (isBitrateOrQuality(clean)) return true;
+    if (clean == 'audio' || clean == 'track' || clean == 'sound' || clean == 'untitled' || clean == 'untitled audio') return true;
+    return false;
+  }
 
   // Curated list of known prominent artists (Bollywood, Punjabi, Pakistani, Indian, Global Pop/Rock/Hip-hop)
   static final Set<String> _knownArtists = {
@@ -280,7 +299,10 @@ class AudioNameSanitizer {
     var cleanA = cleanText(artist);
     var cleanAlb = album != null && album.isNotEmpty ? cleanText(album) : null;
 
-    if (isJunkArtist(cleanA)) {
+    if (isBitrateOrQuality(cleanT)) {
+      cleanT = '';
+    }
+    if (isBitrateOrQuality(cleanA) || isJunkArtist(cleanA)) {
       cleanA = '';
     }
 
@@ -323,7 +345,9 @@ class AudioNameSanitizer {
       }
     }
 
-    if (cleanT.isEmpty) cleanT = 'Untitled Audio';
+    if (isBitrateOrQuality(cleanT) || cleanT.isEmpty) {
+      cleanT = cleanA.isNotEmpty && cleanA != 'Unknown Artist' ? cleanA : 'Untitled Audio';
+    }
     if (cleanA.isEmpty) cleanA = 'Unknown Artist';
 
     return SanitizedTrackInfo(
@@ -354,6 +378,7 @@ class AudioNameSanitizer {
     if (remaining.isNotEmpty &&
         remaining.length >= 3 &&
         !isJunkArtist(remaining) &&
+        !isBitrateOrQuality(remaining) &&
         !RegExp(r'^(feat|ft|featuring|prod|with|and)$', caseSensitive: false).hasMatch(remaining)) {
       return (artist: formattedArtists, album: remaining);
     }
@@ -380,7 +405,7 @@ class AudioNameSanitizer {
     final parts = baseName
         .split(_separatorRegExp)
         .map((p) => cleanText(p))
-        .where((p) => p.isNotEmpty)
+        .where((p) => p.isNotEmpty && !isBitrateOrQuality(p))
         .toList();
 
     if (parts.length >= 2) {
@@ -444,15 +469,21 @@ class AudioNameSanitizer {
       if (bracketMatch != null) {
         final outside = cleanText(bracketMatch.group(1)!);
         final inside = cleanText(bracketMatch.group(2)!);
-        final insideScore = calculateArtistScore(inside);
-        final outsideScore = calculateArtistScore(outside);
 
-        if (insideScore >= 10 && outsideScore < insideScore) {
+        if (!isBitrateOrQuality(inside) && !isJunkTitle(inside)) {
+          final insideScore = calculateArtistScore(inside);
+          final outsideScore = calculateArtistScore(outside);
+
+          if (insideScore >= 10 && outsideScore < insideScore) {
+            title = outside;
+            artist = inside;
+          } else if (outsideScore >= 10 && insideScore < outsideScore) {
+            artist = outside;
+            title = inside;
+          }
+        } else {
+          // Inside is a bitrate tag like (256k) or junk; preserve outside as the title
           title = outside;
-          artist = inside;
-        } else if (outsideScore >= 10 && insideScore < outsideScore) {
-          artist = outside;
-          title = inside;
         }
       }
 

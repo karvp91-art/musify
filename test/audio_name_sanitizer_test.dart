@@ -122,5 +122,38 @@ void main() {
       expect(parsed.artist, 'Ed Sheeran');
       expect(parsed.title, 'Perfect');
     });
+
+    test('Strips 256k bitrate tags and never uses bitrate as title', () {
+      // "Jane!(256k)" should have (256k) removed
+      final jane = AudioNameSanitizer.cleanText('Jane!(256k)');
+      expect(jane, 'Jane!');
+
+      // "Radiohead (256k)" should strip (256k) and never assign 256k as title
+      final radiohead = AudioNameSanitizer.parseFileName('Radiohead (256k)');
+      expect(radiohead.title, isNot(equals('256k')));
+      expect(radiohead.title, isNot(contains('256k')));
+
+      // "Mohit Chauhan, Pritam (256k)" should strip (256k) and never assign 256k as title
+      final mohit = AudioNameSanitizer.parseFileName('Mohit Chauhan, Pritam (256k)');
+      expect(mohit.title, isNot(equals('256k')));
+      expect(mohit.title, isNot(contains('256k')));
+
+      // "Radiohead - Creep (256k)" should be parsed as Artist: Radiohead, Title: Creep
+      final creep = AudioNameSanitizer.parseFileName('Radiohead - Creep (256k)');
+      expect(creep.artist, 'Radiohead');
+      expect(creep.title, 'Creep');
+
+      // "Radiohead - Creep - 256k" with 256k as a separated part
+      final creepSep = AudioNameSanitizer.parseFileName('Radiohead - Creep - 256k');
+      expect(creepSep.artist, 'Radiohead');
+      expect(creepSep.title, 'Creep');
+
+      // disambiguateTitleAndArtist with "256k" as title
+      final healed = AudioNameSanitizer.disambiguateTitleAndArtist(
+        title: '256k',
+        artist: 'Radiohead',
+      );
+      expect(healed.title, isNot(equals('256k')));
+    });
   });
 }

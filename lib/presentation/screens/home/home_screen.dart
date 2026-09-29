@@ -6,6 +6,8 @@ import 'package:musify/domain/models/track_sort_option.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
 import 'package:musify/presentation/widgets/track_menu_bottom_sheet.dart';
+import 'package:musify/presentation/widgets/scan_progress_dialog.dart';
+import '../playlist/playlist_detail_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -31,96 +33,93 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // --- Modal Helpers ---
 
-  void _showMoreMenu(BuildContext context, WidgetRef ref) {
+  void _showMoreMenu(BuildContext context, WidgetRef ref) async {
     final theme = Theme.of(context);
-    final scanner = ref.read(localScannerProvider);
     final currentSort = ref.read(localTrackSortOptionProvider);
-
     final isDark = theme.brightness == Brightness.dark;
 
-    showModalBottomSheet(
+    final screenSize = MediaQuery.of(context).size;
+
+    final selected = await showMenu<String>(
       context: context,
-      backgroundColor: isDark ? const Color(0xFF1A1C24) : theme.colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      position: RelativeRect.fromLTRB(
+        screenSize.width - 240,
+        75,
+        16,
+        screenSize.height - 75,
       ),
-      builder: (sheetCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      color: isDark ? const Color(0xFF1E212B) : Colors.white,
+      elevation: 10,
+      items: [
+        PopupMenuItem(
+          value: 'sort',
+          child: Row(
             children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              ListTile(
-                leading: Icon(Icons.sort_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
-                title: Text('Sort Songs', style: TextStyle(color: theme.colorScheme.onSurface)),
-                subtitle: Text('Current: ${currentSort.label}', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  _showSortDialog(context, ref);
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.refresh_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
-                title: Text('Scan Storage for Music & Artworks', style: TextStyle(color: theme.colorScheme.onSurface)),
-                subtitle: Text('Extracts ID3 tags and embedded album covers', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
-                onTap: () async {
-                  Navigator.pop(sheetCtx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Scanning device music...')),
-                  );
-                  final count = await scanner.scanDeviceMusic();
-                  ref.invalidate(localTracksProvider);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Found and indexed $count audio tracks')),
-                    );
-                  }
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.auto_awesome_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
-                title: Text('Load Demo Tracks', style: TextStyle(color: theme.colorScheme.onSurface)),
-                subtitle: Text('Generate offline demo songs with sample art', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
-                onTap: () async {
-                  Navigator.pop(sheetCtx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Generating demo tracks...')),
-                  );
-                  final count = await scanner.seedSampleMusic();
-                  ref.invalidate(localTracksProvider);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Loaded $count demo tracks!')),
-                    );
-                  }
-                },
-              ),
-              ListTile(
-                leading: Icon(
-                  theme.brightness == Brightness.dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                ),
-                title: Text('Toggle Theme Mode', style: TextStyle(color: theme.colorScheme.onSurface)),
-                subtitle: Text(theme.brightness == Brightness.dark ? 'Dark Mode' : 'Light Mode', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  ref.read(themeModeProvider.notifier).toggleTheme();
-                },
-              ),
+              Icon(Icons.sort_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+              const SizedBox(width: 12),
+              Text('Sort (${currentSort.label})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             ],
           ),
         ),
-      ),
+        PopupMenuItem(
+          value: 'scan',
+          child: Row(
+            children: [
+              Icon(Icons.refresh_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+              const SizedBox(width: 12),
+              const Text('Scan Storage', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'demo',
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+              const SizedBox(width: 12),
+              const Text('Load Demo Tracks', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        PopupMenuItem(
+          value: 'theme',
+          child: Row(
+            children: [
+              Icon(
+                isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                size: 20,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
+              const SizedBox(width: 12),
+              Text(isDark ? 'Light Mode' : 'Dark Mode', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      ],
     );
+
+    if (selected == 'sort') {
+      if (context.mounted) _showSortDialog(context, ref);
+    } else if (selected == 'scan') {
+      if (context.mounted) await startScanWithProgressDialog(context, ref);
+    } else if (selected == 'demo') {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Generating demo tracks...')),
+        );
+        final count = await ref.read(localScannerProvider).seedSampleMusic();
+        ref.invalidate(localTracksProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Loaded $count demo tracks!')),
+          );
+        }
+      }
+    } else if (selected == 'theme') {
+      ref.read(themeModeProvider.notifier).toggleTheme();
+    }
   }
 
   void _showSortDialog(BuildContext context, WidgetRef ref) {
@@ -195,86 +194,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _openPlaylistTracks(BuildContext context, WidgetRef ref, Playlist playlist) async {
-    final theme = Theme.of(context);
-    final repo = ref.read(audioRepositoryProvider);
-    final audioHandler = ref.read(audioHandlerProvider);
-    final tracks = await repo.getPlaylistTracks(playlist.id);
-
-    if (context.mounted) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: theme.scaffoldBackgroundColor,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        builder: (sheetCtx) => DraggableScrollableSheet(
-          initialChildSize: 0.75,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (_, scrollController) => Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 10),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(playlist.name, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                        Text('${tracks.length} tracks', style: theme.textTheme.bodySmall),
-                      ],
-                    ),
-                    if (tracks.isNotEmpty)
-                      FilledButton.icon(
-                        icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                        label: const Text('Play All'),
-                        onPressed: () {
-                          audioHandler.playTrackList(tracks, startIndex: 0);
-                          Navigator.pop(sheetCtx);
-                        },
-                      ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: tracks.isEmpty
-                    ? Center(child: Text('No tracks in this playlist yet', style: theme.textTheme.bodyMedium))
-                    : ListView.builder(
-                        controller: scrollController,
-                        itemCount: tracks.length,
-                        itemBuilder: (ctx, idx) => TrackListTile(
-                          track: tracks[idx],
-                          onTap: () {
-                            audioHandler.playTrackList(tracks, startIndex: idx);
-                            Navigator.pop(sheetCtx);
-                          },
-                          onMoreOptions: () {
-                            showTrackOptionsBottomSheet(
-                              context: context,
-                              ref: ref,
-                              track: tracks[idx],
-                            );
-                          },
-                        ),
-                      ),
-              ),
-            ],
-          ),
+  void _openPlaylistTracks(BuildContext context, WidgetRef ref, Playlist playlist) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(
+          title: playlist.name,
+          subtitle: playlist.description,
+          playlist: playlist,
         ),
-      );
-    }
+      ),
+    );
   }
 
   // --- Header & Filters ---
@@ -533,7 +463,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ref.read(audioRepositoryProvider).toggleLike(track);
                 },
                 onMoreOptions: () {
-                  showTrackOptionsBottomSheet(
+                  showTrackDropdownMenu(
                     context: context,
                     ref: ref,
                     track: track,
@@ -626,14 +556,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         icon: const Icon(Icons.refresh_rounded, size: 18),
                                         label: const Text('Scan Device Storage'),
                                         onPressed: () async {
-                                          final scanner = ref.read(localScannerProvider);
-                                          final count = await scanner.scanDeviceMusic();
-                                          ref.invalidate(localTracksProvider);
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text('Imported $count tracks with artwork')),
-                                            );
-                                          }
+                                          await startScanWithProgressDialog(context, ref);
                                         },
                                       ),
                                     ],
@@ -664,7 +587,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     ref.read(audioRepositoryProvider).toggleLike(track);
                                   },
                                   onMoreOptions: () {
-                                    showTrackOptionsBottomSheet(
+                                    showTrackDropdownMenu(
                                       context: context,
                                       ref: ref,
                                       track: track,

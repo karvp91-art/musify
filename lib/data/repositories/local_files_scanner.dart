@@ -10,6 +10,20 @@ import 'package:musify/domain/models/track.dart';
 import '../database/app_database.dart';
 import 'sample_audio_generator.dart';
 
+class ScanProgress {
+  final int filesScanned;
+  final int tracksFound;
+  final String currentDirectory;
+  final bool isCompleted;
+
+  const ScanProgress({
+    required this.filesScanned,
+    required this.tracksFound,
+    required this.currentDirectory,
+    this.isCompleted = false,
+  });
+}
+
 class LocalFilesScanner {
   final AppDatabase _db;
   Directory? _cachedArtworksDir;
@@ -93,14 +107,26 @@ class LocalFilesScanner {
   }
 
   /// Thorough, resilient device scanner that crawls all storage locations without aborting on permission errors
-  Future<int> scanDeviceMusic() async {
+  Future<int> scanDeviceMusic({void Function(ScanProgress progress)? onProgress}) async {
     final hasPermission = await requestPermissions();
     if (!hasPermission && (Platform.isAndroid || Platform.isIOS)) {
+      onProgress?.call(const ScanProgress(
+        filesScanned: 0,
+        tracksFound: 0,
+        currentDirectory: 'Permission denied',
+        isCompleted: true,
+      ));
       return 0;
     }
 
     final Set<String> visitedPaths = {};
     final List<Directory> rootScanDirs = [];
+
+    onProgress?.call(const ScanProgress(
+      filesScanned: 0,
+      tracksFound: 0,
+      currentDirectory: 'Preparing directories...',
+    ));
 
     try {
       if (Platform.isAndroid) {
@@ -159,10 +185,23 @@ class LocalFilesScanner {
     } catch (_) {}
 
     final List<LocalTracksCompanion> collectedTracks = [];
+    int scannedFilesCounter = 0;
 
     for (final dir in rootScanDirs) {
       if (await dir.exists()) {
-        await _crawlDirectorySafe(dir, visitedPaths, collectedTracks);
+        await _crawlDirectorySafe(
+          dir,
+          visitedPaths,
+          collectedTracks,
+          onFileScanned: (count, path) {
+            scannedFilesCounter += count;
+            onProgress?.call(ScanProgress(
+              filesScanned: scannedFilesCounter,
+              tracksFound: collectedTracks.length,
+              currentDirectory: p.basename(path),
+            ));
+          },
+        );
       }
     }
 
@@ -173,6 +212,13 @@ class LocalFilesScanner {
       });
     }
 
+    onProgress?.call(ScanProgress(
+      filesScanned: scannedFilesCounter,
+      tracksFound: collectedTracks.length,
+      currentDirectory: 'Complete',
+      isCompleted: true,
+    ));
+
     return collectedTracks.length;
   }
 
@@ -180,8 +226,9 @@ class LocalFilesScanner {
   Future<void> _crawlDirectorySafe(
     Directory root,
     Set<String> visited,
-    List<LocalTracksCompanion> collectedTracks,
-  ) async {
+    List<LocalTracksCompanion> collectedTracks, {
+    void Function(int count, String currentPath)? onFileScanned,
+  }) async {
     final queue = Queue<Directory>()..add(root);
 
     while (queue.isNotEmpty) {
@@ -206,6 +253,7 @@ class LocalFilesScanner {
               queue.add(entity);
             }
           } else if (entity is File) {
+            onFileScanned?.call(1, currentPath);
             final ext = p.extension(entity.path).toLowerCase();
             if (supportedExtensions.contains(ext)) {
               final track = await _parseFileToTrack(entity);

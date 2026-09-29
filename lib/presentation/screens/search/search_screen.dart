@@ -672,7 +672,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                     ref.read(audioRepositoryProvider).toggleLike(track);
                                   },
                                   onMoreOptions: () {
-                                    showTrackOptionsBottomSheet(
+                                    showTrackDropdownMenu(
                                       context: context,
                                       ref: ref,
                                       track: track,

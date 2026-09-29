@@ -1,3 +1,4 @@
+// ignore_for_file: depend_on_referenced_packages
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:musify/data/repositories/search_history_repository.dart';

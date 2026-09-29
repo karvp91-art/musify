@@ -3,8 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
-import 'package:musify/presentation/widgets/track_list_tile.dart';
-import 'package:musify/presentation/widgets/track_menu_bottom_sheet.dart';
+import '../playlist/playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
@@ -45,157 +44,26 @@ class LibraryScreen extends ConsumerWidget {
     );
   }
 
-  void _openPlaylistTracks(BuildContext context, WidgetRef ref, Playlist playlist) async {
-    final repo = ref.read(audioRepositoryProvider);
-    final audioHandler = ref.read(audioHandlerProvider);
-    final tracks = await repo.getPlaylistTracks(playlist.id);
-
-    if (context.mounted) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  void _openPlaylistTracks(BuildContext context, WidgetRef ref, Playlist playlist) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(
+          title: playlist.name,
+          subtitle: playlist.description,
+          playlist: playlist,
         ),
-        builder: (sheetCtx) => DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (_, scrollController) => Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      playlist.name,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    if (tracks.isNotEmpty)
-                      FilledButton.icon(
-                        icon: const Icon(Icons.play_arrow_rounded),
-                        label: const Text('Play'),
-                        onPressed: () {
-                          audioHandler.playTrackList(tracks, startIndex: 0);
-                          Navigator.pop(sheetCtx);
-                        },
-                      ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: tracks.isEmpty
-                  ? const Center(child: Text('No tracks in this playlist yet'))
-                  : ListView.builder(
-                      controller: scrollController,
-                      itemCount: tracks.length,
-                      itemBuilder: (ctx, idx) => TrackListTile(
-                        track: tracks[idx],
-                        onTap: () {
-                          audioHandler.playTrackList(tracks, startIndex: idx);
-                          Navigator.pop(sheetCtx);
-                        },
-                        onMoreOptions: () {
-                          showTrackOptionsBottomSheet(
-                            context: context,
-                            ref: ref,
-                            track: tracks[idx],
-                          );
-                        },
-                      ),
-                    ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+      ),
+    );
   }
 
   void _openLikedSongs(BuildContext context, WidgetRef ref, List<Track> likedTracks) {
-    final audioHandler = ref.read(audioHandlerProvider);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) => Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Liked Songs (${likedTracks.length})',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  if (likedTracks.isNotEmpty)
-                    FilledButton.icon(
-                      icon: const Icon(Icons.play_arrow_rounded),
-                      label: const Text('Play All'),
-                      onPressed: () {
-                        audioHandler.playTrackList(likedTracks, startIndex: 0);
-                        Navigator.pop(sheetCtx);
-                      },
-                    ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: likedTracks.isEmpty
-                  ? const Center(child: Text('No liked songs yet'))
-                  : ListView.builder(
-                      controller: scrollController,
-                      itemCount: likedTracks.length,
-                      itemBuilder: (ctx, idx) => TrackListTile(
-                        track: likedTracks[idx],
-                        onTap: () {
-                          audioHandler.playTrackList(likedTracks, startIndex: idx);
-                          Navigator.pop(sheetCtx);
-                        },
-                        onLikeToggle: () {
-                          ref.read(audioRepositoryProvider).toggleLike(likedTracks[idx]);
-                        },
-                        onMoreOptions: () {
-                          showTrackOptionsBottomSheet(
-                            context: context,
-                            ref: ref,
-                            track: likedTracks[idx],
-                          );
-                        },
-                      ),
-                    ),
-            ),
-          ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PlaylistDetailScreen(
+          title: 'Liked Songs',
+          isLikedSongs: true,
         ),
       ),
     );
