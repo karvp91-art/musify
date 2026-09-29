@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/constants/app_constants.dart';
 import 'package:musify/domain/models/track.dart';
@@ -111,6 +112,219 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return _searchResults;
   }
 
+  // --- Top Bar matching HomeScreen ---
+  Widget _buildTopHeader(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Left: Borderless Search Icon Button
+          _GlassCircleButton(
+            icon: Icons.search_rounded,
+            onTap: () {
+              if (_searchController.text.isNotEmpty) {
+                HapticFeedback.lightImpact();
+                _searchController.clear();
+                _performSearch('');
+              }
+            },
+          ),
+
+          // Center: Title "Search & Explore"
+          Text(
+            'Search & Explore',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              fontSize: 22,
+              color: theme.colorScheme.onSurface,
+              letterSpacing: -0.5,
+            ),
+          ),
+
+          // Right: Refresh Online Tracks Button (Borderless)
+          _GlassCircleButton(
+            icon: _isSearching ? Icons.hourglass_top_rounded : Icons.refresh_rounded,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              if (_searchController.text.isNotEmpty) {
+                _performSearch(_searchController.text);
+              } else {
+                ref.invalidate(saavnTrendingTracksProvider);
+                ref.invalidate(saavnGenreTracksProvider);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Search Input Bar matching HomeScreen borderless capsule design ---
+  Widget _buildSearchBar(ThemeData theme, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+      child: Container(
+        height: 46,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+          borderRadius: BorderRadius.circular(23),
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: _onSearchChanged,
+          onSubmitted: _performSearch,
+          style: TextStyle(
+            color: isDark ? Colors.white : const Color(0xFF1E2028),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Search songs, artists, genres...',
+            hintStyle: TextStyle(
+              fontSize: 13.5,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+            ),
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: theme.colorScheme.primary,
+            ),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      _performSearch('');
+                    },
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 13),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- Filter Pills matching HomeScreen borderless animated capsule pills ---
+  Widget _buildFilterPills(
+    List<String> items,
+    String selectedItem,
+    ValueChanged<String> onSelected,
+    ThemeData theme,
+    bool isDark,
+  ) {
+    final primaryColor = theme.colorScheme.primary;
+    final unselectedBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
+    final unselectedTextColor = isDark
+        ? Colors.white.withValues(alpha: 0.85)
+        : const Color(0xFF1E2028);
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      child: Row(
+        children: items.map((item) {
+          final isSelected = item == selectedItem;
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                onSelected(item);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? primaryColor : unselectedBg,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Text(
+                  item,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    fontSize: 13.5,
+                    color: isSelected ? Colors.black : unselectedTextColor,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // --- Popular Searches Tags matching borderless rounded pills ---
+  Widget _buildPopularTags(ThemeData theme, bool isDark) {
+    final chipBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
+    final textColor = isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'POPULAR SEARCHES & ARTISTS',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _popularTags.map((tag) {
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  _searchController.text = tag;
+                  _performSearch(tag);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: chipBg,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.trending_up_rounded,
+                        size: 15,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        tag,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -124,345 +338,282 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         : ref.watch(saavnGenreTracksProvider(_selectedGenre.toLowerCase()));
 
     final isDark = theme.brightness == Brightness.dark;
+    final primaryColor = theme.colorScheme.primary;
     final filteredResults = _getFilteredResults();
 
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
-      appBar: AppBar(
-        title: Text(
-          'Search & Explore',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-            fontSize: 22,
-            letterSpacing: -0.5,
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Search Input Bar (matching reference borderless capsule design)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              height: 46,
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
-                borderRadius: BorderRadius.circular(23),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Top Header: (🔍) Search & Explore (⟳)
+            _buildTopHeader(theme),
+
+            // Search Input Bar (borderless capsule design)
+            _buildSearchBar(theme, isDark),
+
+            // Filter Chips (when active search results exist)
+            if (_searchResults.isNotEmpty)
+              _buildFilterPills(
+                _filters,
+                _selectedFilter,
+                (val) => setState(() => _selectedFilter = val),
+                theme,
+                isDark,
               ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                onSubmitted: _performSearch,
-                style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Search songs, artists, genres...',
-                  hintStyle: TextStyle(
-                    fontSize: 13.5,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                  ),
-                  prefixIcon: Icon(Icons.search_rounded, size: 20, color: theme.colorScheme.primary),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(
-                            Icons.close_rounded,
-                            size: 18,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                          ),
-                          onPressed: () {
-                            _searchController.clear();
-                            _performSearch('');
+
+            // Results / Suggestions / Trending High-Fidelity
+            Expanded(
+              child: _isSearching
+                  ? const Center(child: CircularProgressIndicator())
+                  : _searchController.text.isEmpty
+                      ? RefreshIndicator(
+                          onRefresh: () async {
+                            ref.invalidate(saavnTrendingTracksProvider);
+                            ref.invalidate(saavnGenreTracksProvider);
                           },
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
-                ),
-              ),
-            ),
-          ),
-
-          // Filter Chips (when active search results exist)
-          if (_searchResults.isNotEmpty)
-            SizedBox(
-              height: 40,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _filters.length,
-                itemBuilder: (context, index) {
-                  final filter = _filters[index];
-                  final isSelected = filter == _selectedFilter;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(filter),
-                      selected: isSelected,
-                      showCheckmark: false,
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() {
-                            _selectedFilter = filter;
-                          });
-                        }
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
-
-          // Results / Status / Suggestions / Trending High-Fidelity
-          Expanded(
-            child: _isSearching
-                ? const Center(child: CircularProgressIndicator())
-                : _searchController.text.isEmpty
-                    ? RefreshIndicator(
-                        onRefresh: () async {
-                          ref.invalidate(saavnTrendingTracksProvider);
-                          ref.invalidate(saavnGenreTracksProvider);
-                        },
-                        child: ListView(
-                          physics: const ClampingScrollPhysics(),
-                          padding: const EdgeInsets.only(bottom: 160),
-                          children: [
-                            // JioSaavn Discovery Header
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Trending High-Fidelity',
-                                        style: theme.textTheme.headlineSmall,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '320kbps Direct Stream',
-                                        style: theme.textTheme.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primary.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
+                          child: ListView(
+                            physics: const ClampingScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 160),
+                            children: [
+                              // JioSaavn Discovery Header
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Icon(
-                                          Icons.graphic_eq_rounded,
-                                          size: 13,
-                                          color: theme.colorScheme.primary,
-                                        ),
-                                        const SizedBox(width: 4),
                                         Text(
-                                          '320 KBPS',
+                                          'Trending High-Fidelity',
+                                          style: theme.textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 18,
+                                            color: theme.colorScheme.onSurface,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '320kbps Direct Stream',
                                           style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: theme.colorScheme.primary,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Genre Pills
-                            SizedBox(
-                              height: 40,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                itemCount: _genres.length,
-                                itemBuilder: (context, index) {
-                                  final genre = _genres[index];
-                                  final isSelected = genre == _selectedGenre;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: ChoiceChip(
-                                      label: Text(genre),
-                                      selected: isSelected,
-                                      showCheckmark: false,
-                                      onSelected: (selected) {
-                                        if (selected) {
-                                          setState(() {
-                                            _selectedGenre = genre;
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            // JioSaavn Tracks Carousel
-                            SizedBox(
-                              height: 200,
-                              child: saavnAsync.when(
-                                data: (saavnTracks) {
-                                  if (saavnTracks.isEmpty) {
-                                    return Center(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.wifi_off_rounded,
-                                              size: 20,
-                                              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Offline or no tracks found for $_selectedGenre',
-                                              style: theme.textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: primaryColor.withValues(alpha: 0.16),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                    );
-                                  }
-
-                                  return ListView.builder(
-                                    scrollDirection: Axis.horizontal,
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    itemCount: saavnTracks.length,
-                                    itemBuilder: (context, index) {
-                                      final track = saavnTracks[index];
-                                      return CompactCard(
-                                        title: track.title,
-                                        subtitle: track.artistName,
-                                        imageUrl: track.artworkUrl,
-                                        onTap: () {
-                                          audioHandler.playTrackList(saavnTracks, startIndex: index);
-                                        },
-                                      );
-                                    },
-                                  );
-                                },
-                                loading: () => const Center(
-                                  child: SizedBox(
-                                    width: 32,
-                                    height: 32,
-                                    child: CircularProgressIndicator(strokeWidth: 2.5),
-                                  ),
-                                ),
-                                error: (err, _) => Center(
-                                  child: Text(
-                                    'Unable to reach online catalog',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.graphic_eq_rounded,
+                                            size: 14,
+                                            color: primaryColor,
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            '320 KBPS',
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w800,
+                                              color: primaryColor,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
 
-                            const SizedBox(height: 28),
+                              // Genre Pills (matching HomeScreen animated capsule pills)
+                              _buildFilterPills(
+                                _genres,
+                                _selectedGenre,
+                                (val) => setState(() => _selectedGenre = val),
+                                theme,
+                                isDark,
+                              ),
+                              const SizedBox(height: 12),
 
-                            // Popular Searches Section
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'POPULAR SEARCHES & ARTISTS',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 1.2,
-                                      color: theme.colorScheme.primary,
+                              // JioSaavn Tracks Horizontal Carousel
+                              SizedBox(
+                                height: 200,
+                                child: saavnAsync.when(
+                                  data: (saavnTracks) {
+                                    if (saavnTracks.isEmpty) {
+                                      return Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.wifi_off_rounded,
+                                                size: 20,
+                                                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                'Offline or no tracks found for $_selectedGenre',
+                                                style: theme.textTheme.bodySmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }
+
+                                    return ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                                      itemCount: saavnTracks.length,
+                                      itemBuilder: (context, index) {
+                                        final track = saavnTracks[index];
+                                        return CompactCard(
+                                          title: track.title,
+                                          subtitle: track.artistName,
+                                          imageUrl: track.artworkUrl,
+                                          onTap: () {
+                                            audioHandler.playTrackList(saavnTracks, startIndex: index);
+                                          },
+                                        );
+                                      },
+                                    );
+                                  },
+                                  loading: () => const Center(
+                                    child: SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: CircularProgressIndicator(strokeWidth: 2.5),
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: _popularTags.map((tag) {
-                                      return ActionChip(
-                                        label: Text(tag),
-                                        avatar: const Icon(Icons.music_note, size: 16),
-                                        onPressed: () {
-                                          _searchController.text = tag;
-                                          _performSearch(tag);
-                                        },
-                                      );
-                                    }).toList(),
+                                  error: (err, _) => Center(
+                                    child: Text(
+                                      'Unable to reach online catalog',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : filteredResults.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.sentiment_dissatisfied_rounded,
-                                    size: 48,
-                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'No results found for "${_searchController.text}"',
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Try another artist, genre, or keyword',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            physics: const ClampingScrollPhysics(),
-                            padding: const EdgeInsets.only(bottom: 160),
-                            itemExtent: 76.0,
-                            itemCount: filteredResults.length,
-                            itemBuilder: (context, index) {
-                              final track = filteredResults[index];
-                              final isCurrent = currentPlayingTrackId == track.id;
-                              final isTilePlaying = isCurrent && isPlaybackPlaying;
 
-                              return TrackListTile(
-                                key: ValueKey('search_${track.id}'),
-                                track: track,
-                                isCurrent: isCurrent,
-                                isPlaying: isTilePlaying,
-                                onTap: () {
-                                  audioHandler.playTrackList(filteredResults, startIndex: index);
-                                },
-                                onLikeToggle: () {
-                                  ref.read(audioRepositoryProvider).toggleLike(track);
-                                },
-                                onMoreOptions: () {
-                                  showTrackOptionsBottomSheet(
-                                    context: context,
-                                    ref: ref,
-                                    track: track,
-                                  );
-                                },
-                              );
-                            },
+                              const SizedBox(height: 28),
+
+                              // Popular Searches Section
+                              _buildPopularTags(theme, isDark),
+                            ],
                           ),
-          ),
-        ],
+                        )
+                      : filteredResults.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.sentiment_dissatisfied_rounded,
+                                      size: 48,
+                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'No results found for "${_searchController.text}"',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Try another artist, genre, or keyword',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              physics: const ClampingScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 160),
+                              itemExtent: 76.0,
+                              itemCount: filteredResults.length,
+                              itemBuilder: (context, index) {
+                                final track = filteredResults[index];
+                                final isCurrent = currentPlayingTrackId == track.id;
+                                final isTilePlaying = isCurrent && isPlaybackPlaying;
+
+                                return TrackListTile(
+                                  key: ValueKey('search_${track.id}'),
+                                  track: track,
+                                  isCurrent: isCurrent,
+                                  isPlaying: isTilePlaying,
+                                  onTap: () {
+                                    audioHandler.playTrackList(filteredResults, startIndex: index);
+                                  },
+                                  onLikeToggle: () {
+                                    ref.read(audioRepositoryProvider).toggleLike(track);
+                                  },
+                                  onMoreOptions: () {
+                                    showTrackOptionsBottomSheet(
+                                      context: context,
+                                      ref: ref,
+                                      track: track,
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Borderless circular button matching HomeScreen header action style
+class _GlassCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _GlassCircleButton({
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final buttonBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
+    final iconColor = isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: buttonBg,
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: iconColor,
+        ),
       ),
     );
   }

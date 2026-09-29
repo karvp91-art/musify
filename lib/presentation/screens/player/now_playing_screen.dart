@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -118,9 +119,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     Color primaryColor,
   ) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    // Responsive: enlarged circular vinyl record artwork
-    final artSize = screenWidth * (screenHeight > 700 ? 0.70 : 0.62);
 
     return Column(
       children: [
@@ -167,149 +165,165 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
           ),
         ),
 
-        // 2. Expandable content area
+        // 2. Expandable content area with responsive sizing to avoid RenderFlex overflow
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              children: [
-                const Spacer(flex: 1),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final availableHeight = constraints.maxHeight;
+                final showLyrics = availableHeight > 540;
+                final lyricsHeight = showLyrics ? 40.0 : 0.0;
+                final bottomLift = (availableHeight * 0.04).clamp(14.0, 30.0);
 
-                // 3. Large Circular Album Artwork spinning clockwise like a vinyl record
-                GestureDetector(
-                  onHorizontalDragEnd: (details) {
-                    if (details.primaryVelocity != null) {
-                      if (details.primaryVelocity! < -250) {
-                        HapticFeedback.lightImpact();
-                        audioHandler.skipToNext();
-                      } else if (details.primaryVelocity! > 250) {
-                        HapticFeedback.lightImpact();
-                        audioHandler.skipToPrevious();
-                      }
-                    }
-                  },
-                  child: Container(
-                    width: artSize,
-                    height: artSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: primaryColor.withValues(alpha: 0.22),
-                          blurRadius: 48,
-                          spreadRadius: 6,
+                // Reserve fixed vertical space for controls, title, seekbar, margins
+                final reservedHeight = 50.0 + lyricsHeight + 42.0 + 72.0 + bottomLift + 36.0;
+                final maxArtFromH = (availableHeight - reservedHeight).clamp(130.0, 260.0);
+                final maxArtFromW = screenWidth * 0.65;
+                final artSize = math.min(maxArtFromH, maxArtFromW);
+
+                return Column(
+                  children: [
+                    const Spacer(flex: 1),
+
+                    // 3. Large Circular Album Artwork spinning clockwise like a vinyl record
+                    GestureDetector(
+                      onHorizontalDragEnd: (details) {
+                        if (details.primaryVelocity != null) {
+                          if (details.primaryVelocity! < -250) {
+                            HapticFeedback.lightImpact();
+                            audioHandler.skipToNext();
+                          } else if (details.primaryVelocity! > 250) {
+                            HapticFeedback.lightImpact();
+                            audioHandler.skipToPrevious();
+                          }
+                        }
+                      },
+                      child: Container(
+                        width: artSize,
+                        height: artSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: primaryColor.withValues(alpha: 0.22),
+                              blurRadius: 48,
+                              spreadRadius: 6,
+                            ),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              blurRadius: 32,
+                              offset: const Offset(0, 12),
+                            ),
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              blurRadius: 2,
+                              spreadRadius: 1,
+                            ),
+                          ],
                         ),
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          blurRadius: 32,
-                          offset: const Offset(0, 12),
-                        ),
-                        BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          blurRadius: 2,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: RepaintBoundary(
-                      child: RotationTransition(
-                        turns: _recordSpinController,
-                        child: TrackArtwork(
-                          artworkUrl: track.artworkUrl,
-                          size: artSize,
-                          isCircle: true,
-                          ambientGlow: false,
+                        child: RepaintBoundary(
+                          child: RotationTransition(
+                            turns: _recordSpinController,
+                            child: TrackArtwork(
+                              artworkUrl: track.artworkUrl,
+                              size: artSize,
+                              isCircle: true,
+                              ambientGlow: false,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
 
-                const Spacer(flex: 1),
+                    const Spacer(flex: 1),
 
-                // 4. Track Title & Artist (Clean Modern Typography)
-                Text(
-                  track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 22,
-                    color: theme.colorScheme.onSurface,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  track.artistName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // 5. Scrollable Lyrics Section (matching reference)
-                SizedBox(
-                  height: 56,
-                  child: ShaderMask(
-                    shaderCallback: (Rect bounds) {
-                      return LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: const [
-                          Colors.transparent,
-                          Colors.white,
-                          Colors.white,
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.15, 0.85, 1.0],
-                      ).createShader(bounds);
-                    },
-                    blendMode: BlendMode.dstIn,
-                    child: ListView(
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: EdgeInsets.zero,
-                      children: _placeholderLyrics.map((line) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            line.text,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: line.isHighlighted ? 15.0 : 13.0,
-                              fontWeight: line.isHighlighted ? FontWeight.w700 : FontWeight.w400,
-                              color: line.isHighlighted
-                                  ? theme.colorScheme.onSurface.withValues(alpha: 0.9)
-                                  : theme.colorScheme.onSurface.withValues(alpha: 0.35),
-                              height: 1.5,
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                    // 4. Track Title & Artist (Clean Modern Typography)
+                    Text(
+                      track.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                        color: theme.colorScheme.onSurface,
+                        letterSpacing: -0.5,
+                      ),
                     ),
-                  ),
-                ),
+                    const SizedBox(height: 4),
+                    Text(
+                      track.artistName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
 
-                const Spacer(flex: 2),
+                    if (showLyrics) ...[
+                      const SizedBox(height: 8),
+                      // 5. Scrollable Lyrics Section (matching reference)
+                      SizedBox(
+                        height: lyricsHeight,
+                        child: ShaderMask(
+                          shaderCallback: (Rect bounds) {
+                            return LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: const [
+                                Colors.transparent,
+                                Colors.white,
+                                Colors.white,
+                                Colors.transparent,
+                              ],
+                              stops: const [0.0, 0.15, 0.85, 1.0],
+                            ).createShader(bounds);
+                          },
+                          blendMode: BlendMode.dstIn,
+                          child: ListView(
+                            physics: const NeverScrollableScrollPhysics(),
+                            padding: EdgeInsets.zero,
+                            children: _placeholderLyrics.map((line) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 1.5),
+                                child: Text(
+                                  line.text,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: line.isHighlighted ? 14.0 : 12.5,
+                                    fontWeight: line.isHighlighted ? FontWeight.w700 : FontWeight.w400,
+                                    color: line.isHighlighted
+                                        ? theme.colorScheme.onSurface.withValues(alpha: 0.9)
+                                        : theme.colorScheme.onSurface.withValues(alpha: 0.35),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ],
 
-                // 6. Isolated High-Performance Seek Bar Consumer
-                const _IsolatedPlayerSeekBar(),
+                    const Spacer(flex: 1),
 
-                const SizedBox(height: 10),
+                    // 6. Isolated High-Performance Seek Bar Consumer
+                    const _IsolatedPlayerSeekBar(),
 
-                // 7. Playback Controls Row matching reference UI
-                _buildPlaybackControls(isPlaying, audioHandler, primaryColor),
+                    const SizedBox(height: 8),
 
-                // Significantly lifted bottom clearance so controls are comfortably above gesture bar
-                const SizedBox(height: 52),
-              ],
+                    // 7. Playback Controls Row matching reference UI
+                    _buildPlaybackControls(isPlaying, audioHandler, primaryColor),
+
+                    // Elevated bottom clearance comfortably above device navigation bar
+                    SizedBox(height: bottomLift),
+                  ],
+                );
+              },
             ),
           ),
         ),
