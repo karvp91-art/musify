@@ -49,11 +49,11 @@ class DownloadDynamicIsland extends ConsumerWidget {
                     padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
                     constraints: const BoxConstraints(maxWidth: 390, minHeight: 56),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF161822) : Colors.white,
+                      color: isDark ? Colors.black : Colors.white,
                       borderRadius: BorderRadius.circular(28),
                       border: Border.all(
                         color: isDark
-                            ? Colors.white.withValues(alpha: 0.08)
+                            ? const Color(0xFF262A36)
                             : const Color(0xFFEFEFEF),
                         width: 1.0,
                       ),

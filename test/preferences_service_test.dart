@@ -6,7 +6,6 @@ import 'package:musify/domain/models/playback_state.dart';
 import 'package:musify/domain/models/track_sort_option.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/services/audio_player_handler.dart';
-import 'package:musify/services/preferences_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

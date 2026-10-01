@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/domain/models/lyrics.dart';
+import 'package:musify/domain/models/playback_state.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/seek_bar.dart';
@@ -81,7 +82,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
 
     if (track == null) {
       return Scaffold(
-        backgroundColor: isDark ? const Color(0xFF0A0B0E) : Colors.white,
+        backgroundColor: isDark ? Colors.black : Colors.white,
         body: Center(child: Text('No track playing', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)))),
       );
     }
@@ -97,7 +98,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
         }
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF0A0B0E) : Colors.white,
+        backgroundColor: isDark ? Colors.black : Colors.white,
         body: Stack(
           children: [
             // Blurred Album Artwork Background with smooth bottom fade (matching reference UI)
@@ -299,7 +300,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                                   height: artSize * 0.16,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: isDark ? const Color(0xFF101218) : Colors.white,
+                                    color: isDark ? Colors.black : Colors.white,
                                     border: Border.all(
                                       color: primaryColor.withValues(alpha: 0.7),
                                       width: 2.0,
@@ -422,20 +423,59 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // Shuffle Toggle Consumer
+        // Three-Way Playback Mode Toggle: Shuffle ➔ Repeat All ➔ Repeat One
         Consumer(
           builder: (context, ref, _) {
             final isShuffle = ref.watch(playerStateStreamProvider.select((s) => s.value?.isShuffleEnabled ?? false));
-            return IconButton(
-              icon: Icon(
-                Icons.shuffle_rounded,
-                size: 22,
-                color: isShuffle ? primaryColor : inactiveControlColor,
+            final repeatMode = ref.watch(playerStateStreamProvider.select((s) => s.value?.repeatMode ?? AppRepeatMode.off));
+
+            final IconData modeIcon;
+            final String modeLabel;
+            final bool isActive;
+
+            if (isShuffle) {
+              modeIcon = Icons.shuffle_rounded;
+              modeLabel = 'Shuffle';
+              isActive = true;
+            } else if (repeatMode == AppRepeatMode.one) {
+              modeIcon = Icons.repeat_one_rounded;
+              modeLabel = 'Repeat One';
+              isActive = true;
+            } else if (repeatMode == AppRepeatMode.all) {
+              modeIcon = Icons.repeat_rounded;
+              modeLabel = 'Repeat All';
+              isActive = true;
+            } else {
+              modeIcon = Icons.repeat_rounded;
+              modeLabel = 'Repeat Off';
+              isActive = false;
+            }
+
+            return Tooltip(
+              message: modeLabel,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  audioHandler.cyclePlaybackMode();
+                },
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                      child: Icon(
+                        modeIcon,
+                        key: ValueKey(modeLabel),
+                        size: 22,
+                        color: isActive ? primaryColor : inactiveControlColor,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              onPressed: () {
-                HapticFeedback.selectionClick();
-                audioHandler.toggleShuffle();
-              },
             );
           },
         ),
@@ -511,19 +551,28 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
         ),
 
         // Queue Toggle
-        IconButton(
-          tooltip: 'Playing Queue',
-          icon: Icon(
-            _showQueue ? Icons.queue_music_rounded : Icons.queue_music_outlined,
-            size: 22,
-            color: _showQueue ? primaryColor : inactiveControlColor,
+        Tooltip(
+          message: 'Playing Queue',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _showQueue = !_showQueue;
+              });
+            },
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: Center(
+                child: Icon(
+                  _showQueue ? Icons.queue_music_rounded : Icons.queue_music_outlined,
+                  size: 22,
+                  color: _showQueue ? primaryColor : inactiveControlColor,
+                ),
+              ),
+            ),
           ),
-          onPressed: () {
-            HapticFeedback.selectionClick();
-            setState(() {
-              _showQueue = !_showQueue;
-            });
-          },
         ),
       ],
     );
@@ -567,13 +616,21 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                         },
                         child: const Text('Clear'),
                       ),
-                      IconButton(
-                        icon: Icon(Icons.close_rounded, color: theme.colorScheme.onSurface),
-                        onPressed: () {
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
                           setState(() {
                             _showQueue = false;
                           });
                         },
+                        child: SizedBox(
+                          width: 38,
+                          height: 38,
+                          child: Center(
+                            child: Icon(Icons.close_rounded, color: theme.colorScheme.onSurface),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -612,12 +669,19 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.close_rounded, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
-                          onPressed: () {
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
                             HapticFeedback.lightImpact();
                             audioHandler.removeQueueItemAt(index);
                           },
+                          child: SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: Center(
+                              child: Icon(Icons.close_rounded, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                            ),
+                          ),
                         ),
                         Icon(Icons.drag_handle_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.45)),
                       ],
@@ -788,8 +852,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
               begin: Alignment.bottomCenter,
               end: Alignment.topCenter,
               colors: [
-                (isDark ? const Color(0xFF0A0B0E) : Colors.white).withValues(alpha: 0.95),
-                (isDark ? const Color(0xFF0A0B0E) : Colors.white).withValues(alpha: 0.0),
+                (isDark ? Colors.black : Colors.white).withValues(alpha: 0.95),
+                (isDark ? Colors.black : Colors.white).withValues(alpha: 0.0),
               ],
             ),
           ),
@@ -801,12 +865,19 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.skip_previous_rounded, size: 28),
-                    onPressed: () {
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
                       HapticFeedback.lightImpact();
                       audioHandler.skipToPrevious();
                     },
+                    child: const SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Center(
+                        child: Icon(Icons.skip_previous_rounded, size: 28),
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 16),
                   GestureDetector(
@@ -843,12 +914,19 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                     ),
                   ),
                   const SizedBox(width: 16),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next_rounded, size: 28),
-                    onPressed: () {
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
                       HapticFeedback.lightImpact();
                       audioHandler.skipToNext();
                     },
+                    child: const SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Center(
+                        child: Icon(Icons.skip_next_rounded, size: 28),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1363,7 +1441,7 @@ class _AmbientArtworkBackground extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
-    final baseColor = isDark ? const Color(0xFF0A0B0E) : Colors.white;
+    final baseColor = isDark ? Colors.black : Colors.white;
 
     // Use a tiny source image (64px) — blur at sigma 50 obliterates all detail anyway,
     // so rendering a large image just to blur it is wasted GPU work.
@@ -1437,9 +1515,9 @@ class _AmbientArtworkBackground extends StatelessWidget {
                             Colors.black.withValues(alpha: 0.15),
                             Colors.black.withValues(alpha: 0.20),
                             Colors.black.withValues(alpha: 0.45),
-                            const Color(0xFF0A0B0E).withValues(alpha: 0.88),
-                            const Color(0xFF0A0B0E),
-                            const Color(0xFF0A0B0E),
+                            Colors.black.withValues(alpha: 0.88),
+                            Colors.black,
+                            Colors.black,
                           ]
                         : [
                             Colors.white.withValues(alpha: 0.72),

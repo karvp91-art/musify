@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/track.dart';
@@ -70,11 +71,11 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     final currentTabIndex = ref.watch(currentTabIndexProvider);
     final activeIndex = currentTabIndex.clamp(0, _screens.length - 1);
+    final currentTrack = ref.watch(currentPlayingTrackProvider);
+    final hasTrack = currentTrack != null;
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    final isKeyboardUp = keyboardHeight > 0;
     final isMultiSelection = ref.watch(isMultiSelectionModeProvider);
 
     // Pre-cache ambient blur image (64px) when track changes so NowPlaying opens instantly without decode delay
@@ -136,241 +137,117 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
 
         SystemNavigator.pop();
       },
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: isDark ? Colors.black : Colors.white,
-        body: Stack(
-          children: [
-            // 1. Main Body Screens with IndexedStack for instant state preservation
-            IndexedStack(
-              index: activeIndex,
-              children: _screens,
-            ),
-
-            // 1.5. Dynamic Island Download Status Capsule
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              left: 0,
-              right: 0,
-              child: const DownloadDynamicIsland(),
-            ),
-
-            // 2. Docked Bottom Shell: Mini-Player & Custom Bottom Navigation Bar
-            // Bottom navigation bar collapses smoothly when keyboard is open; MiniPlayer remains visible and docked above keyboard!
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              left: 0,
-              right: 0,
-              bottom: isMultiSelection ? -180 : (isKeyboardUp ? keyboardHeight : 0),
-              child: AnimatedBuilder(
-                animation: _expandAnimation,
-                builder: (context, child) {
-                  final isFullyExpanded = _expandAnimation.value == 1.0;
-                  // Offstage and suspend tickers in bottom shell when full player is 100% open
-                  return Offstage(
-                    offstage: isFullyExpanded,
-                    child: TickerMode(
-                      enabled: !isFullyExpanded,
-                      child: IgnorePointer(
-                        ignoring: _expandAnimation.value > 0.05,
-                        child: child,
-                      ),
-                    ),
-                  );
-                },
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    MiniPlayer(
-                      onExpand: _expandPlayer,
-                    ),
-                    ClipRect(
-                      child: AnimatedSize(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOutCubic,
-                        child: isKeyboardUp
-                            ? const SizedBox.shrink()
-                            : _CustomBottomNavBar(
-                                activeIndex: activeIndex,
-                                onTap: (index) {
-                                  HapticFeedback.selectionClick();
-                                  ref.read(currentTabIndexProvider.notifier).setIndex(index);
-                                },
-                              ),
-                      ),
-                    ),
-                  ],
+      child: Stack(
+        children: [
+          // 1. Native iOS 26 Liquid Glass Navigation Layer with GlassScaffold & GlassTabBar.bottom
+          AnimatedBuilder(
+            animation: _expandAnimation,
+            builder: (context, child) {
+              final isFullyExpanded = _expandAnimation.value == 1.0;
+              // Offstage and suspend tickers in background navigation layer when full player is 100% open
+              return Offstage(
+                offstage: isFullyExpanded,
+                child: TickerMode(
+                  enabled: !isFullyExpanded,
+                  child: IgnorePointer(
+                    ignoring: _expandAnimation.value > 0.05,
+                    child: child,
+                  ),
                 ),
+              );
+            },
+            child: GlassScaffold(
+              resizeToAvoidBottomInset: false,
+              backgroundColor: isDark ? Colors.black : Colors.white,
+              bottomBar: isMultiSelection
+                  ? null
+                  : GlassTabBar.bottom(
+                      tabs: const [
+                        GlassTab(
+                          icon: Icon(Icons.headphones_outlined),
+                          activeIcon: Icon(Icons.headphones_rounded),
+                          label: 'My music',
+                          glowColor: AppColors.neonLime,
+                        ),
+                        GlassTab(
+                          icon: Icon(Icons.play_circle_outline_rounded),
+                          activeIcon: Icon(Icons.play_circle_fill_rounded),
+                          label: 'Stream',
+                          glowColor: AppColors.neonLime,
+                        ),
+                      ],
+                      selectedIndex: activeIndex,
+                      onTabSelected: (index) {
+                        HapticFeedback.selectionClick();
+                        ref.read(currentTabIndexProvider.notifier).setIndex(index);
+                      },
+                      indicatorColor: AppColors.neonLime,
+                      selectedIconColor: const Color(0xFF111827),
+                      selectedLabelColor: const Color(0xFF111827),
+                      unselectedIconColor: isDark
+                          ? Colors.white.withValues(alpha: 0.65)
+                          : const Color(0xFF555B6E),
+                      unselectedLabelColor: isDark
+                          ? Colors.white.withValues(alpha: 0.65)
+                          : const Color(0xFF555B6E),
+                      bottomAccessory: MiniPlayer(
+                        onExpand: _expandPlayer,
+                      ),
+                      bottomAccessoryEnabled: hasTrack,
+                      bottomAccessoryHeight: 80,
+                    ),
+              body: Stack(
+                children: [
+                  // 1. Main Body Screens with IndexedStack for instant state preservation
+                  IndexedStack(
+                    index: activeIndex,
+                    children: _screens,
+                  ),
+
+                  // 2. Dynamic Island Download Status Capsule
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 8,
+                    left: 0,
+                    right: 0,
+                    child: const DownloadDynamicIsland(),
+                  ),
+                ],
               ),
             ),
+          ),
 
-            // 3. Expanding Full Now Playing Screen Overlay
-            // Sits at the very top of the Stack, sliding up smoothly with hardware-accelerated SlideTransition.
-            // Using a static pre-mounted child avoids recreating or rebuilding NowPlayingScreen on every animation frame,
-            // while Offstage + TickerMode guarantee 0 GPU / 0 animation CPU while the player is collapsed.
-            AnimatedBuilder(
-              animation: _expandAnimation,
-              builder: (context, child) {
-                final isCollapsed = _expandAnimation.value == 0.0;
+          // 2. Expanding Full Now Playing Screen Overlay
+          // Sits at the very top of the Stack, sliding up smoothly with hardware-accelerated SlideTransition.
+          // Using a static pre-mounted child avoids recreating or rebuilding NowPlayingScreen on every animation frame,
+          // while Offstage + TickerMode guarantee 0 GPU / 0 animation CPU while the player is collapsed.
+          AnimatedBuilder(
+            animation: _expandAnimation,
+            builder: (context, child) {
+              final isCollapsed = _expandAnimation.value == 0.0;
 
-                return Offstage(
-                  offstage: isCollapsed,
-                  child: TickerMode(
-                    enabled: !isCollapsed,
-                    child: IgnorePointer(
-                      ignoring: isCollapsed,
-                      child: SlideTransition(
-                        position: _slideAnimation,
-                        child: child,
-                      ),
+              return Offstage(
+                offstage: isCollapsed,
+                child: TickerMode(
+                  enabled: !isCollapsed,
+                  child: IgnorePointer(
+                    ignoring: isCollapsed,
+                    child: SlideTransition(
+                      position: _slideAnimation,
+                      child: child,
                     ),
                   ),
-                );
-              },
-              child: RepaintBoundary(
-                child: NowPlayingScreen(
-                  onMinimize: _minimizePlayer,
                 ),
+              );
+            },
+            child: RepaintBoundary(
+              child: NowPlayingScreen(
+                onMinimize: _minimizePlayer,
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Sleek modern bottom navigation bar matching the app's aesthetic
-class _CustomBottomNavBar extends StatelessWidget {
-  final int activeIndex;
-  final ValueChanged<int> onTap;
-
-  const _CustomBottomNavBar({
-    required this.activeIndex,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = theme.colorScheme.primary;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0D0E13) : Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFECEEF2),
-            width: 1.0,
           ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 58,
-          child: Row(
-            children: [
-              _NavBarItem(
-                label: 'My music',
-                activeIcon: Icons.headphones_rounded,
-                inactiveIcon: Icons.headphones_outlined,
-                isSelected: activeIndex == 0,
-                activeColor: primaryColor,
-                onTap: () => onTap(0),
-              ),
-              _NavBarItem(
-                label: 'Stream',
-                activeIcon: Icons.play_circle_fill_rounded,
-                inactiveIcon: Icons.play_circle_outline_rounded,
-                isSelected: activeIndex == 1,
-                activeColor: primaryColor,
-                onTap: () => onTap(1),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
 }
 
-class _NavBarItem extends StatelessWidget {
-  final String label;
-  final IconData activeIcon;
-  final IconData inactiveIcon;
-  final bool isSelected;
-  final Color activeColor;
-  final VoidCallback onTap;
-
-  const _NavBarItem({
-    required this.label,
-    required this.activeIcon,
-    required this.inactiveIcon,
-    required this.isSelected,
-    required this.activeColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final inactiveColor = isDark
-        ? Colors.white.withValues(alpha: 0.42)
-        : const Color(0xFF7E8292);
-
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              padding: EdgeInsets.symmetric(
-                horizontal: isSelected ? 16 : 8,
-                vertical: 2.5,
-              ),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? (isDark
-                        ? activeColor.withValues(alpha: 0.16)
-                        : AppColors.neonLime)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                isSelected ? activeIcon : inactiveIcon,
-                size: 21,
-                color: isSelected
-                    ? (isDark ? activeColor : Colors.black)
-                    : inactiveColor,
-              ),
-            ),
-            const SizedBox(height: 2),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                color: isSelected
-                    ? (isDark ? activeColor : const Color(0xFF121316))
-                    : inactiveColor,
-                letterSpacing: -0.2,
-              ),
-              child: Text(label),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

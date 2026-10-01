@@ -79,8 +79,14 @@ class _AddToPlaylistBottomSheetState extends ConsumerState<AddToPlaylistBottomSh
     showDialog(
       context: parentContext,
       builder: (createCtx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1A1C28) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
         title: Text(
           'New Playlist',
           style: theme.textTheme.titleLarge?.copyWith(
@@ -286,8 +292,12 @@ class _AddToPlaylistBottomSheetState extends ConsumerState<AddToPlaylistBottomSh
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161822) : Colors.white,
+        color: isDark ? Colors.black : Colors.white,
         borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.14),

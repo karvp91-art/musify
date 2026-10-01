@@ -21,8 +21,14 @@ class LibraryScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1E212B) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
         title: const Text('New Playlist', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -280,8 +286,14 @@ class _PlaylistListTile extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1E212B) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
         title: const Text('Edit Playlist', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -395,8 +407,14 @@ class _PlaylistListTile extends ConsumerWidget {
         overflow: TextOverflow.ellipsis,
       ),
       trailing: PopupMenuButton<String>(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: isDark ? const Color(0xFF1E212B) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
+        color: isDark ? Colors.black : Colors.white,
         icon: Icon(
           Icons.more_vert_rounded,
           size: 20,

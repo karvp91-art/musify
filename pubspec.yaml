@@ -50,6 +50,8 @@ dependencies:
   google_fonts: ^6.2.1
   toastification: ^3.2.0
   shared_preferences: ^2.5.5
+  awesome_notifications: ^0.12.1
+  liquid_glass_widgets: 1.8.1
 
 dev_dependencies:
   flutter_test:

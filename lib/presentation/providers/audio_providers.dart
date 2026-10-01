@@ -231,8 +231,8 @@ class ThemeModeNotifier extends Notifier<ThemeMode> with WidgetsBindingObserver 
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (lifecycleState == AppLifecycleState.resumed) {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
       _checkAutoTimeTransition();
     }
   }

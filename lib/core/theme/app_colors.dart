@@ -15,13 +15,13 @@ class AppColors {
 
   // Surfaces & Backgrounds
   static const Color backgroundLight = Colors.white;
-  static const Color backgroundDark = Color(0xFF0E0F14);
+  static const Color backgroundDark = Colors.black;
 
   static const Color surfaceLight = Color(0xFFFFFFFF);
-  static const Color surfaceDark = Color(0xFF16171E);
+  static const Color surfaceDark = Colors.black;
 
   static const Color surfaceCardLight = Color(0xFFECEEF2);
-  static const Color surfaceCardDark = Color(0xFF1D1F27);
+  static const Color surfaceCardDark = Colors.black;
 
   static const Color surfacePillLight = Color(0xFFECEEF2);
   static const Color surfacePillDark = Color(0xFF20222B);

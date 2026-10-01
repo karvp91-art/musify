@@ -36,6 +36,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   final List<String> _filters = const ['All', 'Playlists', 'Liked Songs', 'Downloaded'];
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestNotificationPermission();
+    });
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    if (Platform.isAndroid) {
+      final status = await Permission.notification.status;
+      if (status.isDenied) {
+        await Permission.notification.request();
+      }
+    }
+  }
+
   void _enterSelectionMode(Track track) {
     HapticFeedback.heavyImpact();
     setState(() {
@@ -85,8 +102,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         16,
         screenSize.height - 75,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      color: isDark ? const Color(0xFF1E212B) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+          width: 1,
+        ),
+      ),
+      color: isDark ? Colors.black : Colors.white,
       elevation: 10,
       items: [
         PopupMenuItem(
@@ -135,8 +158,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1A1C28) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
         title: Text(
           'New Playlist',
           style: theme.textTheme.titleLarge?.copyWith(
@@ -250,8 +279,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1A1C28) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
         title: Text(
           'Edit Playlist',
           style: theme.textTheme.titleLarge?.copyWith(
@@ -561,8 +596,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Theme(
       data: Theme.of(context).copyWith(
         popupMenuTheme: PopupMenuThemeData(
-          color: isDark ? const Color(0xFF1E212B) : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: isDark ? Colors.black : Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+              width: 1,
+            ),
+          ),
           elevation: 10,
         ),
       ),
@@ -952,18 +994,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     prefixIcon: Icon(Icons.search_rounded, size: 20, color: theme.colorScheme.primary),
                     suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                            ),
-                            onPressed: () {
+                        ? GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
                               _searchController.clear();
                               setState(() {
                                 _searchQuery = '';
                               });
                             },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 18,
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                              ),
+                            ),
                           )
                         : null,
                     border: InputBorder.none,
@@ -1157,6 +1203,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         _selectedTrackIds.add(track.id);
                       }
                     });
+                  } else if (isCurrent) {
+                    HapticFeedback.selectionClick();
+                    if (isPlaybackPlaying) {
+                      audioHandler.pause();
+                    } else {
+                      audioHandler.play();
+                    }
                   } else {
                     audioHandler.playTrackList(tracks, startIndex: index);
                   }
@@ -1274,6 +1327,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     _selectedTrackIds.add(track.id);
                   }
                 });
+              } else if (isCurrent) {
+                HapticFeedback.selectionClick();
+                if (isPlaybackPlaying) {
+                  audioHandler.pause();
+                } else {
+                  audioHandler.play();
+                }
               } else {
                 audioHandler.playTrackList(displayedTracks, startIndex: index);
               }
@@ -1456,6 +1516,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           _selectedTrackIds.add(track.id);
                                         }
                                       });
+                                    } else if (isCurrent) {
+                                      HapticFeedback.selectionClick();
+                                      if (isPlaybackPlaying) {
+                                        audioHandler.pause();
+                                      } else {
+                                        audioHandler.play();
+                                      }
                                     } else {
                                       audioHandler.playTrackList(displayedTracks, startIndex: index);
                                     }
@@ -1654,8 +1721,15 @@ class _HomePlaylistItem extends ConsumerWidget {
             Theme(
               data: theme.copyWith(
                 popupMenuTheme: PopupMenuThemeData(
-                  color: isDark ? const Color(0xFF1E212B) : Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  color: isDark ? Colors.black : Colors.white,
+                  surfaceTintColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+                      width: 1,
+                    ),
+                  ),
                   elevation: 10,
                 ),
               ),

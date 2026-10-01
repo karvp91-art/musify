@@ -64,8 +64,14 @@ void showTrackDropdownMenu({
       screenSize.width - left - menuWidth,
       screenSize.height - top,
     ),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-    color: isDark ? const Color(0xFF1E212B) : Colors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(18),
+      side: BorderSide(
+        color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+        width: 1,
+      ),
+    ),
+    color: isDark ? Colors.black : Colors.white,
     elevation: 10,
     items: [
       PopupMenuItem(

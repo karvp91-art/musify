@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../domain/models/track.dart';
 import '../domain/models/playback_state.dart';
 import 'preferences_service.dart';
@@ -68,7 +69,6 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
           MediaControl.skipToPrevious,
           if (isPlaying) MediaControl.pause else MediaControl.play,
           MediaControl.skipToNext,
-          MediaControl.stop,
         ],
         systemActions: const {
           MediaAction.seek,
@@ -118,6 +118,16 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
     _player.positionStream.listen((_) => _emitState());
     _player.bufferedPositionStream.listen((_) => _emitState());
+
+    // Keep MediaItem duration in sync with actual loaded track duration for the system scrubber
+    _player.durationStream.listen((duration) {
+      if (duration != null && duration > Duration.zero) {
+        final current = mediaItem.value;
+        if (current != null && current.duration != duration) {
+          mediaItem.add(current.copyWith(duration: duration));
+        }
+      }
+    });
   }
 
   bool get hasNext {
@@ -216,6 +226,15 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     mediaItem.add(item);
     _trackPlayedController.add(track);
 
+    // Ensure notification permission is requested on Android so the system media player shows
+    if (Platform.isAndroid) {
+      Permission.notification.status.then((status) {
+        if (status.isDenied) {
+          Permission.notification.request();
+        }
+      });
+    }
+
     try {
       final hasLocalFile = track.filePath != null &&
           track.filePath!.isNotEmpty &&
@@ -234,13 +253,28 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   MediaItem _trackToMediaItem(Track track) {
+    Uri? artUri;
+    if (track.artworkUrl != null && track.artworkUrl!.trim().isNotEmpty) {
+      final uriString = track.artworkUrl!.trim();
+      final parsed = Uri.tryParse(uriString);
+      if (parsed != null &&
+          (parsed.scheme == 'http' ||
+              parsed.scheme == 'https' ||
+              parsed.scheme == 'file' ||
+              parsed.scheme == 'content')) {
+        artUri = parsed;
+      } else if (uriString.startsWith('/') || uriString.contains(':\\')) {
+        artUri = Uri.file(uriString);
+      }
+    }
+
     return MediaItem(
       id: track.id,
-      album: track.albumTitle ?? 'Musify',
-      title: track.title,
-      artist: track.artistName,
-      duration: Duration(milliseconds: track.durationMs),
-      artUri: track.artworkUrl != null ? Uri.tryParse(track.artworkUrl!) : null,
+      album: track.albumTitle?.isNotEmpty == true ? track.albumTitle! : 'Musify',
+      title: track.title.isNotEmpty ? track.title : 'Unknown Title',
+      artist: track.artistName.isNotEmpty ? track.artistName : 'Unknown Artist',
+      duration: track.durationMs > 0 ? Duration(milliseconds: track.durationMs) : null,
+      artUri: artUri,
     );
   }
 
@@ -360,6 +394,31 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         _repeatMode = AppRepeatMode.off;
         break;
     }
+    preferencesService?.setRepeatMode(_repeatMode);
+    _emitState();
+  }
+
+  /// Cycles through the 3-way playback modes:
+  /// Shuffle -> Repeat All -> Repeat One -> Shuffle ...
+  void cyclePlaybackMode() {
+    if (_isShuffle) {
+      // From Shuffle -> Repeat All ("all")
+      _isShuffle = false;
+      _repeatMode = AppRepeatMode.all;
+      _shuffleIndices.clear();
+      _shufflePointer = -1;
+      _historyIndices.clear();
+    } else if (_repeatMode == AppRepeatMode.all || _repeatMode == AppRepeatMode.off) {
+      // From Repeat All -> Repeat One ("repeat")
+      _isShuffle = false;
+      _repeatMode = AppRepeatMode.one;
+    } else {
+      // From Repeat One -> Shuffle ("shuffle")
+      _isShuffle = true;
+      _repeatMode = AppRepeatMode.all;
+      _setupShuffleIndices();
+    }
+    preferencesService?.setShuffleMode(_isShuffle);
     preferencesService?.setRepeatMode(_repeatMode);
     _emitState();
   }

@@ -48,7 +48,7 @@ class AppConfirmationDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final dialogBg = isDark ? const Color(0xFF161822) : Colors.white;
+    final dialogBg = isDark ? Colors.black : Colors.white;
     final titleColor = isDark ? Colors.white : const Color(0xFF111827);
     final descColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     final badgeCircleBg = isDark ? const Color(0xFF381A22) : const Color(0xFFFFE8EC);
@@ -80,6 +80,10 @@ class AppConfirmationDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+          width: 1,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),

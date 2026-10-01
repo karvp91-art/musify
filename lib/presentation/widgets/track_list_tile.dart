@@ -13,8 +13,10 @@ class TrackListTile extends ConsumerWidget {
   final bool isCurrent;
   final bool isPlaying;
   final VoidCallback onTap;
+  final VoidCallback? onPlayPause;
   final VoidCallback? onLikeToggle;
   final VoidCallback? onMoreOptions;
+  final VoidCallback? onRemoveFromPlaylist;
   final bool isSelectionMode;
   final bool isSelected;
   final VoidCallback? onLongPress;
@@ -25,8 +27,10 @@ class TrackListTile extends ConsumerWidget {
     this.isCurrent = false,
     this.isPlaying = false,
     required this.onTap,
+    this.onPlayPause,
     this.onLikeToggle,
     this.onMoreOptions,
+    this.onRemoveFromPlaylist,
     this.isSelectionMode = false,
     this.isSelected = false,
     this.onLongPress,
@@ -48,8 +52,38 @@ class TrackListTile extends ConsumerWidget {
 
     final isDark = theme.brightness == Brightness.dark;
 
+    void handlePlayPauseAction() {
+      HapticFeedback.selectionClick();
+      if (isSelectionMode) {
+        onTap();
+        return;
+      }
+      if (onPlayPause != null) {
+        onPlayPause!();
+        return;
+      }
+      if (isCurrent) {
+        final audioHandler = ref.read(audioHandlerProvider);
+        if (isPlaying) {
+          audioHandler.pause();
+        } else {
+          audioHandler.play();
+        }
+      } else {
+        onTap();
+      }
+    }
+
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        if (isSelectionMode) {
+          onTap();
+        } else if (isCurrent) {
+          handlePlayPauseAction();
+        } else {
+          onTap();
+        }
+      },
       onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(16),
       splashColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
@@ -228,31 +262,31 @@ class TrackListTile extends ConsumerWidget {
 
               // Trailing: Borderless Circular Play / Pause Action Button
               GestureDetector(
-                onTap: onTap,
+                onTap: handlePlayPauseAction,
                 child: Container(
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isPlaying
-                        ? (isDark ? primaryColor : AppColors.neonLime)
-                        : (isCurrent
-                            ? (isDark
-                                ? primaryColor.withValues(alpha: 0.18)
-                                : AppColors.neonLime.withValues(alpha: 0.38))
-                            : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2))),
-                    border: (!isDark && isCurrent && !isPlaying)
-                        ? Border.all(color: primaryColor.withValues(alpha: 0.45), width: 1.2)
+                    color: isCurrent
+                        ? (isDark ? AppColors.neonLime : AppColors.neonLime)
+                        : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
+                    boxShadow: isCurrent
+                        ? [
+                            BoxShadow(
+                              color: (isDark ? AppColors.neonLime : Colors.black).withValues(alpha: 0.20),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
                         : null,
                   ),
                   child: Icon(
                     isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                     size: 20,
-                    color: isPlaying
-                        ? Colors.black
-                        : (isCurrent
-                            ? (isDark ? primaryColor : primaryColor)
-                            : (isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028))),
+                    color: isCurrent
+                        ? (isDark ? const Color(0xFF111827) : const Color(0xFF111827))
+                        : (isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028)),
                   ),
                 ),
               ),
@@ -274,6 +308,7 @@ class TrackListTile extends ConsumerWidget {
                   track: track,
                   isDark: isDark,
                   onLikeToggle: onLikeToggle,
+                  onRemoveFromPlaylist: onRemoveFromPlaylist,
                 ),
             ],
           ],
@@ -287,11 +322,13 @@ class _TrackTilePopupMenu extends ConsumerWidget {
   final Track track;
   final bool isDark;
   final VoidCallback? onLikeToggle;
+  final VoidCallback? onRemoveFromPlaylist;
 
   const _TrackTilePopupMenu({
     required this.track,
     required this.isDark,
     this.onLikeToggle,
+    this.onRemoveFromPlaylist,
   });
 
   @override
@@ -309,8 +346,15 @@ class _TrackTilePopupMenu extends ConsumerWidget {
         return Theme(
           data: theme.copyWith(
             popupMenuTheme: PopupMenuThemeData(
-              color: isDark ? const Color(0xFF1E212B) : Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              color: isDark ? Colors.black : Colors.white,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(
+                  color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
+                  width: 1,
+                ),
+              ),
               elevation: 10,
             ),
           ),
@@ -344,6 +388,8 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                 );
               } else if (value == 'playlist') {
                 showAddToPlaylistDropdownDialog(context, ref, track);
+              } else if (value == 'remove_playlist') {
+                onRemoveFromPlaylist?.call();
               } else if (value == 'download') {
                 downloadManager.downloadTrack(track);
                 AppSnackBar.show(
@@ -385,6 +431,20 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                   ],
                 ),
               ),
+              if (onRemoveFromPlaylist != null) ...[
+                const PopupMenuItem(
+                  value: 'remove_playlist',
+                  child: Row(
+                    children: [
+                      Icon(Icons.remove_circle_outline_rounded, size: 20, color: Colors.redAccent),
+                      SizedBox(width: 12),
+                      Text('Remove from Playlist',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w500, color: Colors.redAccent)),
+                    ],
+                  ),
+                ),
+              ],
               PopupMenuItem(
                 value: 'playlist',
                 child: Row(

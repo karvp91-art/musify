@@ -649,6 +649,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                   isCurrent: isCurrent,
                                   isPlaying: isTilePlaying,
                                   onTap: () {
+                                    if (isCurrent) {
+                                      HapticFeedback.selectionClick();
+                                      if (isPlaybackPlaying) {
+                                        audioHandler.pause();
+                                      } else {
+                                        audioHandler.play();
+                                      }
+                                      return;
+                                    }
                                     _historyTimer?.cancel();
                                     final query = _searchController.text.trim();
                                     if (query.isNotEmpty) {

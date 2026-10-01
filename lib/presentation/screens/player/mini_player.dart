@@ -122,7 +122,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
           },
           child: Container(
             constraints: const BoxConstraints(minHeight: 80),
-            margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            margin: const EdgeInsets.symmetric(horizontal: 10),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
               color: containerColor,
@@ -335,7 +335,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 height: size * 0.16,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isDark ? const Color(0xFF101218) : Colors.white,
+                  color: isDark ? Colors.black : Colors.white,
                   border: Border.all(
                     color: themePrimary.withValues(alpha: 0.7),
                     width: 1.0,
