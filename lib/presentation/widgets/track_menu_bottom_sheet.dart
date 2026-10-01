@@ -1,8 +1,15 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/track.dart';
+import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
+import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import '../providers/audio_providers.dart';
+
+export 'add_to_playlist_modal.dart';
 
 /// Displays a dropdown popup menu for track actions instead of a modal bottom sheet.
 void showTrackDropdownMenu({
@@ -18,6 +25,9 @@ void showTrackDropdownMenu({
   final primaryColor = theme.colorScheme.primary;
   final audioHandler = ref.read(audioHandlerProvider);
   final repo = ref.read(audioRepositoryProvider);
+  final downloadManager = ref.read(downloadManagerProvider);
+  final isDownloaded = downloadManager.isDownloaded(track.id) || track.isDownloaded;
+  final isDownloading = downloadManager.isDownloading(track.id);
 
   final screenSize = MediaQuery.of(context).size;
   double dx = screenSize.width - 24;
@@ -88,6 +98,41 @@ void showTrackDropdownMenu({
           ],
         ),
       ),
+      // Download or Delete from Device
+      if (!isDownloaded && !isDownloading) ...[
+        PopupMenuItem(
+          value: 'download',
+          child: Row(
+            children: [
+              Icon(Icons.download_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+              const SizedBox(width: 12),
+              const Text('Download Song', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      ] else if (isDownloading) ...[
+        PopupMenuItem(
+          value: 'cancel_download',
+          child: Row(
+            children: [
+              Icon(Icons.close_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+              const SizedBox(width: 12),
+              const Text('Cancel Download', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      ] else if (isDownloaded || track.source == AudioSourceType.local) ...[
+        const PopupMenuItem(
+          value: 'delete_device',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
+              SizedBox(width: 12),
+              Text('Delete from Device', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.redAccent)),
+            ],
+          ),
+        ),
+      ],
       const PopupMenuDivider(height: 1),
       PopupMenuItem(
         value: 'like',
@@ -116,23 +161,112 @@ void showTrackDropdownMenu({
   if (selected == 'next') {
     audioHandler.insertNextInQueue(track);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Playing next in queue')),
+      AppSnackBar.show(
+        context,
+        message: 'Playing next in queue',
+        type: AppSnackBarType.info,
+        icon: Icons.playlist_play_rounded,
       );
     }
   } else if (selected == 'queue') {
     audioHandler.addToQueue(track);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Added to queue')),
+      AppSnackBar.show(
+        context,
+        message: 'Added to queue',
+        type: AppSnackBarType.info,
+        icon: Icons.queue_music_rounded,
       );
     }
   } else if (selected == 'playlist') {
     if (context.mounted) {
       showAddToPlaylistDropdownDialog(context, ref, track);
     }
+  } else if (selected == 'download') {
+    downloadManager.downloadTrack(track);
+    if (context.mounted) {
+      AppSnackBar.show(
+        context,
+        message: 'Downloading "${track.title}"...',
+        type: AppSnackBarType.info,
+        icon: Icons.download_rounded,
+      );
+    }
+  } else if (selected == 'cancel_download') {
+    downloadManager.cancelDownload(track.id);
+  } else if (selected == 'delete_device') {
+    if (context.mounted) {
+      showConfirmDeleteTrackDialog(context, ref, track);
+    }
   } else if (selected == 'like') {
     repo.toggleLike(track);
+  }
+}
+
+/// Modern, styled confirmation dialog to permanently delete an audio file from device storage
+void showConfirmDeleteTrackDialog(BuildContext context, WidgetRef ref, Track track) async {
+  final confirmed = await showAppConfirmationDialog(
+    context: context,
+    title: 'Delete Song?',
+    description:
+        'Are you sure you want to delete this track from your device? The audio file will be permanently removed.',
+    track: track,
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+  );
+
+  if (confirmed != true) return;
+  if (!context.mounted) return;
+
+  final audioHandler = ref.read(audioHandlerProvider);
+  final downloadManager = ref.read(downloadManagerProvider);
+
+  // On Android shared external storage, check and request All Files Access if needed
+  final filePath = track.filePath;
+  final isInternal = filePath != null && filePath.contains('musify_downloads');
+  if (Platform.isAndroid && !isInternal && filePath != null && filePath.isNotEmpty) {
+    var hasPermission = await Permission.manageExternalStorage.isGranted;
+    if (!hasPermission) {
+      final status = await Permission.manageExternalStorage.request();
+      hasPermission = status.isGranted;
+    }
+    if (!hasPermission && context.mounted) {
+      final openSettings = await showAppConfirmationDialog(
+        context: context,
+        title: 'Storage Permission',
+        description:
+            'Android requires "All files access" permission to delete audio files directly from shared storage.\n\nPlease grant permission in App Settings.',
+        confirmText: 'Open Settings',
+        cancelText: 'Cancel',
+        icon: Icons.folder_special_rounded,
+      );
+      if (openSettings == true) {
+        openAppSettings();
+      }
+      return;
+    }
+  }
+
+  final success = await downloadManager.deleteTrackPermanently(track);
+  if (success) {
+    await audioHandler.removeTrackById(track.id);
+    if (context.mounted) {
+      AppSnackBar.show(
+        context,
+        message: 'Permanently deleted "${track.title}" from storage',
+        type: AppSnackBarType.delete,
+      );
+    }
+  } else {
+    if (context.mounted) {
+      AppSnackBar.show(
+        context,
+        message: 'Could not delete file from device storage. Please check permissions.',
+        type: AppSnackBarType.error,
+        actionLabel: 'Settings',
+        onAction: () => openAppSettings(),
+      );
+    }
   }
 }
 
@@ -145,83 +279,10 @@ void showTrackOptionsBottomSheet({
   showTrackDropdownMenu(context: context, ref: ref, track: track);
 }
 
-/// Dialog for selecting playlist (replaces bottom sheet with a clean dialog)
-void showAddToPlaylistDropdownDialog(BuildContext context, WidgetRef ref, Track track) async {
-  final repo = ref.read(audioRepositoryProvider);
-  final playlists = await repo.getPlaylists();
 
-  if (!context.mounted) return;
-  final theme = Theme.of(context);
-  final isDark = theme.brightness == Brightness.dark;
-  final primaryColor = theme.colorScheme.primary;
-
-  showDialog(
-    context: context,
-    builder: (dialogCtx) => AlertDialog(
-      backgroundColor: isDark ? const Color(0xFF1E212B) : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      title: const Text(
-        'Add to Playlist',
-        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: playlists.isEmpty
-            ? Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Center(
-                  child: Text(
-                    'No playlists created yet.\nCreate one in Library tab.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              )
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: playlists.length,
-                itemBuilder: (ctx, idx) {
-                  final pl = playlists[idx];
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    leading: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: primaryColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(Icons.queue_music_rounded, color: primaryColor, size: 20),
-                    ),
-                    title: Text(
-                      pl.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                    ),
-                    subtitle: pl.description != null && pl.description!.isNotEmpty
-                        ? Text(pl.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
-                        : null,
-                    onTap: () async {
-                      await repo.addTrackToPlaylist(pl.id, track);
-                      if (dialogCtx.mounted) {
-                        Navigator.pop(dialogCtx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Added to "${pl.name}"')),
-                        );
-                      }
-                    },
-                  );
-                },
-              ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogCtx),
-          child: const Text('Cancel'),
-        ),
-      ],
-    ),
-  );
+/// Production-grade Dialog for selecting and toggling playlists (redirects to the new reference modal)
+void showAddToPlaylistDropdownDialog(BuildContext context, WidgetRef ref, Track track) {
+  showAddToPlaylistModal(context, ref, track: track);
 }
+
+

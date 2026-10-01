@@ -126,6 +126,78 @@ void main() {
       expect(emptyPlaylists, isEmpty);
     });
 
+    test('Update, reorder, watch, and toggle playlist tracks', () async {
+      final playlist = await repository.createPlaylist('Work Focus', description: 'Original description');
+      expect(playlist.name, 'Work Focus');
+
+      // Update playlist
+      await repository.updatePlaylist(playlist.id, name: 'Deep Coding', description: 'Updated description');
+      final updatedPlaylists = await repository.getPlaylists();
+      final fetched = updatedPlaylists.firstWhere((p) => p.id == playlist.id);
+      expect(fetched.name, 'Deep Coding');
+      expect(fetched.description, 'Updated description');
+
+      final trackA = Track(
+        id: 'local:track_a',
+        title: 'Track A',
+        artistName: 'Artist A',
+        source: AudioSourceType.local,
+        sourceId: 'a',
+        durationMs: 120000,
+        audioUrl: '/path/a.mp3',
+        addedAt: DateTime.now(),
+      );
+      final trackB = Track(
+        id: 'local:track_b',
+        title: 'Track B',
+        artistName: 'Artist B',
+        source: AudioSourceType.local,
+        sourceId: 'b',
+        durationMs: 140000,
+        audioUrl: '/path/b.mp3',
+        addedAt: DateTime.now(),
+      );
+      final trackC = Track(
+        id: 'local:track_c',
+        title: 'Track C',
+        artistName: 'Artist C',
+        source: AudioSourceType.local,
+        sourceId: 'c',
+        durationMs: 160000,
+        audioUrl: '/path/c.mp3',
+        addedAt: DateTime.now(),
+      );
+
+      // Add tracks
+      await repository.addTrackToPlaylist(playlist.id, trackA);
+      await repository.addTrackToPlaylist(playlist.id, trackB);
+      await repository.addTrackToPlaylist(playlist.id, trackC);
+
+      // Check containing playlist IDs
+      final containingA = await repository.getPlaylistIdsForTrack(trackA.id);
+      expect(containingA.contains(playlist.id), isTrue);
+
+      final initialOrder = await repository.getPlaylistTracks(playlist.id);
+      expect(initialOrder.map((t) => t.id).toList(), ['local:track_a', 'local:track_b', 'local:track_c']);
+
+      // Reorder tracks: C, A, B
+      await repository.reorderPlaylistTracks(playlist.id, ['local:track_c', 'local:track_a', 'local:track_b']);
+      final reordered = await repository.getPlaylistTracks(playlist.id);
+      expect(reordered.map((t) => t.id).toList(), ['local:track_c', 'local:track_a', 'local:track_b']);
+
+      // Toggle track (remove track C)
+      final isNowInAfterToggle = await repository.toggleTrackInPlaylist(playlist.id, trackC);
+      expect(isNowInAfterToggle, isFalse);
+      final afterRemove = await repository.getPlaylistTracks(playlist.id);
+      expect(afterRemove.map((t) => t.id).toList(), ['local:track_a', 'local:track_b']);
+
+      // Toggle track back in (add track C)
+      final isNowInAgain = await repository.toggleTrackInPlaylist(playlist.id, trackC);
+      expect(isNowInAgain, isTrue);
+      final afterAdd = await repository.getPlaylistTracks(playlist.id);
+      expect(afterAdd.length, 3);
+    });
+
     test('Search query matches title or artist', () async {
       final track = Track(
         id: 'local:search_1',
@@ -221,6 +293,80 @@ void main() {
       final counts = await repository.getTrackPlayCounts();
       expect(counts['local:history_1'], 2);
       expect(counts['local:history_2'], 1);
+    });
+
+    test('saveDownloadedTrack persists online track and watchLocalTracks emits it', () async {
+      final onlineTrack = Track(
+        id: 'saavn:online_dl_1',
+        title: 'Kesariya',
+        artistName: 'Arijit Singh',
+        source: AudioSourceType.saavn,
+        sourceId: 'dl_1',
+        durationMs: 240000,
+        audioUrl: 'https://example.com/audio.m4a',
+        isDownloaded: false,
+        addedAt: DateTime.now(),
+      );
+
+      // Initially not in local tracks
+      expect(await repository.getLocalTracks(), isEmpty);
+
+      // Save as downloaded
+      await repository.saveDownloadedTrack(
+        onlineTrack,
+        filePath: '/storage/musify_downloads/kesariya.m4a',
+        fileSizeBytes: 5242880,
+      );
+
+      final localTracks = await repository.getLocalTracks();
+      expect(localTracks.length, 1);
+      final saved = localTracks.first;
+      expect(saved.id, 'saavn:online_dl_1');
+      expect(saved.title, 'Kesariya');
+      expect(saved.filePath, '/storage/musify_downloads/kesariya.m4a');
+      expect(saved.isDownloaded, isTrue);
+      expect(saved.fileSizeBytes, 5242880);
+
+      // removeDownloadedTrack removes it from local tracks
+      await repository.removeDownloadedTrack(saved.id);
+      expect(await repository.getLocalTracks(), isEmpty);
+    });
+
+    test('deleteTrack removes track from playlists, history, and local tracks', () async {
+      final track = Track(
+        id: 'local:to_delete_1',
+        title: 'Delete Me Track',
+        artistName: 'Test Artist',
+        source: AudioSourceType.local,
+        sourceId: '/storage/delete_me.mp3',
+        durationMs: 180000,
+        audioUrl: '/storage/delete_me.mp3',
+        filePath: '/storage/delete_me.mp3',
+        isDownloaded: true,
+        addedAt: DateTime.now(),
+      );
+
+      await repository.saveDownloadedTrack(track, filePath: '/storage/delete_me.mp3', fileSizeBytes: 1024);
+      final playlist = await repository.createPlaylist('Favorites');
+      await repository.addTrackToPlaylist(playlist.id, track);
+      await repository.recordTrackPlay(track);
+
+      // Verify it exists in playlist and history
+      final playlistTracksBefore = await repository.getPlaylistTracks(playlist.id);
+      expect(playlistTracksBefore.length, 1);
+      final historyBefore = await repository.getTrackPlayCounts();
+      expect(historyBefore.containsKey(track.id), isTrue);
+
+      // Delete track
+      await repository.deleteTrack(track);
+
+      // Verify cascade deletion
+      final playlistTracksAfter = await repository.getPlaylistTracks(playlist.id);
+      expect(playlistTracksAfter, isEmpty);
+      final historyAfter = await repository.getTrackPlayCounts();
+      expect(historyAfter.containsKey(track.id), isFalse);
+      final localTracksAfter = await repository.getLocalTracks();
+      expect(localTracksAfter.any((t) => t.id == track.id), isFalse);
     });
   });
 }

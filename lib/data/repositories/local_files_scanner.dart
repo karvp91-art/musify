@@ -174,10 +174,7 @@ class LocalFilesScanner {
         }
       }
 
-      // Application Documents & Downloads directories
-      final docDir = await getApplicationDocumentsDirectory();
-      rootScanDirs.add(docDir);
-
+      // Shared Downloads directory
       try {
         final downloadDir = await getDownloadsDirectory();
         if (downloadDir != null) rootScanDirs.add(downloadDir);
@@ -205,6 +202,52 @@ class LocalFilesScanner {
       }
     }
 
+    // Second pass: Scan Musify download directories to re-index previously downloaded files
+    // This ensures files survive app reinstalls (DB is wiped but files remain on disk)
+    for (final dlPath in _musifyDownloadPaths) {
+      final dlDir = Directory(dlPath);
+      if (await dlDir.exists()) {
+        await _crawlDirectorySafe(
+          dlDir,
+          visitedPaths,
+          collectedTracks,
+          onFileScanned: (count, path) {
+            scannedFilesCounter += count;
+            onProgress?.call(ScanProgress(
+              filesScanned: scannedFilesCounter,
+              tracksFound: collectedTracks.length,
+              currentDirectory: 'Musify Downloads',
+            ));
+          },
+          markAsDownloaded: true,
+        );
+      }
+    }
+
+    // Also check app-specific external storage fallback
+    try {
+      final extDir = await getExternalStorageDirectory();
+      if (extDir != null) {
+        final musifyExtDir = Directory(p.join(extDir.path, 'Musify'));
+        if (await musifyExtDir.exists()) {
+          await _crawlDirectorySafe(
+            musifyExtDir,
+            visitedPaths,
+            collectedTracks,
+            onFileScanned: (count, path) {
+              scannedFilesCounter += count;
+              onProgress?.call(ScanProgress(
+                filesScanned: scannedFilesCounter,
+                tracksFound: collectedTracks.length,
+                currentDirectory: 'Musify Downloads',
+              ));
+            },
+            markAsDownloaded: true,
+          );
+        }
+      }
+    } catch (_) {}
+
     // Fast batch upsert into SQLite
     if (collectedTracks.isNotEmpty) {
       await _db.batch((batch) {
@@ -222,12 +265,28 @@ class LocalFilesScanner {
     return collectedTracks.length;
   }
 
+  /// Known Musify download directories to scan separately and mark as downloaded
+  static const List<String> _musifyDownloadPaths = [
+    '/storage/emulated/0/Music/Musify',
+    '/storage/emulated/0/Download/Musify',
+  ];
+
+  /// Check if a path belongs to a Musify-managed download directory
+  static bool _isMusifyDownloadPath(String path) {
+    final lower = path.toLowerCase();
+    for (final dlPath in _musifyDownloadPaths) {
+      if (lower.startsWith(dlPath.toLowerCase())) return true;
+    }
+    return lower.contains('musify_downloads') || lower.contains('.musify_downloads');
+  }
+
   /// Safe BFS crawler that inspects folder by folder so a single restricted folder does not halt traversal
   Future<void> _crawlDirectorySafe(
     Directory root,
     Set<String> visited,
     List<LocalTracksCompanion> collectedTracks, {
     void Function(int count, String currentPath)? onFileScanned,
+    bool markAsDownloaded = false,
   }) async {
     final queue = Queue<Directory>()..add(root);
 
@@ -244,15 +303,23 @@ class LocalFilesScanner {
           if (entityName.startsWith('.')) continue; // Skip hidden files/dirs
 
           if (entity is Directory) {
-            // Skip heavy non-audio/system directories
-            if (entityName != 'Android' &&
-                entityName != 'node_modules' &&
-                entityName != '.git' &&
-                entityName != '.cache' &&
-                entityName != '.thumbnails') {
+            final lower = entityName.toLowerCase();
+            // Skip system/non-audio directories, but NOT Musify download dirs
+            if (lower != 'android' &&
+                lower != 'node_modules' &&
+                lower != '.git' &&
+                lower != '.cache' &&
+                lower != '.thumbnails') {
+              // If this is a Musify download directory, skip it during the general pass
+              // (it will be scanned in a dedicated pass with markAsDownloaded=true)
+              if (!markAsDownloaded && _isMusifyDownloadPath(entity.path)) {
+                continue;
+              }
               queue.add(entity);
             }
           } else if (entity is File) {
+            // During the general scan pass, skip files inside Musify download dirs
+            if (!markAsDownloaded && _isMusifyDownloadPath(currentPath)) continue;
             onFileScanned?.call(1, currentPath);
             final ext = p.extension(entity.path).toLowerCase();
             if (supportedExtensions.contains(ext)) {

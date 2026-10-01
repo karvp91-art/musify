@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
@@ -103,18 +104,117 @@ class AudioRepositoryImpl implements AudioRepository {
     );
   }
 
+  bool _cleanedUpBogusTracks = false;
+  Future<void> _cleanCorruptedDownloadArtifacts() async {
+    if (_cleanedUpBogusTracks) return;
+    _cleanedUpBogusTracks = true;
+    try {
+      await (_db.delete(_db.localTracks)
+            ..where((tbl) =>
+                tbl.title.equals('musify downloads') |
+                (tbl.source.equals('local') & tbl.filePath.like('%musify_downloads%'))))
+          .go();
+    } catch (_) {}
+  }
+
   @override
   Future<List<Track>> getLocalTracks() async {
+    await _cleanCorruptedDownloadArtifacts();
     final query = _db.select(_db.localTracks)
-      ..where((tbl) => tbl.source.equals(AudioSourceType.local.name))
+      ..where((tbl) =>
+          (tbl.source.equals(AudioSourceType.local.name) | tbl.isDownloaded.equals(true)) &
+          tbl.title.isNotValue('musify downloads'))
       ..orderBy([(t) => OrderingTerm.asc(t.title)]);
     final rows = await query.get();
-    return rows.map(_toDomainTrack).toList();
+    return rows
+        .map(_toDomainTrack)
+        .where((t) => !(t.source == AudioSourceType.local && (t.filePath?.contains('musify_downloads') ?? false)))
+        .toList();
+  }
+
+  @override
+  Stream<List<Track>> watchLocalTracks() {
+    _cleanCorruptedDownloadArtifacts();
+    final query = _db.select(_db.localTracks)
+      ..where((tbl) =>
+          (tbl.source.equals(AudioSourceType.local.name) | tbl.isDownloaded.equals(true)) &
+          tbl.title.isNotValue('musify downloads'))
+      ..orderBy([(t) => OrderingTerm.asc(t.title)]);
+    return query.watch().map((rows) => rows
+        .map(_toDomainTrack)
+        .where((t) => !(t.source == AudioSourceType.local && (t.filePath?.contains('musify_downloads') ?? false)))
+        .toList());
   }
 
   @override
   Future<void> rescanLocalTracks() async {
     // Local device scan logic is coordinated with file scanner
+  }
+
+  @override
+  Future<void> saveDownloadedTrack(Track track, {required String filePath, required int fileSizeBytes}) async {
+    final updated = track.copyWith(
+      filePath: filePath,
+      fileSizeBytes: fileSizeBytes,
+      isDownloaded: true,
+      addedAt: DateTime.now(),
+    );
+    await _db.into(_db.localTracks).insert(
+      _toCompanion(updated),
+      mode: InsertMode.insertOrReplace,
+    );
+  }
+
+  @override
+  Future<void> removeDownloadedTrack(String trackId) async {
+    final row = await (_db.select(_db.localTracks)..where((tbl) => tbl.id.equals(trackId))).getSingleOrNull();
+    if (row != null) {
+      if (row.filePath != null && row.filePath!.isNotEmpty) {
+        final file = File(row.filePath!);
+        if (file.existsSync()) {
+          try {
+            await file.delete();
+          } catch (_) {}
+        }
+      }
+      final inPlaylists = await (_db.select(_db.playlistTracks)..where((tbl) => tbl.trackId.equals(trackId))).get();
+      if (row.source == AudioSourceType.local.name || (!row.isLiked && inPlaylists.isEmpty)) {
+        await (_db.delete(_db.localTracks)..where((tbl) => tbl.id.equals(trackId))).go();
+      } else {
+        await (_db.update(_db.localTracks)..where((tbl) => tbl.id.equals(trackId))).write(
+          const LocalTracksCompanion(
+            isDownloaded: Value(false),
+            filePath: Value(null),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Future<bool> deleteTrack(Track track) async {
+    bool fileDeleted = true;
+    if (track.filePath != null && track.filePath!.isNotEmpty) {
+      final file = File(track.filePath!);
+      if (file.existsSync()) {
+        try {
+          await file.delete();
+          if (file.existsSync()) {
+            fileDeleted = false;
+          }
+        } catch (_) {
+          fileDeleted = false;
+        }
+      }
+    }
+
+    if (fileDeleted) {
+      await (_db.delete(_db.playlistTracks)..where((tbl) => tbl.trackId.equals(track.id))).go();
+      await (_db.delete(_db.listeningHistory)..where((tbl) => tbl.trackId.equals(track.id))).go();
+      await (_db.delete(_db.localTracks)..where((tbl) => tbl.id.equals(track.id))).go();
+      return true;
+    }
+    return false;
   }
 
   @override
@@ -152,16 +252,22 @@ class AudioRepositoryImpl implements AudioRepository {
   @override
   Future<List<Playlist>> getPlaylists() async {
     final rows = await (_db.select(_db.playlists)..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])).get();
-    return rows.map((p) => Playlist(
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      coverUrl: p.coverUrl,
-      isCollaborative: p.isCollaborative,
-      isDownloaded: p.isDownloaded,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-    )).toList();
+    final playlists = <Playlist>[];
+    for (final p in rows) {
+      final tracks = await getPlaylistTracks(p.id);
+      playlists.add(Playlist(
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        coverUrl: p.coverUrl,
+        isCollaborative: p.isCollaborative,
+        isDownloaded: p.isDownloaded,
+        tracks: tracks,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+      ));
+    }
+    return playlists;
   }
 
   @override
@@ -182,6 +288,17 @@ class AudioRepositoryImpl implements AudioRepository {
       description: description,
       createdAt: now,
       updatedAt: now,
+    );
+  }
+
+  @override
+  Future<void> updatePlaylist(String playlistId, {required String name, String? description}) async {
+    await (_db.update(_db.playlists)..where((tbl) => tbl.id.equals(playlistId))).write(
+      PlaylistsCompanion(
+        name: Value(name),
+        description: Value(description),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
   }
 
@@ -231,6 +348,20 @@ class AudioRepositoryImpl implements AudioRepository {
   }
 
   @override
+  Future<void> reorderPlaylistTracks(String playlistId, List<String> orderedTrackIds) async {
+    await _db.transaction(() async {
+      for (int i = 0; i < orderedTrackIds.length; i++) {
+        await (_db.update(_db.playlistTracks)
+              ..where((tbl) => tbl.playlistId.equals(playlistId) & tbl.trackId.equals(orderedTrackIds[i])))
+            .write(PlaylistTracksCompanion(position: Value(i)));
+      }
+      await (_db.update(_db.playlists)..where((tbl) => tbl.id.equals(playlistId))).write(
+        PlaylistsCompanion(updatedAt: Value(DateTime.now())),
+      );
+    });
+  }
+
+  @override
   Future<List<Track>> getPlaylistTracks(String playlistId) async {
     final query = _db.select(_db.playlistTracks).join([
       innerJoin(_db.localTracks, _db.localTracks.id.equalsExp(_db.playlistTracks.trackId)),
@@ -243,6 +374,43 @@ class AudioRepositoryImpl implements AudioRepository {
       final localTrack = row.readTable(_db.localTracks);
       return _toDomainTrack(localTrack);
     }).toList();
+  }
+
+  @override
+  Stream<List<Track>> watchPlaylistTracks(String playlistId) {
+    final query = _db.select(_db.playlistTracks).join([
+      innerJoin(_db.localTracks, _db.localTracks.id.equalsExp(_db.playlistTracks.trackId)),
+    ])
+      ..where(_db.playlistTracks.playlistId.equals(playlistId))
+      ..orderBy([OrderingTerm.asc(_db.playlistTracks.position)]);
+
+    return query.watch().map((rows) {
+      return rows.map((row) {
+        final localTrack = row.readTable(_db.localTracks);
+        return _toDomainTrack(localTrack);
+      }).toList();
+    });
+  }
+
+  @override
+  Future<Set<String>> getPlaylistIdsForTrack(String trackId) async {
+    final rows = await (_db.select(_db.playlistTracks)
+      ..where((tbl) => tbl.trackId.equals(trackId))).get();
+    return rows.map((r) => r.playlistId).toSet();
+  }
+
+  @override
+  Future<bool> toggleTrackInPlaylist(String playlistId, Track track) async {
+    final existing = await (_db.select(_db.playlistTracks)
+      ..where((tbl) => tbl.playlistId.equals(playlistId) & tbl.trackId.equals(track.id))).getSingleOrNull();
+
+    if (existing != null) {
+      await removeTrackFromPlaylist(playlistId, track.id);
+      return false; // Removed
+    } else {
+      await addTrackToPlaylist(playlistId, track);
+      return true; // Added
+    }
   }
 
   @override
@@ -265,17 +433,13 @@ class AudioRepositoryImpl implements AudioRepository {
 
   @override
   Stream<List<Playlist>> watchPlaylists() {
-    final query = _db.select(_db.playlists)..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]);
-    return query.watch().map((rows) => rows.map((p) => Playlist(
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      coverUrl: p.coverUrl,
-      isCollaborative: p.isCollaborative,
-      isDownloaded: p.isDownloaded,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-    )).toList());
+    final query = _db.select(_db.playlists).join([
+      leftOuterJoin(_db.playlistTracks, _db.playlistTracks.playlistId.equalsExp(_db.playlists.id)),
+    ])..orderBy([OrderingTerm.desc(_db.playlists.updatedAt)]);
+
+    return query.watch().asyncMap((_) async {
+      return getPlaylists();
+    });
   }
 
   @override

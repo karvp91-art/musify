@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'track_artwork.dart';
 
 class CompactCard extends StatelessWidget {
   final String title;
@@ -74,22 +75,24 @@ class CompactCard extends StatelessWidget {
   }
 
   Widget _buildPlaceholder(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final gradient = TrackArtwork.getGradientForSeed(title, isDark: isDark);
+    final iconColor = isDark
+        ? const Color(0xFFD2F843).withValues(alpha: 0.82)
+        : const Color(0xFF527E03).withValues(alpha: 0.78);
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            theme.colorScheme.primary.withValues(alpha: 0.15),
-            theme.colorScheme.surface,
-          ],
+          colors: gradient,
         ),
       ),
       child: Center(
         child: Icon(
           Icons.album_rounded,
           size: 44,
-          color: theme.colorScheme.primary.withValues(alpha: 0.6),
+          color: iconColor,
         ),
       ),
     );

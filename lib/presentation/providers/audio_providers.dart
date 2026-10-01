@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:musify/data/database/app_database.dart' hide Playlist;
 import 'package:musify/data/repositories/audio_repository_impl.dart';
 import 'package:musify/data/repositories/local_files_scanner.dart';
@@ -15,6 +17,19 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/domain/models/track_sort_option.dart';
 import 'package:musify/domain/repositories/audio_repository.dart';
 import 'package:musify/services/audio_player_handler.dart';
+import 'package:musify/services/download_manager.dart';
+import 'package:musify/services/preferences_service.dart';
+
+export 'package:musify/services/preferences_service.dart';
+
+// Download Manager Provider
+final downloadManagerProvider = Provider<AudioDownloadManager>((ref) {
+  final repo = ref.watch(audioRepositoryProvider);
+  final saavn = ref.watch(saavnAdapterProvider);
+  final manager = AudioDownloadManager(repo: repo, saavnAdapter: saavn);
+  ref.onDispose(() => manager.dispose());
+  return manager;
+});
 
 // Database & Core Providers
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -96,22 +111,29 @@ final trackPlayCountsProvider = StreamProvider<Map<String, int>>((ref) {
   return repo.watchTrackPlayCounts();
 });
 
-// Sort Option Notifier
+// Sort Option Notifier (persisted across sessions)
 class LocalTrackSortNotifier extends Notifier<TrackSortOption> {
   @override
-  TrackSortOption build() => TrackSortOption.recentlyAdded;
+  TrackSortOption build() {
+    final service = ref.watch(preferencesServiceProvider);
+    return service.getTrackSortOption();
+  }
 
-  void setSortOption(TrackSortOption option) => state = option;
+  Future<void> setSortOption(TrackSortOption option) async {
+    state = option;
+    final service = ref.read(preferencesServiceProvider);
+    await service.setTrackSortOption(option);
+  }
 }
 
 final localTrackSortOptionProvider = NotifierProvider<LocalTrackSortNotifier, TrackSortOption>(
   LocalTrackSortNotifier.new,
 );
 
-// Raw Local Tracks Provider (all tracks from DB)
-final localTracksProvider = FutureProvider<List<Track>>((ref) async {
+// Raw Local Tracks Provider (reactive stream of all local and downloaded tracks from DB)
+final localTracksProvider = StreamProvider<List<Track>>((ref) {
   final repo = ref.watch(audioRepositoryProvider);
-  return repo.getLocalTracks();
+  return repo.watchLocalTracks();
 });
 
 // Sorted Local Tracks Provider (reactive to sort option and play counts)
@@ -140,9 +162,10 @@ final playlistsStreamProvider = StreamProvider<List<Playlist>>((ref) {
   return repo.watchPlaylists();
 });
 
-final playlistTracksProvider = FutureProvider.family<List<Track>, String>((ref, playlistId) async {
+// Playlist Tracks Stream Provider (reacts in real-time to adds, removes, and reorders)
+final playlistTracksProvider = StreamProvider.family<List<Track>, String>((ref, playlistId) {
   final repo = ref.watch(audioRepositoryProvider);
-  return repo.getPlaylistTracks(playlistId);
+  return repo.watchPlaylistTracks(playlistId);
 });
 
 // Navigation Bar Tab Index
@@ -155,14 +178,115 @@ class TabIndexNotifier extends Notifier<int> {
 
 final currentTabIndexProvider = NotifierProvider<TabIndexNotifier, int>(TabIndexNotifier.new);
 
-// App Theme Mode Provider
-class ThemeModeNotifier extends Notifier<ThemeMode> {
-  @override
-  ThemeMode build() => ThemeMode.dark;
+// Preferences Providers
+final sharedPreferencesProvider = Provider<SharedPreferences?>((ref) => null);
 
-  void setThemeMode(ThemeMode mode) => state = mode;
-  void toggleTheme() {
-    state = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+final preferencesServiceProvider = Provider<PreferencesService>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return PreferencesService(prefs);
+});
+
+// Theme Preference Notifier (tracks user selection: system, light, dark, autoTime)
+class ThemePreferenceNotifier extends Notifier<AppThemePreference> {
+  @override
+  AppThemePreference build() {
+    final service = ref.watch(preferencesServiceProvider);
+    return service.getThemePreference();
+  }
+
+  Future<void> setPreference(AppThemePreference pref) async {
+    state = pref;
+    final service = ref.read(preferencesServiceProvider);
+    await service.setThemePreference(pref);
+    ref.read(themeModeProvider.notifier).syncTheme();
+  }
+}
+
+final themePreferenceProvider = NotifierProvider<ThemePreferenceNotifier, AppThemePreference>(
+  ThemePreferenceNotifier.new,
+);
+
+// App Theme Mode Provider (resolves effective ThemeMode for MaterialApp with time-based switching)
+class ThemeModeNotifier extends Notifier<ThemeMode> with WidgetsBindingObserver {
+  Timer? _periodicTimer;
+
+  @override
+  ThemeMode build() {
+    // Listen for lifecycle changes to refresh time-based theme when coming to foreground
+    WidgetsBinding.instance.addObserver(this);
+    ref.onDispose(() {
+      WidgetsBinding.instance.removeObserver(this);
+      _periodicTimer?.cancel();
+    });
+
+    // Periodic check every 30 seconds for seamless transition between day and night in autoTime mode
+    _periodicTimer?.cancel();
+    _periodicTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _checkAutoTimeTransition();
+    });
+
+    final service = ref.watch(preferencesServiceProvider);
+    final pref = service.getThemePreference();
+    return service.resolveThemeMode(pref);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) {
+      _checkAutoTimeTransition();
+    }
+  }
+
+  void _checkAutoTimeTransition() {
+    final service = ref.read(preferencesServiceProvider);
+    final pref = service.getThemePreference();
+    if (pref == AppThemePreference.autoTime) {
+      final expected = service.resolveThemeMode(AppThemePreference.autoTime);
+      if (state != expected) {
+        state = expected;
+      }
+    }
+  }
+
+  /// Recalculates and updates the effective ThemeMode from preferences
+  void syncTheme() {
+    final service = ref.read(preferencesServiceProvider);
+    final pref = service.getThemePreference();
+    state = service.resolveThemeMode(pref);
+  }
+
+  /// Updates the theme preference and recalculates the active ThemeMode
+  Future<void> setThemePreference(AppThemePreference pref) async {
+    final service = ref.read(preferencesServiceProvider);
+    await service.setThemePreference(pref);
+    ref.read(themePreferenceProvider.notifier).state = pref;
+    state = service.resolveThemeMode(pref);
+  }
+
+  /// Updates custom day / night start hours for auto mode
+  Future<void> setDayNightSchedule({
+    required TimeOfDay dayStart,
+    required TimeOfDay nightStart,
+  }) async {
+    final service = ref.read(preferencesServiceProvider);
+    await service.setDayStartTime(dayStart);
+    await service.setNightStartTime(nightStart);
+    syncTheme();
+  }
+
+  /// Direct theme mode setter (updates underlying preference)
+  void setThemeMode(ThemeMode mode) {
+    final pref = mode == ThemeMode.light
+        ? AppThemePreference.light
+        : (mode == ThemeMode.dark ? AppThemePreference.dark : AppThemePreference.system);
+    setThemePreference(pref);
+  }
+
+  /// Toggle between light and dark
+  Future<void> toggleTheme() async {
+    final nextMode = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    final nextPref = nextMode == ThemeMode.light ? AppThemePreference.light : AppThemePreference.dark;
+    await setThemePreference(nextPref);
   }
 }
 
@@ -233,5 +357,15 @@ final currentTrackLyricsProvider = FutureProvider<Lyrics?>((ref) async {
   final repo = ref.watch(lyricsRepositoryProvider);
   return repo.getLyrics(track);
 });
+
+class IsMultiSelectionModeNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void setMode(bool active) => state = active;
+}
+
+final isMultiSelectionModeProvider =
+    NotifierProvider<IsMultiSelectionModeNotifier, bool>(IsMultiSelectionModeNotifier.new);
+
 
 

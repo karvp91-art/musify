@@ -35,6 +35,7 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final primaryColor = theme.colorScheme.primary;
     final totalDurationMs = widget.duration.inMilliseconds.toDouble();
     final currentPosMs = widget.position.inMilliseconds.toDouble().clamp(
@@ -52,6 +53,13 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
         ? Duration(milliseconds: _dragValue!.round())
         : widget.position;
 
+    final inactiveTrack = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : const Color(0xFFE2E5ED);
+    final timeColor = isDark
+        ? Colors.white.withValues(alpha: 0.55)
+        : theme.colorScheme.onSurface.withValues(alpha: 0.55);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -64,7 +72,7 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
             ),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
             activeTrackColor: primaryColor,
-            inactiveTrackColor: Colors.white.withValues(alpha: 0.12),
+            inactiveTrackColor: inactiveTrack,
             thumbColor: primaryColor,
             overlayColor: primaryColor.withValues(alpha: 0.18),
           ),
@@ -103,9 +111,7 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: isDragging ? FontWeight.w600 : FontWeight.w400,
                   fontSize: 12,
-                  color: isDragging
-                      ? primaryColor
-                      : Colors.white.withValues(alpha: 0.55),
+                  color: isDragging ? primaryColor : timeColor,
                 ),
               ),
               Text(
@@ -113,12 +119,13 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w400,
                   fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.55),
+                  color: timeColor,
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 4),
       ],
     );
   }

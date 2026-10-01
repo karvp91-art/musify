@@ -522,6 +522,10 @@ class AudioNameSanitizer {
       'storage',
       'sdcard',
       'internal storage',
+      'musify',
+      'musify_downloads',
+      'musify downloads',
+      '.musify_downloads',
     };
     return !ignored.contains(lower);
   }

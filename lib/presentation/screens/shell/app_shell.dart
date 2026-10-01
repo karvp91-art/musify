@@ -1,11 +1,17 @@
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/core/utils/app_snack_bar.dart';
+import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/player/mini_player.dart';
 import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/screens/home/home_screen.dart';
 import 'package:musify/presentation/screens/search/search_screen.dart';
+import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -17,6 +23,7 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderStateMixin {
   late final AnimationController _playerExpandController;
   late final Animation<double> _expandAnimation;
+  late final Animation<Offset> _slideAnimation;
 
   final List<Widget> _screens = const [
     HomeScreen(),
@@ -26,14 +33,21 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
+    // 360ms forward duration with fluid Apple Music / Material 3 deceleration curve
     _playerExpandController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 360),
+      reverseDuration: const Duration(milliseconds: 280),
     );
     _expandAnimation = CurvedAnimation(
       parent: _playerExpandController,
-      curve: Curves.fastOutSlowIn,
+      curve: const Cubic(0.2, 0.9, 0.22, 1.0),
+      reverseCurve: Curves.easeInCubic,
     );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.0, 1.0),
+      end: Offset.zero,
+    ).animate(_expandAnimation);
   }
 
   @override
@@ -61,6 +75,27 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     final isDark = theme.brightness == Brightness.dark;
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final isKeyboardUp = keyboardHeight > 0;
+    final isMultiSelection = ref.watch(isMultiSelectionModeProvider);
+
+    // Pre-cache ambient blur image (64px) when track changes so NowPlaying opens instantly without decode delay
+    ref.listen<Track?>(currentPlayingTrackProvider, (prev, next) {
+      if (next?.artworkUrl != null && next!.artworkUrl!.trim().isNotEmpty) {
+        final url = next.artworkUrl!;
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          precacheImage(
+            CachedNetworkImageProvider(url, maxWidth: 64, maxHeight: 64),
+            context,
+            onError: (_, _) {},
+          );
+        } else {
+          precacheImage(
+            FileImage(File(url)),
+            context,
+            onError: (_, _) {},
+          );
+        }
+      }
+    });
 
     return PopScope(
       canPop: false,
@@ -90,13 +125,11 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
         final now = DateTime.now();
         if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
           _lastBackPressTime = now;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Press back again to exit'),
-              duration: const Duration(seconds: 2),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
+          AppSnackBar.show(
+            context,
+            message: 'Press back again to exit',
+            type: AppSnackBarType.info,
+            duration: const Duration(seconds: 2),
           );
           return;
         }
@@ -114,21 +147,36 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
               children: _screens,
             ),
 
+            // 1.5. Dynamic Island Download Status Capsule
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 0,
+              right: 0,
+              child: const DownloadDynamicIsland(),
+            ),
+
             // 2. Docked Bottom Shell: Mini-Player & Custom Bottom Navigation Bar
             // Bottom navigation bar collapses smoothly when keyboard is open; MiniPlayer remains visible and docked above keyboard!
             AnimatedPositioned(
-              duration: const Duration(milliseconds: 200),
+              duration: const Duration(milliseconds: 250),
               curve: Curves.easeOutCubic,
               left: 0,
               right: 0,
-              bottom: isKeyboardUp ? keyboardHeight : 0,
+              bottom: isMultiSelection ? -180 : (isKeyboardUp ? keyboardHeight : 0),
               child: AnimatedBuilder(
                 animation: _expandAnimation,
                 builder: (context, child) {
-                  // When NowPlaying is expanding or expanded, disable touches on the bottom shell
-                  return IgnorePointer(
-                    ignoring: _expandAnimation.value > 0.05,
-                    child: child,
+                  final isFullyExpanded = _expandAnimation.value == 1.0;
+                  // Offstage and suspend tickers in bottom shell when full player is 100% open
+                  return Offstage(
+                    offstage: isFullyExpanded,
+                    child: TickerMode(
+                      enabled: !isFullyExpanded,
+                      child: IgnorePointer(
+                        ignoring: _expandAnimation.value > 0.05,
+                        child: child,
+                      ),
+                    ),
                   );
                 },
                 child: Column(
@@ -158,19 +206,26 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
             ),
 
             // 3. Expanding Full Now Playing Screen Overlay
-            // Sits at the very top of the Stack, completely covering the bottom navigation bar when expanded.
+            // Sits at the very top of the Stack, sliding up smoothly with hardware-accelerated SlideTransition.
+            // Using a static pre-mounted child avoids recreating or rebuilding NowPlayingScreen on every animation frame,
+            // while Offstage + TickerMode guarantee 0 GPU / 0 animation CPU while the player is collapsed.
             AnimatedBuilder(
               animation: _expandAnimation,
               builder: (context, child) {
-                if (_expandAnimation.value == 0.0) {
-                  return const SizedBox.shrink();
-                }
-                final screenHeight = MediaQuery.of(context).size.height;
-                final translateY = screenHeight * (1.0 - _expandAnimation.value);
+                final isCollapsed = _expandAnimation.value == 0.0;
 
-                return Transform.translate(
-                  offset: Offset(0, translateY),
-                  child: child,
+                return Offstage(
+                  offstage: isCollapsed,
+                  child: TickerMode(
+                    enabled: !isCollapsed,
+                    child: IgnorePointer(
+                      ignoring: isCollapsed,
+                      child: SlideTransition(
+                        position: _slideAnimation,
+                        child: child,
+                      ),
+                    ),
+                  ),
                 );
               },
               child: RepaintBoundary(
@@ -217,7 +272,7 @@ class _CustomBottomNavBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 56,
+          height: 58,
           child: Row(
             children: [
               _NavBarItem(
@@ -229,7 +284,7 @@ class _CustomBottomNavBar extends StatelessWidget {
                 onTap: () => onTap(0),
               ),
               _NavBarItem(
-                label: 'Watch',
+                label: 'Stream',
                 activeIcon: Icons.play_circle_fill_rounded,
                 inactiveIcon: Icons.play_circle_outline_rounded,
                 isSelected: activeIndex == 1,
@@ -267,7 +322,7 @@ class _NavBarItem extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final inactiveColor = isDark
         ? Colors.white.withValues(alpha: 0.42)
-        : Colors.black.withValues(alpha: 0.45);
+        : const Color(0xFF7E8292);
 
     return Expanded(
       child: GestureDetector(
@@ -276,24 +331,39 @@ class _NavBarItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedScale(
-              scale: isSelected ? 1.08 : 1.0,
-              duration: const Duration(milliseconds: 200),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
+              padding: EdgeInsets.symmetric(
+                horizontal: isSelected ? 16 : 8,
+                vertical: 2.5,
+              ),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? (isDark
+                        ? activeColor.withValues(alpha: 0.16)
+                        : AppColors.neonLime)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: Icon(
                 isSelected ? activeIcon : inactiveIcon,
-                size: 23,
-                color: isSelected ? activeColor : inactiveColor,
+                size: 21,
+                color: isSelected
+                    ? (isDark ? activeColor : Colors.black)
+                    : inactiveColor,
               ),
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
             AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? activeColor : inactiveColor,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                color: isSelected
+                    ? (isDark ? activeColor : const Color(0xFF121316))
+                    : inactiveColor,
                 letterSpacing: -0.2,
               ),
               child: Text(label),

@@ -6,7 +6,11 @@ class AppColors {
   static const Color neonLimeDim = Color(0xFFB5DB2A);
   static const Color neonLimeGlow = Color(0x33D2F843);
 
-  static const Color accentLight = Color(0xFF1E2028);
+  // High-contrast vibrant chartreuse for Light Theme (WCAG AA compliant 4.9:1 on white)
+  static const Color limeAccentDark = Color(0xFF527E03);
+  static const Color limeAccentDarkGlow = Color(0x33527E03);
+
+  static const Color accentLight = Color(0xFF527E03);
   static const Color accentDark = Color(0xFFD2F843);
 
   // Surfaces & Backgrounds

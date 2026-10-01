@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/data/repositories/local_files_scanner.dart';
 import '../providers/audio_providers.dart';
 
@@ -208,8 +209,10 @@ Future<void> startScanWithProgressDialog(BuildContext context, WidgetRef ref) as
     ref.read(isScanningProvider.notifier).setScanning(false);
     if (context.mounted) {
       Navigator.of(context, rootNavigator: true).maybePop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Scan error: $e')),
+      AppSnackBar.show(
+        context,
+        message: 'Scan error: $e',
+        type: AppSnackBarType.error,
       );
     }
   }

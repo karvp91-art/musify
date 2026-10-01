@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../domain/models/track.dart';
 import '../domain/models/playback_state.dart';
+import 'preferences_service.dart';
 
 class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+  final PreferencesService? preferencesService;
   final AudioPlayer _player = AudioPlayer();
   List<Track> _playlist = [];
   int _currentIndex = -1;
@@ -15,11 +19,42 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   final _trackPlayedController = StreamController<Track>.broadcast();
   Stream<Track> get trackPlayedStream => _trackPlayedController.stream;
 
-  AppRepeatMode _repeatMode = AppRepeatMode.off;
-  bool _isShuffle = false;
+  late AppRepeatMode _repeatMode;
+  late bool _isShuffle;
 
-  MusifyAudioHandler() {
+  bool get isShuffle => _isShuffle;
+  AppRepeatMode get repeatMode => _repeatMode;
+
+  final List<int> _shuffleIndices = [];
+  int _shufflePointer = -1;
+  final List<int> _historyIndices = [];
+
+  void _setupShuffleIndices() {
+    _shuffleIndices.clear();
+    _historyIndices.clear();
+    if (_playlist.isEmpty) {
+      _shufflePointer = -1;
+      return;
+    }
+    final allIndices = List.generate(_playlist.length, (i) => i);
+    if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
+      allIndices.remove(_currentIndex);
+      allIndices.shuffle(math.Random());
+      _shuffleIndices.add(_currentIndex);
+      _shuffleIndices.addAll(allIndices);
+      _shufflePointer = 0;
+    } else {
+      allIndices.shuffle(math.Random());
+      _shuffleIndices.addAll(allIndices);
+      _shufflePointer = 0;
+    }
+  }
+
+  MusifyAudioHandler({this.preferencesService}) {
+    _isShuffle = preferencesService?.getShuffleMode() ?? false;
+    _repeatMode = preferencesService?.getRepeatMode() ?? AppRepeatMode.off;
     _initAudioStreams();
+    _emitState();
   }
 
   void _initAudioStreams() {
@@ -64,6 +99,15 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         if (_repeatMode == AppRepeatMode.one) {
           _player.seek(Duration.zero);
           _player.play();
+        } else if (_isShuffle) {
+          if (hasNext) {
+            skipToNext();
+          } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
+            _setupShuffleIndices();
+            if (_shuffleIndices.isNotEmpty) {
+              skipToNext();
+            }
+          }
         } else if (hasNext) {
           skipToNext();
         } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
@@ -76,8 +120,23 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _player.bufferedPositionStream.listen((_) => _emitState());
   }
 
-  bool get hasNext => _playlist.isNotEmpty && _currentIndex < _playlist.length - 1;
-  bool get hasPrevious => _playlist.isNotEmpty && _currentIndex > 0;
+  bool get hasNext {
+    if (_playlist.isEmpty) return false;
+    if (_isShuffle) {
+      if (_repeatMode == AppRepeatMode.all) return true;
+      return _shufflePointer < _shuffleIndices.length - 1;
+    }
+    if (_repeatMode == AppRepeatMode.all) return true;
+    return _currentIndex < _playlist.length - 1;
+  }
+
+  bool get hasPrevious {
+    if (_playlist.isEmpty) return false;
+    if (_isShuffle) {
+      return _historyIndices.isNotEmpty || _shufflePointer > 0;
+    }
+    return _currentIndex > 0;
+  }
 
   List<Track>? _cachedUnmodifiableQueue;
 
@@ -114,6 +173,9 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _playlist = List.from(tracks);
     _invalidateQueueCache();
     _currentIndex = startIndex.clamp(0, _playlist.length - 1);
+    if (_isShuffle) {
+      _setupShuffleIndices();
+    }
 
     // Update queue in audio_service
     queue.add(_playlist.map(_trackToMediaItem).toList());
@@ -124,6 +186,29 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<void> playTrackAtIndex(int index) async {
     if (index < 0 || index >= _playlist.length) return;
     _currentIndex = index;
+
+    if (_isShuffle) {
+      if (_shuffleIndices.isEmpty || _shuffleIndices.length != _playlist.length) {
+        _setupShuffleIndices();
+      } else {
+        final pos = _shuffleIndices.indexOf(index);
+        if (pos != -1) {
+          _shufflePointer = pos;
+        }
+      }
+    }
+
+    await _playCurrentTrack();
+  }
+
+  Future<void> _playTrackInternal(int index) async {
+    if (index < 0 || index >= _playlist.length) return;
+    _currentIndex = index;
+    await _playCurrentTrack();
+  }
+
+  Future<void> _playCurrentTrack() async {
+    if (_currentIndex < 0 || _currentIndex >= _playlist.length) return;
     final track = _playlist[_currentIndex];
 
     // Update lock screen media item
@@ -132,7 +217,10 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _trackPlayedController.add(track);
 
     try {
-      if (track.source == AudioSourceType.local && track.filePath != null) {
+      final hasLocalFile = track.filePath != null &&
+          track.filePath!.isNotEmpty &&
+          File(track.filePath!).existsSync();
+      if (hasLocalFile) {
         await _player.setFilePath(track.filePath!);
       } else {
         await _player.setUrl(track.audioUrl);
@@ -173,8 +261,37 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<void> skipToNext() async {
-    if (hasNext) {
+    if (_playlist.isEmpty) return;
+
+    if (_isShuffle) {
+      if (_shuffleIndices.isEmpty || _shuffleIndices.length != _playlist.length) {
+        _setupShuffleIndices();
+      }
+      if (_shufflePointer < _shuffleIndices.length - 1) {
+        _historyIndices.add(_currentIndex);
+        _shufflePointer++;
+        final nextIndex = _shuffleIndices[_shufflePointer];
+        await _playTrackInternal(nextIndex);
+      } else if (_repeatMode == AppRepeatMode.all) {
+        if (_playlist.length > 1) {
+          _historyIndices.add(_currentIndex);
+          _setupShuffleIndices();
+          if (_shuffleIndices.length > 1) {
+            _shufflePointer = 1;
+            await _playTrackInternal(_shuffleIndices[_shufflePointer]);
+          }
+        } else if (_playlist.length == 1) {
+          await _player.seek(Duration.zero);
+          await _player.play();
+        }
+      }
+      return;
+    }
+
+    if (_currentIndex < _playlist.length - 1) {
       await playTrackAtIndex(_currentIndex + 1);
+    } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
+      await playTrackAtIndex(0);
     }
   }
 
@@ -183,7 +300,27 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (_player.position.inSeconds > 3) {
       // If played for more than 3 seconds, replay from start of track
       await _player.seek(Duration.zero);
-    } else if (hasPrevious) {
+      return;
+    }
+
+    if (_isShuffle) {
+      if (_historyIndices.isNotEmpty) {
+        final prevIndex = _historyIndices.removeLast();
+        _shufflePointer = _shuffleIndices.indexOf(prevIndex);
+        await _playTrackInternal(prevIndex);
+        return;
+      } else if (_shufflePointer > 0) {
+        _shufflePointer--;
+        final prevIndex = _shuffleIndices[_shufflePointer];
+        await _playTrackInternal(prevIndex);
+        return;
+      } else {
+        await _player.seek(Duration.zero);
+        return;
+      }
+    }
+
+    if (hasPrevious) {
       await playTrackAtIndex(_currentIndex - 1);
     } else {
       await _player.seek(Duration.zero);
@@ -192,7 +329,23 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
+    preferencesService?.setShuffleMode(_isShuffle);
+    if (_isShuffle) {
+      _setupShuffleIndices();
+    } else {
+      _shuffleIndices.clear();
+      _shufflePointer = -1;
+      _historyIndices.clear();
+    }
     _emitState();
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    final shouldShuffle = shuffleMode != AudioServiceShuffleMode.none;
+    if (_isShuffle != shouldShuffle) {
+      toggleShuffle();
+    }
   }
 
   void cycleRepeatMode() {
@@ -207,11 +360,33 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         _repeatMode = AppRepeatMode.off;
         break;
     }
+    preferencesService?.setRepeatMode(_repeatMode);
+    _emitState();
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    switch (repeatMode) {
+      case AudioServiceRepeatMode.none:
+        _repeatMode = AppRepeatMode.off;
+        break;
+      case AudioServiceRepeatMode.all:
+      case AudioServiceRepeatMode.group:
+        _repeatMode = AppRepeatMode.all;
+        break;
+      case AudioServiceRepeatMode.one:
+        _repeatMode = AppRepeatMode.one;
+        break;
+    }
+    preferencesService?.setRepeatMode(_repeatMode);
     _emitState();
   }
 
   void addToQueue(Track track) {
     _playlist.add(track);
+    if (_isShuffle) {
+      _shuffleIndices.add(_playlist.length - 1);
+    }
     _invalidateQueueCache();
     queue.add(_playlist.map(_trackToMediaItem).toList());
     _emitState();
@@ -220,6 +395,15 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   void insertNextInQueue(Track track) {
     final insertIndex = (_currentIndex + 1).clamp(0, _playlist.length);
     _playlist.insert(insertIndex, track);
+    if (_isShuffle) {
+      for (int i = 0; i < _shuffleIndices.length; i++) {
+        if (_shuffleIndices[i] >= insertIndex) {
+          _shuffleIndices[i]++;
+        }
+      }
+      final targetPos = (_shufflePointer + 1).clamp(0, _shuffleIndices.length);
+      _shuffleIndices.insert(targetPos, insertIndex);
+    }
     _invalidateQueueCache();
     queue.add(_playlist.map(_trackToMediaItem).toList());
     _emitState();
@@ -230,6 +414,23 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (index >= 0 && index < _playlist.length) {
       _playlist.removeAt(index);
       _invalidateQueueCache();
+      if (_isShuffle) {
+        _shuffleIndices.remove(index);
+        for (int i = 0; i < _shuffleIndices.length; i++) {
+          if (_shuffleIndices[i] > index) {
+            _shuffleIndices[i]--;
+          }
+        }
+        _historyIndices.removeWhere((i) => i == index);
+        for (int i = 0; i < _historyIndices.length; i++) {
+          if (_historyIndices[i] > index) {
+            _historyIndices[i]--;
+          }
+        }
+        if (_currentIndex >= 0) {
+          _shufflePointer = _shuffleIndices.indexOf(_currentIndex);
+        }
+      }
       if (index < _currentIndex) {
         _currentIndex--;
       } else if (index == _currentIndex && _playlist.isNotEmpty) {
@@ -237,6 +438,13 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
       queue.add(_playlist.map(_trackToMediaItem).toList());
       _emitState();
+    }
+  }
+
+  Future<void> removeTrackById(String trackId) async {
+    final index = _playlist.indexWhere((t) => t.id == trackId);
+    if (index != -1) {
+      await removeQueueItemAt(index);
     }
   }
 

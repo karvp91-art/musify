@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:musify/core/theme/app_colors.dart';
 
 class TrackArtwork extends StatelessWidget {
   final String? artworkUrl;
+  final String? seedKey;
   final double size;
   final double? height;
   final BorderRadius? borderRadius;
@@ -11,9 +13,64 @@ class TrackArtwork extends StatelessWidget {
   final bool ambientGlow;
   final IconData fallbackIcon;
 
+  // Curated theme-harmonized gradient palettes for Dark Mode
+  // Deep obsidian, slate, forest, jade, olive, and chartreuse noir tones
+  static const List<List<Color>> darkGradientPalettes = [
+    // 1. Deep Forest Charcoal
+    [Color(0xFF132019), Color(0xFF1E3226)],
+    // 2. Dark Slate & Gunmetal
+    [Color(0xFF181B22), Color(0xFF262C38)],
+    // 3. Olive Bronze & Chartreuse Noir
+    [Color(0xFF1C2213), Color(0xFF2F3A1D)],
+    // 4. Muted Jade Slate
+    [Color(0xFF13211F), Color(0xFF1F3532)],
+    // 5. Deep Moss & Pine
+    [Color(0xFF162319), Color(0xFF243B2A)],
+    // 6. Charcoal Graphite with Lime Undertone
+    [Color(0xFF1A1D1A), Color(0xFF283026)],
+    // 7. Dark Teal Slate
+    [Color(0xFF122123), Color(0xFF1C3438)],
+    // 8. Dark Khaki Slate
+    [Color(0xFF202217), Color(0xFF333822)],
+  ];
+
+  // Curated theme-harmonized gradient palettes for Light Mode
+  // Soft, refined, airy tones in sage, light olive, chartreuse mist, pale jade, and clean slate
+  static const List<List<Color>> lightGradientPalettes = [
+    // 1. Soft Sage Grey
+    [Color(0xFFE4EDE5), Color(0xFFD3E2D6)],
+    // 2. Light Slate Card
+    [Color(0xFFECEEF2), Color(0xFFDFE3EB)],
+    // 3. Soft Chartreuse Mist
+    [Color(0xFFEDF3DF), Color(0xFFE0ECCC)],
+    // 4. Soft Olive Mist
+    [Color(0xFFE9EEDF), Color(0xFFDCE4CF)],
+    // 5. Pale Jade Grey
+    [Color(0xFFE1EAE4), Color(0xFFCFDDD4)],
+    // 6. Muted Lime Frost
+    [Color(0xFFEEF5E1), Color(0xFFE1EDCF)],
+    // 7. Clean Stone Slate
+    [Color(0xFFEAEBED), Color(0xFFDCE0E6)],
+    // 8. Soft Moss Cream
+    [Color(0xFFE7ECE2), Color(0xFFD8E1D2)],
+  ];
+
+  static List<Color> getGradientForSeed(String? seed, {bool isDark = false}) {
+    final palettes = isDark ? darkGradientPalettes : lightGradientPalettes;
+    if (seed == null || seed.isEmpty) {
+      return palettes[0];
+    }
+    int hash = 0;
+    for (int i = 0; i < seed.length; i++) {
+      hash = (hash * 31 + seed.codeUnitAt(i)) & 0x7FFFFFFF;
+    }
+    return palettes[hash % palettes.length];
+  }
+
   const TrackArtwork({
     super.key,
     required this.artworkUrl,
+    this.seedKey,
     required this.size,
     this.height,
     this.borderRadius,
@@ -25,6 +82,7 @@ class TrackArtwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final primaryColor = theme.colorScheme.primary;
     final w = size;
     final h = height ?? size;
@@ -37,25 +95,28 @@ class TrackArtwork extends StatelessWidget {
     final targetCacheWidth = (w * pixelRatio).round().clamp(80, 1080);
     final targetCacheHeight = (h * pixelRatio).round().clamp(80, 1080);
 
+    final effectiveSeed = seedKey ?? artworkUrl;
+    final gradientColors = getGradientForSeed(effectiveSeed, isDark: isDark);
+    final iconColor = isDark
+        ? AppColors.neonLime.withValues(alpha: 0.82)
+        : AppColors.limeAccentDark.withValues(alpha: 0.78);
+
     final Widget fallbackWidget = Container(
       width: w,
       height: h,
       decoration: BoxDecoration(
         borderRadius: effectiveRadius,
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF262936),
-            Color(0xFF161820),
-          ],
+          colors: gradientColors,
         ),
       ),
       child: Center(
         child: Icon(
           fallbackIcon,
-          size: w * 0.45,
-          color: primaryColor.withValues(alpha: 0.6),
+          size: w * 0.44,
+          color: iconColor,
         ),
       ),
     );

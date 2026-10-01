@@ -2,11 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/constants/app_constants.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/compact_card.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
+import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -18,6 +20,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
+  Timer? _historyTimer;
   List<Track> _searchResults = [];
   bool _isSearching = false;
   String _selectedFilter = 'All';
@@ -41,11 +44,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void dispose() {
     _searchController.dispose();
     _debounceTimer?.cancel();
+    _historyTimer?.cancel();
     super.dispose();
   }
 
   void _performSearch(String query, {bool addToHistory = true}) async {
     _debounceTimer?.cancel();
+    _historyTimer?.cancel();
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       setState(() {
@@ -76,7 +81,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
-    if (query.trim().isEmpty) {
+    _historyTimer?.cancel();
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
       setState(() {
         _searchResults = [];
         _isSearching = false;
@@ -85,8 +92,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
 
     _debounceTimer = Timer(AppConstants.debounceSearchDuration, () {
-      _performSearch(query, addToHistory: false);
+      _performSearch(trimmed, addToHistory: false);
     });
+
+    // Auto-record to recent search history after 1.2s pause when query has substantial length
+    if (trimmed.length >= 2) {
+      _historyTimer = Timer(const Duration(milliseconds: 1200), () {
+        ref.read(searchHistoryProvider.notifier).addQuery(trimmed);
+      });
+    }
   }
 
   List<Track> _getFilteredResults() {
@@ -102,37 +116,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return _searchResults;
   }
 
-  // --- Top Bar matching HomeScreen ---
+  // --- Top Bar matching HomeScreen (with centered title) ---
   Widget _buildTopHeader(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      padding: const EdgeInsets.fromLTRB(11, 12, 11, 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left: Borderless Search Icon Button
-          _GlassCircleButton(
-            icon: Icons.search_rounded,
-            onTap: () {
-              if (_searchController.text.isNotEmpty) {
-                HapticFeedback.lightImpact();
-                _searchController.clear();
-                _performSearch('', addToHistory: false);
-              }
-            },
-          ),
+          // Left balance spacer (matches the 44px width of the right button)
+          const SizedBox(width: 44),
 
           // Center: Title "Search & Explore"
-          Text(
-            'Search & Explore',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              fontSize: 22,
-              color: theme.colorScheme.onSurface,
-              letterSpacing: -0.5,
+          Expanded(
+            child: Text(
+              'Search & Explore',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                fontSize: 22,
+                color: theme.colorScheme.onSurface,
+                letterSpacing: -0.5,
+              ),
             ),
           ),
 
-          // Right: Refresh Online Tracks Button (Borderless)
+          // Right: Refresh Online Tracks Button (Borderless 44px)
           _GlassCircleButton(
             icon: _isSearching ? Icons.hourglass_top_rounded : Icons.refresh_rounded,
             onTap: () {
@@ -153,7 +160,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   // --- Search Input Bar matching HomeScreen borderless capsule design ---
   Widget _buildSearchBar(ThemeData theme, bool isDark) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
       child: Container(
         height: 46,
         decoration: BoxDecoration(
@@ -162,8 +169,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         child: TextField(
           controller: _searchController,
+          textInputAction: TextInputAction.search,
           onChanged: _onSearchChanged,
-          onSubmitted: (query) => _performSearch(query, addToHistory: true),
+          onSubmitted: (query) {
+            _historyTimer?.cancel();
+            if (query.trim().isNotEmpty) {
+              _performSearch(query, addToHistory: true);
+            }
+          },
           style: TextStyle(
             color: isDark ? Colors.white : const Color(0xFF1E2028),
             fontSize: 14,
@@ -175,10 +188,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               fontSize: 13.5,
               color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
             ),
-            prefixIcon: Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: theme.colorScheme.primary,
+            prefixIcon: GestureDetector(
+              onTap: () {
+                if (_searchController.text.trim().isNotEmpty) {
+                  _historyTimer?.cancel();
+                  _performSearch(_searchController.text, addToHistory: true);
+                }
+              },
+              child: Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: theme.colorScheme.primary,
+              ),
             ),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
@@ -188,6 +209,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                     onPressed: () {
+                      _historyTimer?.cancel();
                       _searchController.clear();
                       _performSearch('', addToHistory: false);
                     },
@@ -210,6 +232,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     bool isDark,
   ) {
     final primaryColor = theme.colorScheme.primary;
+    final selectedBg = isDark ? primaryColor : AppColors.neonLime;
     final unselectedBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
     final unselectedTextColor = isDark
         ? Colors.white.withValues(alpha: 0.85)
@@ -217,7 +240,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       child: Row(
         children: items.map((item) {
           final isSelected = item == selectedItem;
@@ -233,7 +256,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 curve: Curves.easeOutCubic,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSelected ? primaryColor : unselectedBg,
+                  color: isSelected ? selectedBg : unselectedBg,
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Text(
@@ -252,14 +275,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  // --- Search History Section (replaces popular searches) ---
+  // --- Search History Section (Recent Searches) ---
   Widget _buildSearchHistory(ThemeData theme, bool isDark) {
     final historyAsync = ref.watch(searchHistoryProvider);
 
     return historyAsync.when(
       data: (history) {
+        if (history.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -285,144 +312,101 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                     ],
                   ),
-                  if (history.isNotEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        _showClearHistoryDialog(context);
-                      },
-                      child: Text(
-                        'Clear all',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                        ),
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      _showClearHistoryDialog(context);
+                    },
+                    child: Text(
+                      'Clear all',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              if (history.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.search_rounded,
-                          size: 36,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.25),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'No recent searches',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Searches you perform will appear here',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
-                )
-              else
-                Column(
-                  children: history.map((item) {
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        _searchController.text = item;
-                        _performSearch(item, addToHistory: true);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.history_rounded,
-                              size: 18,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              Column(
+                children: history.take(6).map((item) {
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      _historyTimer?.cancel();
+                      _searchController.text = item;
+                      _searchController.selection = TextSelection.fromPosition(
+                        TextPosition(offset: item.length),
+                      );
+                      _performSearch(item, addToHistory: true);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.history_rounded,
+                            size: 18,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              item,
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w500,
+                                color: isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Text(
-                                item,
-                                style: TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028),
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              ref.read(searchHistoryProvider.notifier).removeQuery(item);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 17,
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                               ),
                             ),
-                            GestureDetector(
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                ref.read(searchHistoryProvider.notifier).removeQuery(item);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(
-                                  Icons.close_rounded,
-                                  size: 17,
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    );
-                  }).toList(),
-                ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ],
           ),
         );
       },
-      loading: () => const SizedBox(height: 40),
+      loading: () => const SizedBox.shrink(),
       error: (_, _) => const SizedBox.shrink(),
     );
   }
 
-  void _showClearHistoryDialog(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    showDialog(
+  void _showClearHistoryDialog(BuildContext context) async {
+    final confirmed = await showAppConfirmationDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1A1C24) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Clear Search History?'),
-        content: const Text('This will remove all recent searches from your history.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              ref.read(searchHistoryProvider.notifier).clearAll();
-              Navigator.pop(ctx);
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
+      title: 'Clear Search History?',
+      description: 'Are you sure you want to remove all recent searches from your history?',
+      confirmText: 'Clear',
+      cancelText: 'Cancel',
+      icon: Icons.history_rounded,
     );
+
+    if (confirmed == true) {
+      ref.read(searchHistoryProvider.notifier).clearAll();
+    }
   }
 
   @override
@@ -480,9 +464,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             physics: const ClampingScrollPhysics(),
                             padding: EdgeInsets.only(bottom: bottomPadding),
                             children: [
+                              // Recent Searches History Section (prominently at the top)
+                              _buildSearchHistory(theme, isDark),
+
                               // JioSaavn Discovery Header
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                                padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
@@ -557,7 +544,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                     if (saavnTracks.isEmpty) {
                                       return Center(
                                         child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                                          padding: const EdgeInsets.symmetric(horizontal: 14),
                                           child: Row(
                                             mainAxisAlignment: MainAxisAlignment.center,
                                             children: [
@@ -579,7 +566,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
                                     return ListView.builder(
                                       scrollDirection: Axis.horizontal,
-                                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                                      padding: const EdgeInsets.symmetric(horizontal: 14),
                                       itemCount: saavnTracks.length,
                                       itemBuilder: (context, index) {
                                         final track = saavnTracks[index];
@@ -588,6 +575,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                           subtitle: track.artistName,
                                           imageUrl: track.artworkUrl,
                                           onTap: () {
+                                            _historyTimer?.cancel();
                                             ref.read(searchHistoryProvider.notifier).addQuery(track.title);
                                             audioHandler.playTrackList(saavnTracks, startIndex: index);
                                           },
@@ -611,10 +599,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                 ),
                               ),
 
-                              const SizedBox(height: 28),
-
-                              // Recent Searches History Section
-                              _buildSearchHistory(theme, isDark),
+                              const SizedBox(height: 16),
                             ],
                           ),
                         )
@@ -664,7 +649,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                   isCurrent: isCurrent,
                                   isPlaying: isTilePlaying,
                                   onTap: () {
-                                    ref.read(searchHistoryProvider.notifier).addQuery(_searchController.text.trim().isNotEmpty ? _searchController.text.trim() : track.title);
+                                    _historyTimer?.cancel();
+                                    final query = _searchController.text.trim();
+                                    if (query.isNotEmpty) {
+                                      ref.read(searchHistoryProvider.notifier).addQuery(query);
+                                    } else {
+                                      ref.read(searchHistoryProvider.notifier).addQuery(track.title);
+                                    }
                                     audioHandler.playTrackList(filteredResults, startIndex: index);
                                   },
                                   onLikeToggle: () {

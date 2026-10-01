@@ -9,12 +9,15 @@ class AppTheme {
 
   static ThemeData _buildLightTheme() {
     final colorScheme = const ColorScheme.light(
-      primary: AppColors.neonLime,
-      secondary: AppColors.neonLime,
+      primary: AppColors.limeAccentDark,
+      secondary: AppColors.limeAccentDark,
+      primaryContainer: AppColors.neonLime,
+      onPrimaryContainer: Colors.black,
       surface: AppColors.surfaceLight,
+      surfaceContainerHighest: AppColors.surfacePillLight,
       error: AppColors.errorLight,
-      onPrimary: Colors.black,
-      onSecondary: Colors.black,
+      onPrimary: Colors.white,
+      onSecondary: Colors.white,
       onSurface: AppColors.onSurfaceLight,
       onError: Colors.white,
     );
@@ -48,11 +51,11 @@ class AppTheme {
         space: 1,
       ),
       sliderTheme: const SliderThemeData(
-        activeTrackColor: Color(0xFF9FC21B),
+        activeTrackColor: AppColors.limeAccentDark,
         inactiveTrackColor: AppColors.dividerLight,
-        thumbColor: Color(0xFF9FC21B),
-        overlayColor: Color(0x339FC21B),
-        trackHeight: 3,
+        thumbColor: AppColors.limeAccentDark,
+        overlayColor: AppColors.limeAccentDarkGlow,
+        trackHeight: 3.5,
         thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
