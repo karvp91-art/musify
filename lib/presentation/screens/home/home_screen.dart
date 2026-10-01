@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
@@ -512,76 +514,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final allSelected = currentVisibleTracks.isNotEmpty &&
         currentVisibleTracks.every((t) => _selectedTrackIds.contains(t.id));
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-      child: Row(
-        children: [
-          // Left: Close Button to exit Selection Mode
-          _GlassCircleButton(
-            icon: Icons.close_rounded,
-            size: 40,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              _exitSelectionMode();
-            },
-          ),
-
-          // Center: Selection Count (Centered)
-          Expanded(
-            child: Center(
-              child: Text(
-                '${_selectedTrackIds.length} selected',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: theme.colorScheme.onSurface,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ),
-          ),
-
-          // Right: 3 Circle Buttons (Select All / Edit, Delete, More)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 1. Select All / Toggle All
-              _GlassCircleButton(
-                icon: allSelected ? Icons.check_box_rounded : Icons.checklist_rounded,
-                size: 40,
-                iconColor: allSelected
-                    ? (isDark ? AppColors.neonLime : const Color(0xFF70A314))
-                    : null,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  setState(() {
-                    if (allSelected) {
-                      _selectedTrackIds.clear();
-                    } else {
-                      _selectedTrackIds.addAll(currentVisibleTracks.map((t) => t.id));
-                    }
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-
-              // 2. Delete Action
-              _GlassCircleButton(
-                icon: Icons.delete_outline_rounded,
-                size: 40,
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  _confirmBatchDelete(context, ref, currentVisibleTracks);
-                },
-              ),
-              const SizedBox(width: 8),
-
-              // 3. More Menu (3 dots)
-              _buildMoreMenuButton(context, currentVisibleTracks, isDark),
-            ],
-          ),
-        ],
+    return GlassAppBar(
+      toolbarHeight: 52.0,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      centerTitle: true,
+      leading: _GlassCircleButton(
+        icon: Icons.close_rounded,
+        size: 40,
+        iconSize: 20,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          _exitSelectionMode();
+        },
       ),
+      title: Text(
+        '${_selectedTrackIds.length} selected',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: theme.colorScheme.onSurface,
+          letterSpacing: -0.3,
+          decoration: TextDecoration.none,
+        ),
+      ),
+      actions: [
+        // 1. Select All / Toggle All
+        _GlassCircleButton(
+          icon: allSelected ? Icons.check_box_rounded : Icons.checklist_rounded,
+          size: 40,
+          iconSize: 20,
+          iconColor: allSelected
+              ? (isDark ? AppColors.neonLime : const Color(0xFF70A314))
+              : null,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() {
+              if (allSelected) {
+                _selectedTrackIds.clear();
+              } else {
+                _selectedTrackIds.addAll(currentVisibleTracks.map((t) => t.id));
+              }
+            });
+          },
+        ),
+        const SizedBox(width: 8),
+
+        // 2. Delete Action
+        _GlassCircleButton(
+          icon: Icons.delete_outline_rounded,
+          size: 40,
+          iconSize: 20,
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            _confirmBatchDelete(context, ref, currentVisibleTracks);
+          },
+        ),
+        const SizedBox(width: 8),
+
+        // 3. More Menu (3 dots)
+        _buildMoreMenuButton(context, currentVisibleTracks, isDark),
+      ],
     );
   }
 
@@ -908,50 +901,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // --- Header & Filters ---
 
   Widget _buildTopHeader(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 11, 8),
-      child: Row(
-        children: [
-          // Left: Borderless Search Toggle
-          _GlassCircleButton(
-            icon: _isSearchExpanded ? Icons.close_rounded : Icons.search_rounded,
-            onTap: () {
-              setState(() {
-                _isSearchExpanded = !_isSearchExpanded;
-                if (!_isSearchExpanded) {
-                  _searchController.clear();
-                  _searchQuery = '';
-                }
-              });
-            },
-          ),
-
-          // Center: "My Music" Title (centered in the middle between search and sorting icons)
-          Expanded(
-            child: Text(
-              'My Music',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-                fontSize: 22,
-                color: theme.colorScheme.onSurface,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ),
-
-          // Dedicated Sorting Dropdown in AppBar
-          const TrackSortDropdown(),
-
-          const SizedBox(width: 8),
-
-          // Right: Borderless More Button
-          _GlassCircleButton(
-            icon: Icons.more_horiz_rounded,
-            onTap: () => _showMoreMenu(context, ref),
-          ),
-        ],
+    return GlassAppBar(
+      toolbarHeight: 52.0,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      centerTitle: true,
+      leading: _GlassCircleButton(
+        icon: _isSearchExpanded ? Icons.close_rounded : Icons.search_rounded,
+        iconColor: _isSearchExpanded ? theme.colorScheme.primary : null,
+        activeGlowColor: _isSearchExpanded ? theme.colorScheme.primary : null,
+        iconSize: 21,
+        onTap: () {
+          setState(() {
+            _isSearchExpanded = !_isSearchExpanded;
+            if (!_isSearchExpanded) {
+              _searchController.clear();
+              _searchQuery = '';
+            }
+          });
+        },
       ),
+      title: Text(
+        'My Music',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          fontSize: 22,
+          color: theme.colorScheme.onSurface,
+          letterSpacing: -0.5,
+          decoration: TextDecoration.none,
+        ),
+      ),
+      actions: [
+        // Dedicated Sorting Dropdown in AppBar
+        const TrackSortDropdown(),
+
+        const SizedBox(width: 8),
+
+        // Right: Liquid Glass More Button
+        _GlassCircleButton(
+          icon: Icons.more_horiz_rounded,
+          iconSize: 21,
+          onTap: () => _showMoreMenu(context, ref),
+        ),
+      ],
     );
   }
 
@@ -1564,40 +1556,96 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-/// Borderless circular button used for header actions
+/// Liquid glass circular button used for header actions matching GlassTabBar.bottom optics
 class _GlassCircleButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final Color? iconColor;
   final double size;
+  final double? iconSize;
+  final Color? activeGlowColor;
 
   const _GlassCircleButton({
     required this.icon,
     required this.onTap,
     this.iconColor,
     this.size = 44,
+    this.iconSize,
+    this.activeGlowColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final defaultBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
     final defaultIconColor = isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: defaultBg,
-        ),
-        child: Icon(
-          icon,
-          size: size * 0.48,
-          color: iconColor ?? defaultIconColor,
+    final glassSettings = isDark
+        ? const LiquidGlassSettings(
+            thickness: 30.0,
+            blur: 3.0,
+            chromaticAberration: 0.30,
+            lightIntensity: 0.65,
+            ambientStrength: 1.0,
+            refractiveIndex: 1.59,
+            saturation: 0.70,
+            lightAngle: 0.75 * math.pi,
+            glassColor: Color(0x2EFFFFFF),
+            specularSharpness: GlassSpecularSharpness.sharp,
+          )
+        : const LiquidGlassSettings(
+            thickness: 28.0,
+            blur: 3.0,
+            chromaticAberration: 0.25,
+            lightIntensity: 0.60,
+            ambientStrength: 1.0,
+            refractiveIndex: 1.55,
+            saturation: 0.85,
+            lightAngle: 0.75 * math.pi,
+            glassColor: Color(0x3DFFFFFF),
+            specularSharpness: GlassSpecularSharpness.medium,
+          );
+
+    return Material(
+      type: MaterialType.transparency,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              if (activeGlowColor != null)
+                BoxShadow(
+                  color: activeGlowColor!.withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: GlassContainer(
+            useOwnLayer: true,
+            clipBehavior: Clip.antiAlias,
+            shape: LiquidRoundedSuperellipse(borderRadius: size / 2),
+            settings: glassSettings,
+            child: Center(
+              child: Icon(
+                icon,
+                size: iconSize ?? (size * 0.48),
+                color: iconColor ?? defaultIconColor,
+              ),
+            ),
+          ),
         ),
       ),
     );

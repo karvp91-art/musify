@@ -161,40 +161,57 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
               backgroundColor: isDark ? Colors.black : Colors.white,
               bottomBar: isMultiSelection
                   ? null
-                  : GlassTabBar.bottom(
-                      tabs: const [
-                        GlassTab(
-                          icon: Icon(Icons.headphones_outlined),
-                          activeIcon: Icon(Icons.headphones_rounded),
-                          label: 'My music',
-                          glowColor: AppColors.neonLime,
+                  : Material(
+                      type: MaterialType.transparency,
+                      child: GlassTabBar.bottom(
+                        tabs: const [
+                          GlassTab(
+                            icon: Icon(Icons.headphones_outlined),
+                            activeIcon: Icon(Icons.headphones_rounded),
+                            label: 'My music',
+                            glowColor: AppColors.neonLime,
+                          ),
+                          GlassTab(
+                            icon: Icon(Icons.play_circle_outline_rounded),
+                            activeIcon: Icon(Icons.play_circle_fill_rounded),
+                            label: 'Stream',
+                            glowColor: AppColors.neonLime,
+                          ),
+                        ],
+                        selectedIndex: activeIndex,
+                        onTabSelected: (index) {
+                          HapticFeedback.selectionClick();
+                          ref.read(currentTabIndexProvider.notifier).setIndex(index);
+                        },
+                        indicatorColor: AppColors.neonLime,
+                        selectedIconColor: const Color(0xFF111827),
+                        selectedLabelColor: const Color(0xFF111827),
+                        unselectedIconColor: isDark
+                            ? Colors.white.withValues(alpha: 0.65)
+                            : const Color(0xFF555B6E),
+                        unselectedLabelColor: isDark
+                            ? Colors.white.withValues(alpha: 0.65)
+                            : const Color(0xFF555B6E),
+                        selectedLabelStyle: TextStyle(
+                          fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.none,
+                          letterSpacing: -0.2,
                         ),
-                        GlassTab(
-                          icon: Icon(Icons.play_circle_outline_rounded),
-                          activeIcon: Icon(Icons.play_circle_fill_rounded),
-                          label: 'Stream',
-                          glowColor: AppColors.neonLime,
+                        unselectedLabelStyle: TextStyle(
+                          fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          decoration: TextDecoration.none,
+                          letterSpacing: -0.2,
                         ),
-                      ],
-                      selectedIndex: activeIndex,
-                      onTabSelected: (index) {
-                        HapticFeedback.selectionClick();
-                        ref.read(currentTabIndexProvider.notifier).setIndex(index);
-                      },
-                      indicatorColor: AppColors.neonLime,
-                      selectedIconColor: const Color(0xFF111827),
-                      selectedLabelColor: const Color(0xFF111827),
-                      unselectedIconColor: isDark
-                          ? Colors.white.withValues(alpha: 0.65)
-                          : const Color(0xFF555B6E),
-                      unselectedLabelColor: isDark
-                          ? Colors.white.withValues(alpha: 0.65)
-                          : const Color(0xFF555B6E),
-                      bottomAccessory: MiniPlayer(
-                        onExpand: _expandPlayer,
+                        bottomAccessory: MiniPlayer(
+                          onExpand: _expandPlayer,
+                        ),
+                        bottomAccessoryEnabled: hasTrack,
+                        bottomAccessoryHeight: 80,
                       ),
-                      bottomAccessoryEnabled: hasTrack,
-                      bottomAccessoryHeight: 80,
                     ),
               body: Stack(
                 children: [
