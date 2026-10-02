@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1556,7 +1555,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-/// Liquid glass circular button used for header actions matching GlassTabBar.bottom optics
+/// Normal circular button used for header actions inside AppBar
 class _GlassCircleButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -1569,7 +1568,7 @@ class _GlassCircleButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     this.iconColor,
-    this.size = 44,
+    this.size = 40,
     this.iconSize,
     this.activeGlowColor,
   });
@@ -1578,74 +1577,36 @@ class _GlassCircleButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final defaultIconColor = isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
+    final defaultIconColor =
+        isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
 
-    final glassSettings = isDark
-        ? const LiquidGlassSettings(
-            thickness: 30.0,
-            blur: 3.0,
-            chromaticAberration: 0.30,
-            lightIntensity: 0.65,
-            ambientStrength: 1.0,
-            refractiveIndex: 1.59,
-            saturation: 0.70,
-            lightAngle: 0.75 * math.pi,
-            glassColor: Color(0x2EFFFFFF),
-            specularSharpness: GlassSpecularSharpness.sharp,
-          )
-        : const LiquidGlassSettings(
-            thickness: 28.0,
-            blur: 3.0,
-            chromaticAberration: 0.25,
-            lightIntensity: 0.60,
-            ambientStrength: 1.0,
-            refractiveIndex: 1.55,
-            saturation: 0.85,
-            lightAngle: 0.75 * math.pi,
-            glassColor: Color(0x3DFFFFFF),
-            specularSharpness: GlassSpecularSharpness.medium,
-          );
-
-    return Material(
-      type: MaterialType.transparency,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              if (activeGlowColor != null)
-                BoxShadow(
-                  color: activeGlowColor!.withValues(alpha: 0.35),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: GlassContainer(
-            useOwnLayer: true,
-            clipBehavior: Clip.antiAlias,
-            shape: LiquidRoundedSuperellipse(borderRadius: size / 2),
-            settings: glassSettings,
-            child: Center(
-              child: Icon(
-                icon,
-                size: iconSize ?? (size * 0.48),
-                color: iconColor ?? defaultIconColor,
-              ),
-            ),
-          ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+          boxShadow: activeGlowColor != null
+              ? [
+                  BoxShadow(
+                    color: activeGlowColor!.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          size: iconSize ?? 20,
+          color: iconColor ?? defaultIconColor,
         ),
       ),
     );

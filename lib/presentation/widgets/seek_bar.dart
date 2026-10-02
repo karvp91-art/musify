@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+import 'package:musify/core/theme/app_colors.dart';
 
 class CustomSeekBar extends StatefulWidget {
   final Duration position;
@@ -36,7 +39,7 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = theme.colorScheme.primary;
+    final activeColor = isDark ? AppColors.neonLime : AppColors.neonLime;
     final totalDurationMs = widget.duration.inMilliseconds.toDouble();
     final currentPosMs = widget.position.inMilliseconds.toDouble().clamp(
           0.0,
@@ -54,8 +57,9 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
         : widget.position;
 
     final inactiveTrack = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : const Color(0xFFE2E5ED);
+        ? Colors.white.withValues(alpha: 0.16)
+        : Colors.black.withValues(alpha: 0.08);
+
     final timeColor = isDark
         ? Colors.white.withValues(alpha: 0.55)
         : theme.colorScheme.onSurface.withValues(alpha: 0.55);
@@ -63,23 +67,18 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SliderTheme(
-          data: theme.sliderTheme.copyWith(
-            trackHeight: isDragging ? 5.0 : 3.5,
-            thumbShape: RoundSliderThumbShape(
-              enabledThumbRadius: isDragging ? 8 : 5,
-              elevation: isDragging ? 4 : 1,
-            ),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-            activeTrackColor: primaryColor,
-            inactiveTrackColor: inactiveTrack,
-            thumbColor: primaryColor,
-            overlayColor: primaryColor.withValues(alpha: 0.18),
-          ),
-          child: Slider(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: GlassSlider(
+            value: sliderValue,
             min: 0.0,
             max: totalDurationMs > 0 ? totalDurationMs : 1.0,
-            value: sliderValue,
+            activeColor: activeColor,
+            thumbColor: activeColor,
+            inactiveColor: inactiveTrack,
+            glowColor: activeColor.withValues(alpha: isDark ? 0.60 : 0.40),
+            glowRadius: 2.5,
+            useOwnLayer: true,
             onChangeStart: (val) {
               HapticFeedback.selectionClick();
             },
@@ -111,7 +110,7 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: isDragging ? FontWeight.w600 : FontWeight.w400,
                   fontSize: 12,
-                  color: isDragging ? primaryColor : timeColor,
+                  color: isDragging ? activeColor : timeColor,
                 ),
               ),
               Text(

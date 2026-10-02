@@ -1,8 +1,6 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/domain/models/track_sort_option.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 
@@ -120,74 +118,35 @@ class TrackSortDropdown extends ConsumerWidget {
         isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
     final isNonDefault = currentSort != TrackSortOption.recentlyAdded;
 
-    final glassSettings = isDark
-        ? const LiquidGlassSettings(
-            thickness: 30.0,
-            blur: 3.0,
-            chromaticAberration: 0.30,
-            lightIntensity: 0.65,
-            ambientStrength: 1.0,
-            refractiveIndex: 1.59,
-            saturation: 0.70,
-            lightAngle: 0.75 * math.pi,
-            glassColor: Color(0x2EFFFFFF),
-            specularSharpness: GlassSpecularSharpness.sharp,
-          )
-        : const LiquidGlassSettings(
-            thickness: 28.0,
-            blur: 3.0,
-            chromaticAberration: 0.25,
-            lightIntensity: 0.60,
-            ambientStrength: 1.0,
-            refractiveIndex: 1.55,
-            saturation: 0.85,
-            lightAngle: 0.75 * math.pi,
-            glassColor: Color(0x3DFFFFFF),
-            specularSharpness: GlassSpecularSharpness.medium,
-          );
-
     return Tooltip(
       message: 'Sort tracks: ${currentSort.label}',
-      child: Material(
-        type: MaterialType.transparency,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            _showSortMenu(context, ref, currentSort);
-          },
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                if (isNonDefault)
-                  BoxShadow(
-                    color: primaryColor.withValues(alpha: 0.35),
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: GlassContainer(
-              useOwnLayer: true,
-              clipBehavior: Clip.antiAlias,
-              shape: const LiquidRoundedSuperellipse(borderRadius: 22),
-              settings: glassSettings,
-              child: Center(
-                child: Icon(
-                  Icons.swap_vert_rounded,
-                  size: 21,
-                  color: isNonDefault ? primaryColor : defaultIconColor,
-                ),
-              ),
-            ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          _showSortMenu(context, ref, currentSort);
+        },
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+            boxShadow: isNonDefault
+                ? [
+                    BoxShadow(
+                      color: primaryColor.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.swap_vert_rounded,
+            size: 20,
+            color: isNonDefault ? primaryColor : defaultIconColor,
           ),
         ),
       ),

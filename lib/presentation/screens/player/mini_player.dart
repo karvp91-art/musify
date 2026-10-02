@@ -2,10 +2,39 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
+
+LiquidGlassSettings _resolveMiniPlayerGlassSettings({required bool isDark}) {
+  return isDark
+      ? const LiquidGlassSettings(
+          thickness: 30.0,
+          blur: 3.0,
+          chromaticAberration: 0.30,
+          lightIntensity: 0.65,
+          ambientStrength: 1.0,
+          refractiveIndex: 1.59,
+          saturation: 0.70,
+          lightAngle: 0.75 * math.pi,
+          glassColor: Color(0x2EFFFFFF),
+          specularSharpness: GlassSpecularSharpness.sharp,
+        )
+      : const LiquidGlassSettings(
+          thickness: 28.0,
+          blur: 3.0,
+          chromaticAberration: 0.25,
+          lightIntensity: 0.60,
+          ambientStrength: 1.0,
+          refractiveIndex: 1.55,
+          saturation: 0.85,
+          lightAngle: 0.75 * math.pi,
+          glassColor: Color(0x24FFFFFF),
+          specularSharpness: GlassSpecularSharpness.medium,
+        );
+}
 
 class MiniPlayer extends ConsumerStatefulWidget {
   final VoidCallback onExpand;
@@ -82,9 +111,11 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
 
     if (track == null) return const SizedBox.shrink();
 
-    // Vibrant Neon Lime container matching reference design
-    const containerColor = AppColors.neonLime;
-    const onColor = Colors.black;
+    final titleColor = isDark ? Colors.white : const Color(0xFF111827);
+    final artistColor = isDark
+        ? Colors.white.withValues(alpha: 0.70)
+        : const Color(0xFF111827).withValues(alpha: 0.65);
+    final accentColor = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
 
     // Reactively sync animation state with playback state
     ref.listen<bool>(isPlaybackPlayingProvider, (_, playing) {
@@ -120,156 +151,170 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
               widget.onExpand();
             }
           },
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 80),
-            margin: const EdgeInsets.symmetric(horizontal: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            decoration: BoxDecoration(
-              color: containerColor,
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.neonLime.withValues(alpha: isDark ? 0.30 : 0.45),
-                  blurRadius: 18,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 4),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.10),
-                  blurRadius: 14,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // 1. Spinning Circular Vinyl Artwork matching NowPlaying turntable
-                _buildVinylArtwork(track, isDark),
+          child: Material(
+            type: MaterialType.transparency,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 78),
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.06),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: GlassContainer(
+                useOwnLayer: true,
+                clipBehavior: Clip.antiAlias,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                shape: const LiquidRoundedSuperellipse(borderRadius: 28),
+                settings: _resolveMiniPlayerGlassSettings(isDark: isDark),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 1. Spinning Circular Vinyl Artwork matching NowPlaying turntable
+                    _buildVinylArtwork(track, isDark),
 
-                const SizedBox(width: 12),
+                    const SizedBox(width: 12),
 
-                // 2. Track Title, Equalizer + Artist, Progress Bar & Timestamps
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title
-                      _TrainMarqueeText(
-                        text: track.title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13.5,
-                          height: 1.15,
-                          letterSpacing: -0.3,
-                          color: onColor,
-                        ),
-                        isPlaying: isPlaying,
-                      ),
-                      const SizedBox(height: 2),
-
-                      // Live 3-Bar Equalizer + Artist Name
-                      Row(
+                    // 2. Track Title, Equalizer + Artist, Progress Bar & Timestamps
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.only(right: 5),
-                            child: _MiniEqualizerBars(
-                              animation: _equalizerController,
-                              isPlaying: isPlaying,
-                              color: onColor,
+                          // Title
+                          _TrainMarqueeText(
+                            text: track.title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13.5,
+                              height: 1.15,
+                              letterSpacing: -0.3,
+                              color: titleColor,
+                              fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                              decoration: TextDecoration.none,
                             ),
+                            isPlaying: isPlaying,
                           ),
-                          Expanded(
-                            child: Text(
-                              track.artistName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                height: 1.15,
-                                fontWeight: FontWeight.w600,
-                                color: onColor.withValues(alpha: 0.75),
+                          const SizedBox(height: 2),
+
+                          // Live 3-Bar Equalizer + Artist Name
+                          Row(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(right: 5),
+                                child: _MiniEqualizerBars(
+                                  animation: _equalizerController,
+                                  isPlaying: isPlaying,
+                                  color: accentColor,
+                                ),
                               ),
-                            ),
+                              Expanded(
+                                child: Text(
+                                  track.artistName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    height: 1.15,
+                                    fontWeight: FontWeight.w600,
+                                    color: artistColor,
+                                    fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                                    decoration: TextDecoration.none,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2.5),
+
+                          // Progress bar & Elapsed/Duration timestamps
+                          _MiniPlayerProgressSection(
+                            accentColor: accentColor,
+                            textColor: artistColor,
+                            inactiveColor: isDark
+                                ? Colors.white.withValues(alpha: 0.16)
+                                : Colors.black.withValues(alpha: 0.08),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 2.5),
+                    ),
 
-                      // Progress bar & Elapsed/Duration timestamps
-                      const _MiniPlayerProgressSection(onColor: onColor),
-                    ],
-                  ),
-                ),
+                    const SizedBox(width: 10),
 
-              const SizedBox(width: 10),
-
-              // 3. Play / Pause Button (42x42 solid black circle with white icon)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  if (isPlaying) {
-                    audioHandler.pause();
-                  } else {
-                    audioHandler.play();
-                  }
-                },
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: onColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: onColor.withValues(alpha: 0.28),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                    // 3. Play / Pause Button (42x42 vibrant neon circle with black icon)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        if (isPlaying) {
+                          audioHandler.pause();
+                        } else {
+                          audioHandler.play();
+                        }
+                      },
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.neonLime,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.neonLime.withValues(alpha: isDark ? 0.35 : 0.45),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                          size: 24,
+                          color: Colors.black,
+                        ),
                       ),
-                    ],
-                  ),
-                  child: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    size: 24,
-                    color: Colors.white,
-                  ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // 4. Skip Next Button (38x38 tinted translucent circle with icon)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        audioHandler.skipToNext();
+                      },
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.06),
+                        ),
+                        child: Icon(
+                          Icons.skip_next_rounded,
+                          size: 20,
+                          color: isDark ? Colors.white.withValues(alpha: 0.85) : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-
-              const SizedBox(width: 8),
-
-              // 4. Skip Next Button (38x38 tinted translucent circle with black icon)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  audioHandler.skipToNext();
-                },
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: onColor.withValues(alpha: 0.10),
-                  ),
-                  child: const Icon(
-                    Icons.skip_next_rounded,
-                    size: 20,
-                    color: onColor,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildVinylArtwork(Track track, bool isDark) {
     final themePrimary = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
@@ -451,9 +496,15 @@ class _MiniEqualizerBars extends StatelessWidget {
 /// Isolated widget that selectively rebuilds the progress line and timestamps
 /// on playback position updates without triggering rebuilds of the entire MiniPlayer.
 class _MiniPlayerProgressSection extends ConsumerWidget {
-  final Color onColor;
+  final Color accentColor;
+  final Color textColor;
+  final Color inactiveColor;
 
-  const _MiniPlayerProgressSection({required this.onColor});
+  const _MiniPlayerProgressSection({
+    required this.accentColor,
+    required this.textColor,
+    required this.inactiveColor,
+  });
 
   String _formatDuration(Duration duration) {
     final minutes = duration.inMinutes.remainder(60).toString();
@@ -485,7 +536,7 @@ class _MiniPlayerProgressSection extends ConsumerWidget {
                   height: 2.5,
                   width: barWidth,
                   decoration: BoxDecoration(
-                    color: onColor.withValues(alpha: 0.18),
+                    color: inactiveColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -494,8 +545,15 @@ class _MiniPlayerProgressSection extends ConsumerWidget {
                   height: 2.5,
                   width: (barWidth * progress).clamp(0.0, barWidth),
                   decoration: BoxDecoration(
-                    color: onColor,
+                    color: accentColor,
                     borderRadius: BorderRadius.circular(2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accentColor.withValues(alpha: 0.35),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -513,8 +571,9 @@ class _MiniPlayerProgressSection extends ConsumerWidget {
                 fontSize: 9.5,
                 height: 1.1,
                 fontWeight: FontWeight.w600,
-                color: onColor.withValues(alpha: 0.8),
+                color: textColor,
                 letterSpacing: -0.1,
+                decoration: TextDecoration.none,
               ),
             ),
             Text(
@@ -523,8 +582,9 @@ class _MiniPlayerProgressSection extends ConsumerWidget {
                 fontSize: 9.5,
                 height: 1.1,
                 fontWeight: FontWeight.w600,
-                color: onColor.withValues(alpha: 0.8),
+                color: textColor,
                 letterSpacing: -0.1,
+                decoration: TextDecoration.none,
               ),
             ),
           ],

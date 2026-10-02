@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,34 @@ import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/screens/home/home_screen.dart';
 import 'package:musify/presentation/screens/search/search_screen.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
+
+LiquidGlassSettings _resolveTabBarGlassSettings({required bool isDark}) {
+  return isDark
+      ? const LiquidGlassSettings(
+          thickness: 30.0,
+          blur: 3.0,
+          chromaticAberration: 0.30,
+          lightIntensity: 0.65,
+          ambientStrength: 1.0,
+          refractiveIndex: 1.59,
+          saturation: 0.70,
+          lightAngle: 0.75 * math.pi,
+          glassColor: Color(0x2EFFFFFF),
+          specularSharpness: GlassSpecularSharpness.sharp,
+        )
+      : const LiquidGlassSettings(
+          thickness: 28.0,
+          blur: 3.0,
+          chromaticAberration: 0.25,
+          lightIntensity: 0.60,
+          ambientStrength: 1.0,
+          refractiveIndex: 1.55,
+          saturation: 0.85,
+          lightAngle: 0.75 * math.pi,
+          glassColor: Color(0x24FFFFFF),
+          specularSharpness: GlassSpecularSharpness.medium,
+        );
+}
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -66,6 +95,182 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
   }
 
   DateTime? _lastBackPressTime;
+
+  Widget _buildBottomBar({
+    required BuildContext context,
+    required int activeIndex,
+    required bool hasTrack,
+    required bool isDark,
+    required ThemeData theme,
+  }) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final bottomInset = math.max(MediaQuery.paddingOf(context).bottom, 12.0);
+    final dockWidth = math.min(screenWidth - 32, 335.0);
+
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasTrack) ...[
+            MiniPlayer(
+              onExpand: _expandPlayer,
+            ),
+            const SizedBox(height: 10),
+          ],
+          Container(
+            width: dockWidth,
+            height: 64.0,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(32),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: GlassContainer(
+              useOwnLayer: true,
+              clipBehavior: Clip.antiAlias,
+              padding: const EdgeInsets.all(5.0),
+              shape: const LiquidRoundedSuperellipse(borderRadius: 32),
+              settings: _resolveTabBarGlassSettings(isDark: isDark),
+              child: Stack(
+                children: [
+                  // Clean standard Ease-In-Out Slide Indicator
+                  AnimatedAlign(
+                    alignment: activeIndex == 0 ? Alignment.centerLeft : Alignment.centerRight,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOutCubic,
+                    child: FractionallySizedBox(
+                      widthFactor: 0.5,
+                      heightFactor: 1.0,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.neonLime,
+                          borderRadius: BorderRadius.circular(27.0),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.neonLime.withValues(alpha: isDark ? 0.35 : 0.45),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Tab Buttons Row
+                  Row(
+                    children: [
+                      // Tab 0: My Music
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            ref.read(currentTabIndexProvider.notifier).setIndex(0);
+                          },
+                          child: Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  activeIndex == 0
+                                      ? Icons.headphones_rounded
+                                      : Icons.headphones_outlined,
+                                  size: 20,
+                                  color: activeIndex == 0
+                                      ? const Color(0xFF111827)
+                                      : (isDark
+                                          ? Colors.white.withValues(alpha: 0.65)
+                                          : const Color(0xFF555B6E)),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'My music',
+                                  style: TextStyle(
+                                    fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                                    fontSize: 12.5,
+                                    fontWeight: activeIndex == 0
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    decoration: TextDecoration.none,
+                                    letterSpacing: -0.2,
+                                    color: activeIndex == 0
+                                        ? const Color(0xFF111827)
+                                        : (isDark
+                                            ? Colors.white.withValues(alpha: 0.65)
+                                            : const Color(0xFF555B6E)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Tab 1: Stream
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            ref.read(currentTabIndexProvider.notifier).setIndex(1);
+                          },
+                          child: Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  activeIndex == 1
+                                      ? Icons.play_circle_fill_rounded
+                                      : Icons.play_circle_outline_rounded,
+                                  size: 20,
+                                  color: activeIndex == 1
+                                      ? const Color(0xFF111827)
+                                      : (isDark
+                                          ? Colors.white.withValues(alpha: 0.65)
+                                          : const Color(0xFF555B6E)),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Stream',
+                                  style: TextStyle(
+                                    fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                                    fontSize: 12.5,
+                                    fontWeight: activeIndex == 1
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    decoration: TextDecoration.none,
+                                    letterSpacing: -0.2,
+                                    color: activeIndex == 1
+                                        ? const Color(0xFF111827)
+                                        : (isDark
+                                            ? Colors.white.withValues(alpha: 0.65)
+                                            : const Color(0xFF555B6E)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(height: bottomInset),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +344,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
       },
       child: Stack(
         children: [
-          // 1. Native iOS 26 Liquid Glass Navigation Layer with GlassScaffold & GlassTabBar.bottom
+          // 1. Native iOS 26 Liquid Glass Navigation Layer with GlassScaffold
           AnimatedBuilder(
             animation: _expandAnimation,
             builder: (context, child) {
@@ -161,57 +366,12 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
               backgroundColor: isDark ? Colors.black : Colors.white,
               bottomBar: isMultiSelection
                   ? null
-                  : Material(
-                      type: MaterialType.transparency,
-                      child: GlassTabBar.bottom(
-                        tabs: const [
-                          GlassTab(
-                            icon: Icon(Icons.headphones_outlined),
-                            activeIcon: Icon(Icons.headphones_rounded),
-                            label: 'My music',
-                            glowColor: AppColors.neonLime,
-                          ),
-                          GlassTab(
-                            icon: Icon(Icons.play_circle_outline_rounded),
-                            activeIcon: Icon(Icons.play_circle_fill_rounded),
-                            label: 'Stream',
-                            glowColor: AppColors.neonLime,
-                          ),
-                        ],
-                        selectedIndex: activeIndex,
-                        onTabSelected: (index) {
-                          HapticFeedback.selectionClick();
-                          ref.read(currentTabIndexProvider.notifier).setIndex(index);
-                        },
-                        indicatorColor: AppColors.neonLime,
-                        selectedIconColor: const Color(0xFF111827),
-                        selectedLabelColor: const Color(0xFF111827),
-                        unselectedIconColor: isDark
-                            ? Colors.white.withValues(alpha: 0.65)
-                            : const Color(0xFF555B6E),
-                        unselectedLabelColor: isDark
-                            ? Colors.white.withValues(alpha: 0.65)
-                            : const Color(0xFF555B6E),
-                        selectedLabelStyle: TextStyle(
-                          fontFamily: theme.textTheme.bodyMedium?.fontFamily,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          decoration: TextDecoration.none,
-                          letterSpacing: -0.2,
-                        ),
-                        unselectedLabelStyle: TextStyle(
-                          fontFamily: theme.textTheme.bodyMedium?.fontFamily,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                          decoration: TextDecoration.none,
-                          letterSpacing: -0.2,
-                        ),
-                        bottomAccessory: MiniPlayer(
-                          onExpand: _expandPlayer,
-                        ),
-                        bottomAccessoryEnabled: hasTrack,
-                        bottomAccessoryHeight: 80,
-                      ),
+                  : _buildBottomBar(
+                      context: context,
+                      activeIndex: activeIndex,
+                      hasTrack: hasTrack,
+                      isDark: isDark,
+                      theme: theme,
                     ),
               body: Stack(
                 children: [
