@@ -22,12 +22,13 @@ class SourceRouter {
     final resultsList = await Future.wait(futures);
     final allTracks = resultsList.expand((list) => list).toList();
 
-    // Prioritize: Local (0) -> JioSaavn 320k (1) -> Others (2)
+    // Prioritize: Local (0) -> JioSaavn 320k (1) -> YouTube (2) -> Others (3)
     allTracks.sort((a, b) {
       int score(Track t) {
         if (t.source == AudioSourceType.local) return 0;
         if (t.source == AudioSourceType.saavn) return 1;
-        return 2;
+        if (t.source == AudioSourceType.youtube) return 2;
+        return 3;
       }
       return score(a).compareTo(score(b));
     });
@@ -50,6 +51,7 @@ class SourceRouter {
   String _normalize(String input) {
     return input.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
+
 
   Future<String> resolvePlayUrl(Track track) async {
     final adapter = _adapters[track.source];

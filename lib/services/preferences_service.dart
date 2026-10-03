@@ -85,6 +85,18 @@ class PreferencesService {
   static const String keyRepeatMode = 'playback_repeat_mode';
   static const String keyHasScannedStorage = 'has_scanned_storage';
 
+  // Audio Playback & Quality Keys
+  static const String keyCrossfadeDuration = 'playback_crossfade_duration';
+  static const String keyGaplessPlayback = 'playback_gapless_enabled';
+  static const String keyAudioQuality = 'audio_streaming_quality';
+
+  // Equalizer Keys
+  static const String keyEqualizerEnabled = 'equalizer_enabled';
+  static const String keyEqualizerPreset = 'equalizer_preset';
+  static const String keyEqualizerGains = 'equalizer_band_gains';
+  static const String keyEqualizerBassBoost = 'equalizer_bass_boost';
+  static const String keyEqualizerVirtualizer = 'equalizer_virtualizer';
+
   /// Check whether storage scan has completed at least once
   bool hasScannedStorage() {
     return _getBool(keyHasScannedStorage) ?? false;
@@ -93,6 +105,97 @@ class PreferencesService {
   /// Record that storage scan has completed
   Future<bool> setHasScannedStorage(bool value) {
     return _setBool(keyHasScannedStorage, value);
+  }
+
+  /// Retrieve crossfade duration in seconds (0 = gapless / off, 1 to 10s)
+  int getCrossfadeDuration() {
+    return _getInt(keyCrossfadeDuration) ?? 0;
+  }
+
+  /// Set crossfade duration in seconds (0 to 10)
+  Future<bool> setCrossfadeDuration(int seconds) {
+    return _setInt(keyCrossfadeDuration, seconds.clamp(0, 10));
+  }
+
+  /// Retrieve whether gapless playback is enabled (default: true)
+  bool getGaplessPlayback() {
+    return _getBool(keyGaplessPlayback) ?? true;
+  }
+
+  /// Set gapless playback mode
+  Future<bool> setGaplessPlayback(bool enabled) {
+    return _setBool(keyGaplessPlayback, enabled);
+  }
+
+  /// Retrieve audio streaming quality ('320k', '256k', '160k', '96k', default: '320k')
+  String getAudioQuality() {
+    return _getString(keyAudioQuality) ?? '320k';
+  }
+
+  /// Store preferred audio streaming quality
+  Future<bool> setAudioQuality(String quality) {
+    return _setString(keyAudioQuality, quality);
+  }
+
+  /// Retrieve whether equalizer is enabled (default: false)
+  bool getEqualizerEnabled() {
+    return _getBool(keyEqualizerEnabled) ?? false;
+  }
+
+  /// Set equalizer enabled state
+  Future<bool> setEqualizerEnabled(bool enabled) {
+    return _setBool(keyEqualizerEnabled, enabled);
+  }
+
+  /// Retrieve current equalizer preset (default: 'Flat')
+  String getEqualizerPreset() {
+    return _getString(keyEqualizerPreset) ?? 'Flat';
+  }
+
+  /// Set current equalizer preset name
+  Future<bool> setEqualizerPreset(String preset) {
+    return _setString(keyEqualizerPreset, preset);
+  }
+
+  /// Retrieve 5-band equalizer gains in decibels (default: [0.0, 0.0, 0.0, 0.0, 0.0])
+  List<double> getEqualizerGains() {
+    final raw = _getString(keyEqualizerGains);
+    if (raw == null || raw.trim().isEmpty) return const [0.0, 0.0, 0.0, 0.0, 0.0];
+    try {
+      final parts = raw.split(',').map((s) => double.tryParse(s.trim()) ?? 0.0).toList();
+      if (parts.length == 5) return parts;
+    } catch (_) {}
+    return const [0.0, 0.0, 0.0, 0.0, 0.0];
+  }
+
+  List<double> getEqualizerBandGains() => getEqualizerGains();
+
+  /// Store 5-band equalizer gains
+  Future<bool> setEqualizerGains(List<double> gains) {
+    final str = gains.map((g) => g.toStringAsFixed(1)).join(',');
+    return _setString(keyEqualizerGains, str);
+  }
+
+  Future<bool> setEqualizerBandGains(List<double> gains) => setEqualizerGains(gains);
+
+  /// Retrieve bass boost level (0.0 to 1.0, default: 0.0)
+  double getEqualizerBassBoost() {
+    return _getDouble(keyEqualizerBassBoost) ?? 0.0;
+  }
+
+  /// Set bass boost level (0.0 to 1.0)
+  Future<bool> setEqualizerBassBoost(double value) {
+    return _setDouble(keyEqualizerBassBoost, value.clamp(0.0, 1.0));
+  }
+
+  /// Retrieve virtualizer / surround sound level (0.0 to 1.0, default: 0.0)
+  double getEqualizerVirtualizer() {
+    return _getDouble(keyEqualizerVirtualizer) ?? 0.0;
+  }
+
+  /// Set virtualizer / surround sound level (0.0 to 1.0)
+  Future<bool> setEqualizerVirtualizer(double value) {
+    return _setDouble(keyEqualizerVirtualizer, value.clamp(0.0, 1.0));
   }
 
   static const int defaultDayStartHour = 6; // 06:00 AM
@@ -243,6 +346,15 @@ class PreferencesService {
   Future<bool> _setBool(String key, bool val) async {
     _fallbackStorage[key] = val;
     if (_prefs != null) return _prefs.setBool(key, val);
+    return true;
+  }
+
+  double? _getDouble(String key) =>
+      _prefs != null ? _prefs.getDouble(key) : (_fallbackStorage[key] as double?);
+
+  Future<bool> _setDouble(String key, double val) async {
+    _fallbackStorage[key] = val;
+    if (_prefs != null) return _prefs.setDouble(key, val);
     return true;
   }
 

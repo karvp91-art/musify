@@ -16,8 +16,8 @@ import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
-import 'package:musify/presentation/widgets/theme_selection_bottom_sheet.dart';
 import 'package:musify/presentation/widgets/create_playlist_modal.dart';
+import 'package:musify/presentation/screens/settings/audio_settings_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -659,11 +659,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
         const SizedBox(width: 8),
 
-        // Right: Appearance / Theme Modal (scan option removed from appbar)
+        // Right: Settings & Audio Preferences Screen
         _GlassCircleButton(
           icon: ref.watch(themePreferenceProvider).icon,
           iconSize: 20,
-          onTap: () => showThemeSelectionModal(context),
+          onTap: () => openAudioSettingsScreen(context),
         ),
       ],
     );
@@ -937,6 +937,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               );
             },
             childCount: tracks.length,
+            addAutomaticKeepAlives: false,
           ),
         );
       },
@@ -1061,6 +1062,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
         },
         childCount: displayedTracks.length,
+        addAutomaticKeepAlives: false,
       ),
     );
   }
@@ -1253,6 +1255,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 );
                               },
                               childCount: displayedTracks.length,
+              addAutomaticKeepAlives: false,
                             ),
                           ),
 

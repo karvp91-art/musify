@@ -4,10 +4,13 @@ import 'package:musify/core/utils/des_cipher.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/domain/sources/source_adapter.dart';
 
+import 'package:musify/services/preferences_service.dart';
+
 class SaavnSourceAdapter implements SourceAdapter {
   final Dio _dio;
+  final PreferencesService? preferencesService;
 
-  SaavnSourceAdapter({Dio? dio})
+  SaavnSourceAdapter({Dio? dio, this.preferencesService})
       : _dio = dio ??
             Dio(
               BaseOptions(
@@ -131,14 +134,22 @@ class SaavnSourceAdapter implements SourceAdapter {
           .replaceAll('50x50.jpg', '500x500.jpg');
     }
 
-    // Direct 320kbps DDL URL resolution
+    // Direct audio URL resolution with preferred bitrate
+    final quality = preferencesService?.getAudioQuality() ?? '320k';
     final encryptedUrl = item['encrypted_media_url'] as String?;
-    var streamUrl = DesCipher.decryptJioSaavnDirectUrl(encryptedUrl);
+    var streamUrl = DesCipher.decryptJioSaavnDirectUrl(encryptedUrl, quality: quality);
 
     // Fallback to media_preview_url if direct decryption failed
     if (streamUrl == null || streamUrl.isEmpty) {
       streamUrl = item['media_preview_url'] as String? ?? '';
     }
+
+    final bitrateVal = switch (quality) {
+      '96k' => 96,
+      '160k' => 160,
+      '256k' => 256,
+      _ => 320,
+    };
 
     return Track(
       id: 'saavn:$songId',
@@ -153,7 +164,7 @@ class SaavnSourceAdapter implements SourceAdapter {
       artworkUrl: artwork,
       audioUrl: streamUrl,
       codec: 'aac',
-      bitrate: 320,
+      bitrate: bitrateVal,
       isLiked: false,
       isDownloaded: false,
       addedAt: DateTime.now(),

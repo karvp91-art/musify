@@ -26,7 +26,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String _selectedFilter = 'All';
   String _selectedGenre = 'Trending';
 
-  final List<String> _filters = const ['All', 'Songs', 'Artists', 'Albums'];
+  final List<String> _filters = const ['All', 'JioSaavn', 'YouTube', 'Songs', 'Artists', 'Albums'];
 
   final List<String> _genres = const [
     'Trending',
@@ -68,8 +68,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _isSearching = true;
     });
 
-    final saavn = ref.read(saavnAdapterProvider);
-    final results = await saavn.search(trimmed);
+    final router = ref.read(sourceRouterProvider);
+    final results = await router.searchAll(trimmed);
 
     if (mounted) {
       setState(() {
@@ -106,6 +106,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<Track> _getFilteredResults() {
     if (_selectedFilter == 'All' || _selectedFilter == 'Songs') {
       return _searchResults;
+    }
+    if (_selectedFilter == 'JioSaavn') {
+      return _searchResults.where((t) => t.source == AudioSourceType.saavn).toList();
+    }
+    if (_selectedFilter == 'YouTube') {
+      return _searchResults.where((t) => t.source == AudioSourceType.youtube).toList();
     }
     if (_selectedFilter == 'Artists') {
       return _searchResults;

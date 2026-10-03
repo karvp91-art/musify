@@ -8,6 +8,7 @@ import 'package:musify/data/repositories/local_files_scanner.dart';
 import 'package:musify/data/repositories/search_history_repository.dart';
 import 'package:musify/data/sources/local_source_adapter.dart';
 import 'package:musify/data/sources/saavn_source_adapter.dart';
+import 'package:musify/data/sources/youtube_source_adapter.dart';
 import 'package:musify/data/sources/source_router.dart';
 import 'package:musify/data/repositories/lyrics_repository.dart';
 import 'package:musify/domain/models/lyrics.dart';
@@ -20,13 +21,20 @@ import 'package:musify/services/audio_player_handler.dart';
 import 'package:musify/services/download_manager.dart';
 import 'package:musify/services/preferences_service.dart';
 
+import 'package:musify/domain/models/equalizer_state.dart';
+export 'package:musify/domain/models/equalizer_state.dart';
 export 'package:musify/services/preferences_service.dart';
 
 // Download Manager Provider
 final downloadManagerProvider = Provider<AudioDownloadManager>((ref) {
   final repo = ref.watch(audioRepositoryProvider);
   final saavn = ref.watch(saavnAdapterProvider);
-  final manager = AudioDownloadManager(repo: repo, saavnAdapter: saavn);
+  final router = ref.watch(sourceRouterProvider);
+  final manager = AudioDownloadManager(
+    repo: repo,
+    saavnAdapter: saavn,
+    sourceRouter: router,
+  );
   ref.onDispose(() => manager.dispose());
   return manager;
 });
@@ -49,15 +57,29 @@ final localScannerProvider = Provider<LocalFilesScanner>((ref) {
 });
 
 final saavnAdapterProvider = Provider<SaavnSourceAdapter>((ref) {
-  return SaavnSourceAdapter();
+  final prefs = ref.watch(preferencesServiceProvider);
+  return SaavnSourceAdapter(preferencesService: prefs);
+});
+
+final youtubeAdapterProvider = Provider<YouTubeSourceAdapter>((ref) {
+  final adapter = YouTubeSourceAdapter();
+  ref.onDispose(() => adapter.close());
+  return adapter;
 });
 
 final sourceRouterProvider = Provider<SourceRouter>((ref) {
   final repo = ref.watch(audioRepositoryProvider);
   final saavn = ref.watch(saavnAdapterProvider);
+  final youtube = ref.watch(youtubeAdapterProvider);
   final router = SourceRouter();
   router.registerAdapter(LocalSourceAdapter(repo));
   router.registerAdapter(saavn);
+  router.registerAdapter(youtube);
+
+  // Connect lazy audio stream resolution to MusifyAudioHandler
+  final audioHandler = ref.read(audioHandlerProvider);
+  audioHandler.setTrackUrlResolver((track) => router.resolvePlayUrl(track));
+
   return router;
 });
 
@@ -154,6 +176,15 @@ final sortedLocalTracksProvider = Provider<AsyncValue<List<Track>>>((ref) {
 final likedTracksStreamProvider = StreamProvider<List<Track>>((ref) {
   final repo = ref.watch(audioRepositoryProvider);
   return repo.watchLikedTracks();
+});
+
+// Derived Set<String> of liked track IDs for O(1) lookup in list tiles.
+// Each tile watches `.select((ids) => ids.contains(trackId))` so only the
+// specific tile whose liked-state actually changed will rebuild.
+final likedTrackIdsProvider = Provider<Set<String>>((ref) {
+  final likedTracks = ref.watch(likedTracksStreamProvider).value;
+  if (likedTracks == null) return const {};
+  return {for (final t in likedTracks) t.id};
 });
 
 // Playlists Stream Provider
@@ -366,6 +397,143 @@ class IsMultiSelectionModeNotifier extends Notifier<bool> {
 
 final isMultiSelectionModeProvider =
     NotifierProvider<IsMultiSelectionModeNotifier, bool>(IsMultiSelectionModeNotifier.new);
+
+// Equalizer State Notifier
+class EqualizerNotifier extends Notifier<EqualizerState> {
+  @override
+  EqualizerState build() {
+    final prefs = ref.watch(preferencesServiceProvider);
+    return EqualizerState(
+      isEnabled: prefs.getEqualizerEnabled(),
+      preset: prefs.getEqualizerPreset(),
+      bandGains: prefs.getEqualizerBandGains(),
+      bassBoost: prefs.getEqualizerBassBoost(),
+      virtualizer: prefs.getEqualizerVirtualizer(),
+    );
+  }
+
+  void _applyToHandler(EqualizerState next) {
+    state = next;
+    final prefs = ref.read(preferencesServiceProvider);
+    prefs.setEqualizerEnabled(next.isEnabled);
+    prefs.setEqualizerPreset(next.preset);
+    prefs.setEqualizerBandGains(next.bandGains);
+    prefs.setEqualizerBassBoost(next.bassBoost);
+    prefs.setEqualizerVirtualizer(next.virtualizer);
+
+    try {
+      ref.read(audioHandlerProvider).applyEqualizerSettings(
+        enabled: next.isEnabled,
+        bandGains: next.bandGains,
+        bassBoost: next.bassBoost,
+      );
+    } catch (_) {}
+  }
+
+  void setEnabled(bool enabled) {
+    _applyToHandler(state.copyWith(isEnabled: enabled));
+  }
+
+  void setPreset(String presetName) {
+    final gains = EqualizerPresets.presets[presetName] ?? state.bandGains;
+    _applyToHandler(state.copyWith(
+      preset: presetName,
+      bandGains: List.from(gains),
+    ));
+  }
+
+  void setBandGain(int bandIndex, double gain) {
+    if (bandIndex < 0 || bandIndex >= state.bandGains.length) return;
+    final updated = List<double>.from(state.bandGains);
+    updated[bandIndex] = gain;
+    _applyToHandler(state.copyWith(
+      preset: 'Custom',
+      bandGains: updated,
+    ));
+  }
+
+  void setBassBoost(double value) {
+    _applyToHandler(state.copyWith(bassBoost: value.clamp(0.0, 1.0)));
+  }
+
+  void setVirtualizer(double value) {
+    _applyToHandler(state.copyWith(virtualizer: value.clamp(0.0, 1.0)));
+  }
+
+  void resetToFlat() {
+    _applyToHandler(state.copyWith(
+      preset: 'Flat',
+      bandGains: const [0.0, 0.0, 0.0, 0.0, 0.0],
+      bassBoost: 0.0,
+      virtualizer: 0.0,
+    ));
+  }
+}
+
+final equalizerProvider = NotifierProvider<EqualizerNotifier, EqualizerState>(
+  EqualizerNotifier.new,
+);
+
+// Crossfade Duration Notifier (0s = Off / Gapless, 1s - 10s)
+class CrossfadeNotifier extends Notifier<int> {
+  @override
+  int build() {
+    final prefs = ref.watch(preferencesServiceProvider);
+    return prefs.getCrossfadeDuration();
+  }
+
+  void setDuration(int seconds) {
+    final clamped = seconds.clamp(0, 10);
+    state = clamped;
+    ref.read(preferencesServiceProvider).setCrossfadeDuration(clamped);
+    try {
+      ref.read(audioHandlerProvider).setCrossfadeDuration(clamped);
+    } catch (_) {}
+  }
+}
+
+final crossfadeProvider = NotifierProvider<CrossfadeNotifier, int>(
+  CrossfadeNotifier.new,
+);
+
+// Gapless Playback Notifier
+class GaplessPlaybackNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final prefs = ref.watch(preferencesServiceProvider);
+    return prefs.getGaplessPlayback();
+  }
+
+  void setEnabled(bool enabled) {
+    state = enabled;
+    ref.read(preferencesServiceProvider).setGaplessPlayback(enabled);
+    try {
+      ref.read(audioHandlerProvider).setGaplessPlayback(enabled);
+    } catch (_) {}
+  }
+}
+
+final gaplessPlaybackProvider = NotifierProvider<GaplessPlaybackNotifier, bool>(
+  GaplessPlaybackNotifier.new,
+);
+
+// Audio Quality Notifier ('320k', '256k', '160k', '96k')
+class AudioQualityNotifier extends Notifier<String> {
+  @override
+  String build() {
+    final prefs = ref.watch(preferencesServiceProvider);
+    return prefs.getAudioQuality();
+  }
+
+  void setQuality(String quality) {
+    state = quality;
+    ref.read(preferencesServiceProvider).setAudioQuality(quality);
+  }
+}
+
+final audioQualityProvider = NotifierProvider<AudioQualityNotifier, String>(
+  AudioQualityNotifier.new,
+);
 
 
 

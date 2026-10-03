@@ -14,6 +14,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/seek_bar.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
+import 'package:musify/presentation/screens/settings/studio_equalizer_screen.dart';
 
 class NowPlayingScreen extends ConsumerStatefulWidget {
   final VoidCallback onMinimize;
@@ -189,18 +190,31 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                 ),
               ),
 
-              // Right Circular Heart Button (Borderless)
-              _GlassCircleButton(
-                icon: track.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                iconColor: track.isLiked
-                    ? const Color(0xFFFF5252)
-                    : (theme.brightness == Brightness.dark
-                        ? Colors.white.withValues(alpha: 0.85)
-                        : Colors.black87),
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  ref.read(audioRepositoryProvider).toggleLike(track);
-                },
+              // Right: Equalizer DSP Button & Heart Button
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _GlassCircleButton(
+                    icon: Icons.tune_rounded,
+                    iconColor: ref.watch(equalizerProvider).isEnabled
+                        ? AppColors.neonLime
+                        : (isDark ? Colors.white.withValues(alpha: 0.85) : Colors.black87),
+                    onTap: () {
+                      openStudioEqualizerScreen(context);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _GlassCircleButton(
+                    icon: track.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    iconColor: track.isLiked
+                        ? const Color(0xFFFF5252)
+                        : (isDark ? Colors.white.withValues(alpha: 0.85) : Colors.black87),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      ref.read(audioRepositoryProvider).toggleLike(track);
+                    },
+                  ),
+                ],
               ),
             ],
           ),

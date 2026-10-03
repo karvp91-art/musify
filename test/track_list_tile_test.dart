@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
 
+import 'package:musify/presentation/providers/audio_providers.dart';
+
 void main() {
   final testTrack = Track(
     id: 'local:test_song',
@@ -22,6 +24,9 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          likedTrackIdsProvider.overrideWithValue({}),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: TrackListTile(
@@ -52,6 +57,9 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          likedTrackIdsProvider.overrideWithValue({}),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: TrackListTile(
@@ -78,6 +86,9 @@ void main() {
   testWidgets('TrackListTile renders inside GlassScaffold with transparent Material without assertion error', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          likedTrackIdsProvider.overrideWithValue({}),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: Material(

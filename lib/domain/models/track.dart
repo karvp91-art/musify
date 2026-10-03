@@ -4,6 +4,7 @@ enum AudioSourceType {
   jamendo,
   fma,
   stream,
+  youtube,
 }
 
 class Track {

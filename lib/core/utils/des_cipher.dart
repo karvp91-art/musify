@@ -251,8 +251,8 @@ class DesCipher {
     return Uint8List.fromList(decryptedBytes);
   }
 
-  /// Decrypts a JioSaavn base64 encrypted URL and promotes it to a 320kbps direct stream URL
-  static String? decryptJioSaavnDirectUrl(String? encryptedUrl) {
+  /// Decrypts a JioSaavn base64 encrypted URL and promotes it to the selected stream quality
+  static String? decryptJioSaavnDirectUrl(String? encryptedUrl, {String quality = '320k'}) {
     if (encryptedUrl == null || encryptedUrl.trim().isEmpty) return null;
 
     try {
@@ -263,15 +263,24 @@ class DesCipher {
 
       if (!rawUrl.startsWith('http')) return null;
 
-      // Promote bitrate to highest 320kbps fidelity
+      // Select target bitrate token
+      final targetBitrate = switch (quality) {
+        '96k' => '_96',
+        '160k' => '_160',
+        '256k' => '_320', // JioSaavn provides 320k for high-tier
+        _ => '_320',
+      };
+
       return rawUrl
-          .replaceAll('_96.mp4', '_320.mp4')
-          .replaceAll('_160.mp4', '_320.mp4')
-          .replaceAll('_48.mp4', '_320.mp4')
-          .replaceAll('_128.mp4', '_320.mp4')
-          .replaceAll('_96.mp3', '_320.mp3')
-          .replaceAll('_160.mp3', '_320.mp3')
-          .replaceAll('_128.mp3', '_320.mp3');
+          .replaceAll('_96.mp4', '$targetBitrate.mp4')
+          .replaceAll('_160.mp4', '$targetBitrate.mp4')
+          .replaceAll('_48.mp4', '$targetBitrate.mp4')
+          .replaceAll('_128.mp4', '$targetBitrate.mp4')
+          .replaceAll('_320.mp4', '$targetBitrate.mp4')
+          .replaceAll('_96.mp3', '$targetBitrate.mp3')
+          .replaceAll('_160.mp3', '$targetBitrate.mp3')
+          .replaceAll('_128.mp3', '$targetBitrate.mp3')
+          .replaceAll('_320.mp3', '$targetBitrate.mp3');
     } catch (_) {
       return null;
     }

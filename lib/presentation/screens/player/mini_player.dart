@@ -126,7 +126,6 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     ref.listen<bool>(isPlaybackPlayingProvider, (_, playing) {
       _syncAnimations(playing);
     });
-    _syncAnimations(isPlaying);
 
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.15,
@@ -172,8 +171,8 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 ],
               ),
               child: GlassContainer(
-                useOwnLayer: true,
-                quality: GlassQuality.premium,
+                useOwnLayer: false,
+                quality: GlassQuality.standard,
                 clipBehavior: Clip.antiAlias,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 shape: const LiquidRoundedSuperellipse(borderRadius: 28),

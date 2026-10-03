@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:musify/data/sources/saavn_source_adapter.dart';
+import 'package:musify/data/sources/source_router.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/domain/repositories/audio_repository.dart';
 
@@ -45,6 +46,7 @@ class AudioDownloadManager extends ChangeNotifier {
   final AudioRepository repo;
   final Dio _dio;
   final SaavnSourceAdapter _saavnAdapter;
+  final SourceRouter? sourceRouter;
 
   final Map<String, DownloadState> _states = {};
   final Map<String, CancelToken> _cancelTokens = {};
@@ -69,6 +71,7 @@ class AudioDownloadManager extends ChangeNotifier {
     required this.repo,
     Dio? dio,
     SaavnSourceAdapter? saavnAdapter,
+    this.sourceRouter,
   })  : _dio = dio ??
             Dio(
               BaseOptions(
@@ -220,7 +223,10 @@ class AudioDownloadManager extends ChangeNotifier {
       // 1. Resolve Audio Streaming URL
       var downloadUrl = track.audioUrl;
       if (downloadUrl.isEmpty || !downloadUrl.startsWith('http')) {
-        if (track.source == AudioSourceType.saavn) {
+        final router = sourceRouter;
+        if (router != null) {
+          downloadUrl = await router.resolvePlayUrl(track);
+        } else if (track.source == AudioSourceType.saavn) {
           downloadUrl = await _saavnAdapter.getStreamUrl(track);
         }
       }
@@ -243,6 +249,8 @@ class AudioDownloadManager extends ChangeNotifier {
         ext = '.mp3';
       } else if (downloadUrl.contains('.flac') || track.codec.toLowerCase() == 'flac') {
         ext = '.flac';
+      } else if (downloadUrl.contains('.webm') || track.codec.toLowerCase() == 'opus') {
+        ext = '.opus';
       }
 
       final safeTitle = track.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
