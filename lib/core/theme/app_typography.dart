@@ -43,4 +43,22 @@ class AppTypography {
         fontWeight: FontWeight.w700,
         letterSpacing: 0,
       );
+
+  /// Factory helper for creating custom Plus Jakarta Sans styles matching the app typography system
+  static TextStyle style({
+    double? fontSize,
+    FontWeight? fontWeight,
+    Color? color,
+    double? height,
+    double? letterSpacing,
+    TextDecoration? decoration,
+  }) =>
+      GoogleFonts.plusJakartaSans(
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        color: color,
+        height: height,
+        letterSpacing: letterSpacing,
+        decoration: decoration,
+      );
 }

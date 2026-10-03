@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../domain/models/track.dart';
 import '../domain/models/playback_state.dart';
 import 'preferences_service.dart';
@@ -226,14 +225,7 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     mediaItem.add(item);
     _trackPlayedController.add(track);
 
-    // Ensure notification permission is requested on Android so the system media player shows
-    if (Platform.isAndroid) {
-      Permission.notification.status.then((status) {
-        if (status.isDenied) {
-          Permission.notification.request();
-        }
-      });
-    }
+
 
     try {
       final hasLocalFile = track.filePath != null &&

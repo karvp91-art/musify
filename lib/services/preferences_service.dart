@@ -83,6 +83,17 @@ class PreferencesService {
   static const String keyTrackSortOption = 'track_sort_option';
   static const String keyShuffleMode = 'playback_shuffle_mode';
   static const String keyRepeatMode = 'playback_repeat_mode';
+  static const String keyHasScannedStorage = 'has_scanned_storage';
+
+  /// Check whether storage scan has completed at least once
+  bool hasScannedStorage() {
+    return _getBool(keyHasScannedStorage) ?? false;
+  }
+
+  /// Record that storage scan has completed
+  Future<bool> setHasScannedStorage(bool value) {
+    return _setBool(keyHasScannedStorage, value);
+  }
 
   static const int defaultDayStartHour = 6; // 06:00 AM
   static const int defaultDayStartMinute = 0;

@@ -7,88 +7,28 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
+import 'package:musify/presentation/widgets/create_playlist_modal.dart';
 import '../playlist/playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
 
   void _showNewPlaylistDialog(BuildContext context, WidgetRef ref) {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? Colors.black : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-          side: BorderSide(
-            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
-            width: 1,
-          ),
-        ),
-        title: const Text('New Playlist', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Playlist name',
-                prefixIcon: const Icon(Icons.queue_music_rounded),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-              ),
+    showCreatePlaylistModal(
+      context,
+      ref,
+      onCreated: (newPl) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PlaylistDetailScreen(
+              title: newPl.name,
+              subtitle: newPl.description,
+              playlist: newPl,
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: descController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Description (optional)',
-                prefixIcon: const Icon(Icons.description_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel'),
           ),
-          FilledButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                final repo = ref.read(audioRepositoryProvider);
-                final newPl = await repo.createPlaylist(
-                  name,
-                  description: descController.text.trim().isNotEmpty ? descController.text.trim() : null,
-                );
-                if (dialogCtx.mounted) {
-                  Navigator.pop(dialogCtx);
-                  // Open the new playlist immediately
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PlaylistDetailScreen(
-                        title: newPl.name,
-                        subtitle: newPl.description,
-                        playlist: newPl,
-                      ),
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

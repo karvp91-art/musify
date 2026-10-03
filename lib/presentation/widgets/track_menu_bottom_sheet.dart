@@ -190,14 +190,6 @@ void showTrackDropdownMenu({
     }
   } else if (selected == 'download') {
     downloadManager.downloadTrack(track);
-    if (context.mounted) {
-      AppSnackBar.show(
-        context,
-        message: 'Downloading "${track.title}"...',
-        type: AppSnackBarType.info,
-        icon: Icons.download_rounded,
-      );
-    }
   } else if (selected == 'cancel_download') {
     downloadManager.cancelDownload(track.id);
   } else if (selected == 'delete_device') {

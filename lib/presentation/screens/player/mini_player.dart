@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
@@ -12,14 +13,14 @@ LiquidGlassSettings _resolveMiniPlayerGlassSettings({required bool isDark}) {
   return isDark
       ? const LiquidGlassSettings(
           thickness: 30.0,
-          blur: 3.0,
-          chromaticAberration: 0.30,
-          lightIntensity: 0.65,
+          blur: 3.0,                  // Low blur preserves sharp background refraction
+          chromaticAberration: 0.28,  // Clean spectral prism edges
+          lightIntensity: 0.65,       // Specular rim reflection
           ambientStrength: 1.0,
-          refractiveIndex: 1.59,
-          saturation: 0.70,
-          lightAngle: 0.75 * math.pi,
-          glassColor: Color(0x2EFFFFFF),
+          refractiveIndex: 1.59,      // Polycarbonate optical refraction
+          saturation: 0.85,
+          lightAngle: 0.75 * math.pi, // 135° Apple standard upper-left key light
+          glassColor: Color(0x22D2F843), // Refined luminous Neon Lime tint (~13% alpha)
           specularSharpness: GlassSpecularSharpness.sharp,
         )
       : const LiquidGlassSettings(
@@ -29,19 +30,23 @@ LiquidGlassSettings _resolveMiniPlayerGlassSettings({required bool isDark}) {
           lightIntensity: 0.60,
           ambientStrength: 1.0,
           refractiveIndex: 1.55,
-          saturation: 0.85,
+          saturation: 0.90,
           lightAngle: 0.75 * math.pi,
-          glassColor: Color(0x24FFFFFF),
+          glassColor: Color(0x1CD2F843), // Sheer delicate Neon Lime tint (~11% alpha)
           specularSharpness: GlassSpecularSharpness.medium,
         );
 }
 
 class MiniPlayer extends ConsumerStatefulWidget {
   final VoidCallback onExpand;
+  final Track? fallbackTrack;
+  final String uniqueTag;
 
   const MiniPlayer({
     super.key,
     required this.onExpand,
+    this.fallbackTrack,
+    this.uniqueTag = 'default',
   });
 
   @override
@@ -103,7 +108,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final track = ref.watch(currentPlayingTrackProvider);
+    final track = ref.watch(currentPlayingTrackProvider) ?? widget.fallbackTrack;
     final isPlaying = ref.watch(isPlaybackPlayingProvider);
     final audioHandler = ref.watch(audioHandlerProvider);
     final theme = Theme.of(context);
@@ -126,7 +131,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.15,
       child: Dismissible(
-        key: ValueKey('mini_player_${track.id}'),
+        key: ValueKey('mini_player_${track.id}_${widget.uniqueTag}'),
         direction: DismissDirection.horizontal,
         confirmDismiss: (direction) async {
           if (direction == DismissDirection.endToStart) {
@@ -168,6 +173,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
               ),
               child: GlassContainer(
                 useOwnLayer: true,
+                quality: GlassQuality.premium,
                 clipBehavior: Clip.antiAlias,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 shape: const LiquidRoundedSuperellipse(borderRadius: 28),
@@ -190,13 +196,12 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                           // Title
                           _TrainMarqueeText(
                             text: track.title,
-                            style: TextStyle(
+                            style: AppTypography.bodySmall.copyWith(
                               fontWeight: FontWeight.w800,
                               fontSize: 13.5,
                               height: 1.15,
                               letterSpacing: -0.3,
                               color: titleColor,
-                              fontFamily: theme.textTheme.bodyMedium?.fontFamily,
                               decoration: TextDecoration.none,
                             ),
                             isPlaying: isPlaying,
@@ -219,12 +224,12 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                                   track.artistName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
+                                  style: AppTypography.caption.copyWith(
                                     fontSize: 11.5,
                                     height: 1.15,
                                     fontWeight: FontWeight.w600,
                                     color: artistColor,
-                                    fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                                    letterSpacing: -0.1,
                                     decoration: TextDecoration.none,
                                   ),
                                 ),
@@ -567,7 +572,7 @@ class _MiniPlayerProgressSection extends ConsumerWidget {
           children: [
             Text(
               _formatDuration(position),
-              style: TextStyle(
+              style: AppTypography.caption.copyWith(
                 fontSize: 9.5,
                 height: 1.1,
                 fontWeight: FontWeight.w600,
@@ -578,7 +583,7 @@ class _MiniPlayerProgressSection extends ConsumerWidget {
             ),
             Text(
               _formatDuration(duration),
-              style: TextStyle(
+              style: AppTypography.caption.copyWith(
                 fontSize: 9.5,
                 height: 1.1,
                 fontWeight: FontWeight.w600,

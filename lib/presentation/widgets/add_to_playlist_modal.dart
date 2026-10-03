@@ -8,6 +8,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'playlist_artwork.dart';
 import 'track_artwork.dart';
+import 'create_playlist_modal.dart';
 
 /// Shows the redesigned "Add to Playlist" popup modal placed at the bottom
 /// with margins from edges and circular corners on all sides (matching reference UI)
@@ -71,130 +72,16 @@ class _AddToPlaylistBottomSheetState extends ConsumerState<AddToPlaylistBottomSh
   bool _isProcessing = false;
 
   void _showCreatePlaylistDialog(BuildContext parentContext) {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    final theme = Theme.of(parentContext);
-    final isDark = theme.brightness == Brightness.dark;
-
-    showDialog(
-      context: parentContext,
-      builder: (createCtx) => AlertDialog(
-        backgroundColor: isDark ? Colors.black : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: BorderSide(
-            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
-            width: 1,
-          ),
-        ),
-        title: Text(
-          'New Playlist',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-            fontSize: 19,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Playlist name',
-                prefixIcon: const Icon(Icons.queue_music_rounded),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF222533) : const Color(0xFFF3F4F6),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.neonLime, width: 2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: descController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Description (optional)',
-                prefixIcon: const Icon(Icons.description_outlined),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF222533) : const Color(0xFFF3F4F6),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.neonLime, width: 2),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(createCtx),
-            child: Text(
-              'Cancel',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: isDark ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.neonLime,
-              foregroundColor: const Color(0xFF111827),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            ),
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                final repo = ref.read(audioRepositoryProvider);
-                final newPlaylist = await repo.createPlaylist(
-                  name,
-                  description: descController.text.trim().isNotEmpty
-                      ? descController.text.trim()
-                      : null,
-                );
-                ref.invalidate(playlistsStreamProvider);
-                if (mounted) {
-                  setState(() {
-                    _selectedPlaylistId = newPlaylist.id;
-                  });
-                }
-                if (createCtx.mounted) {
-                  Navigator.pop(createCtx);
-                }
-                if (parentContext.mounted) {
-                  AppSnackBar.show(
-                    parentContext,
-                    message: 'Created "$name"',
-                    type: AppSnackBarType.success,
-                    icon: Icons.playlist_add_check_rounded,
-                  );
-                }
-              }
-            },
-            child: Text(
-              'Create',
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF111827),
-              ),
-            ),
-          ),
-        ],
-      ),
+    showCreatePlaylistModal(
+      parentContext,
+      ref,
+      onCreated: (newPlaylist) {
+        if (mounted) {
+          setState(() {
+            _selectedPlaylistId = newPlaylist.id;
+          });
+        }
+      },
     );
   }
 

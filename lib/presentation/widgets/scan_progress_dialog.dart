@@ -39,6 +39,27 @@ Future<void> startScanWithProgressDialog(BuildContext context, WidgetRef ref) as
 Future<void> showScanStorageModal(BuildContext context, WidgetRef ref) =>
     startScanWithProgressDialog(context, ref);
 
+/// Silently runs device storage scan in background without popping modal UI
+Future<void> triggerBackgroundStorageScan(WidgetRef ref) async {
+  final isScanning = ref.read(isScanningProvider);
+  if (isScanning) return;
+
+  final scanner = ref.read(localScannerProvider);
+  ref.read(isScanningProvider.notifier).setScanning(true);
+  try {
+    await scanner.scanDeviceMusic(
+      onProgress: (prog) {
+        ref.read(scanProgressProvider.notifier).setProgress(prog);
+      },
+    );
+    ref.read(preferencesServiceProvider).setHasScannedStorage(true);
+    ref.read(isScanningProvider.notifier).setScanning(false);
+    ref.invalidate(localTracksProvider);
+  } catch (e) {
+    ref.read(isScanningProvider.notifier).setScanning(false);
+  }
+}
+
 Future<void> _triggerDeviceScan(WidgetRef ref) async {
   final scanner = ref.read(localScannerProvider);
   ref.read(isScanningProvider.notifier).setScanning(true);
@@ -54,6 +75,7 @@ Future<void> _triggerDeviceScan(WidgetRef ref) async {
         ref.read(scanProgressProvider.notifier).setProgress(prog);
       },
     );
+    ref.read(preferencesServiceProvider).setHasScannedStorage(true);
     ref.read(isScanningProvider.notifier).setScanning(false);
     ref.read(scanProgressProvider.notifier).setProgress(ScanProgress(
       filesScanned: ref.read(scanProgressProvider)?.filesScanned ?? 0,

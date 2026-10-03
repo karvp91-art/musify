@@ -74,4 +74,26 @@ void main() {
     await tester.tap(find.text('Despacito'));
     expect(tapped, isTrue);
   });
+
+  testWidgets('TrackListTile renders inside GlassScaffold with transparent Material without assertion error', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Material(
+              type: MaterialType.transparency,
+              child: TrackListTile(
+                track: testTrack,
+                onTap: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Despacito'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
+

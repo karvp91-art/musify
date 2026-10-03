@@ -17,6 +17,7 @@ import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/theme_selection_bottom_sheet.dart';
+import 'package:musify/presentation/widgets/create_playlist_modal.dart';
 import '../playlist/playlist_detail_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -41,17 +42,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestNotificationPermission();
-    });
-  }
-
-  Future<void> _requestNotificationPermission() async {
-    if (Platform.isAndroid) {
-      final status = await Permission.notification.status;
-      if (status.isDenied) {
-        await Permission.notification.request();
+      // Auto-scan storage silently in background if device was scanned at least once
+      final prefs = ref.read(preferencesServiceProvider);
+      if (prefs.hasScannedStorage()) {
+        triggerBackgroundStorageScan(ref);
       }
-    }
+    });
   }
 
   void _enterSelectionMode(Track track) {
@@ -88,287 +84,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // --- Modal Helpers ---
 
-  void _showMoreMenu(BuildContext context, WidgetRef ref) async {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final themePref = ref.read(themePreferenceProvider);
 
-    final screenSize = MediaQuery.of(context).size;
-
-    final selected = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        screenSize.width - 240,
-        75,
-        16,
-        screenSize.height - 75,
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-          color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
-          width: 1,
-        ),
-      ),
-      color: isDark ? Colors.black : Colors.white,
-      elevation: 10,
-      items: [
-        PopupMenuItem(
-          value: 'scan',
-          child: Row(
-            children: [
-              Icon(Icons.refresh_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
-              const SizedBox(width: 12),
-              const Text('Scan Storage', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'theme',
-          child: Row(
-            children: [
-              Icon(
-                themePref.icon,
-                size: 20,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Theme: ${themePref.displayName.replaceAll(" Mode", "")}',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-
-    if (selected == 'scan') {
-      if (context.mounted) await startScanWithProgressDialog(context, ref);
-    } else if (selected == 'theme') {
-      if (context.mounted) await showThemeSelectionModal(context);
-    }
-  }
 
   void _showNewPlaylistDialog(BuildContext context, WidgetRef ref) {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? Colors.black : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: BorderSide(
-            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
-            width: 1,
-          ),
-        ),
-        title: Text(
-          'New Playlist',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-            fontSize: 19,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Playlist name',
-                prefixIcon: const Icon(Icons.queue_music_rounded),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF222533) : const Color(0xFFF3F4F6),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.neonLime, width: 2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: descController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Description (optional)',
-                prefixIcon: const Icon(Icons.description_outlined),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF222533) : const Color(0xFFF3F4F6),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.neonLime, width: 2),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: Text(
-              'Cancel',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: isDark ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.neonLime,
-              foregroundColor: const Color(0xFF111827),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            ),
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                final repo = ref.read(audioRepositoryProvider);
-                await repo.createPlaylist(
-                  name,
-                  description: descController.text.trim().isNotEmpty
-                      ? descController.text.trim()
-                      : null,
-                );
-                ref.invalidate(playlistsStreamProvider);
-                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-                if (context.mounted) {
-                  AppSnackBar.show(
-                    context,
-                    message: 'Created "$name"',
-                    type: AppSnackBarType.success,
-                    icon: Icons.playlist_add_check_rounded,
-                  );
-                }
-              }
-            },
-            child: Text(
-              'Create',
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF111827),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    showCreatePlaylistModal(context, ref);
   }
 
   void _showEditPlaylistDialog(BuildContext context, WidgetRef ref, Playlist playlist) {
-    final nameController = TextEditingController(text: playlist.name);
-    final descController = TextEditingController(text: playlist.description ?? '');
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? Colors.black : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: BorderSide(
-            color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
-            width: 1,
-          ),
-        ),
-        title: Text(
-          'Edit Playlist',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-            fontSize: 19,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Playlist name',
-                prefixIcon: const Icon(Icons.queue_music_rounded),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF222533) : const Color(0xFFF3F4F6),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.neonLime, width: 2)),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: descController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Description (optional)',
-                prefixIcon: const Icon(Icons.description_outlined),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF222533) : const Color(0xFFF3F4F6),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.neonLime, width: 2)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: Text(
-              'Cancel',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: isDark ? Colors.white70 : Colors.black54,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.neonLime,
-              foregroundColor: const Color(0xFF111827),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            ),
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                final repo = ref.read(audioRepositoryProvider);
-                await repo.updatePlaylist(
-                  playlist.id,
-                  name: name,
-                  description: descController.text.trim().isNotEmpty ? descController.text.trim() : null,
-                );
-                ref.invalidate(playlistsStreamProvider);
-                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-              }
-            },
-            child: Text(
-              'Save',
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF111827),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    showEditPlaylistModal(context, ref, playlist);
   }
 
   void _confirmDeletePlaylist(BuildContext context, WidgetRef ref, Playlist playlist) async {
@@ -936,11 +659,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
         const SizedBox(width: 8),
 
-        // Right: Liquid Glass More Button
+        // Right: Appearance / Theme Modal (scan option removed from appbar)
         _GlassCircleButton(
-          icon: Icons.more_horiz_rounded,
-          iconSize: 21,
-          onTap: () => _showMoreMenu(context, ref),
+          icon: ref.watch(themePreferenceProvider).icon,
+          iconSize: 20,
+          onTap: () => showThemeSelectionModal(context),
         ),
       ],
     );
@@ -1417,7 +1140,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               // Scrollable Content
               Expanded(
                 child: RefreshIndicator(
+                  color: AppColors.neonLime,
+                  backgroundColor: isDark ? const Color(0xFF1E2028) : Colors.white,
                   onRefresh: () async {
+                    await triggerBackgroundStorageScan(ref);
                     ref.invalidate(localTracksProvider);
                     ref.invalidate(trackPlayCountsProvider);
                     ref.invalidate(likedTracksStreamProvider);

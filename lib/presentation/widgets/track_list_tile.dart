@@ -52,6 +52,13 @@ class TrackListTile extends ConsumerWidget {
 
     final isDark = theme.brightness == Brightness.dark;
 
+    // Reactively watch if this track is liked
+    final isLiked = ref.watch(
+      likedTracksStreamProvider.select(
+        (async) => async.value?.any((t) => t.id == track.id) ?? track.isLiked,
+      ),
+    );
+
     void handlePlayPauseAction() {
       HapticFeedback.selectionClick();
       if (isSelectionMode) {
@@ -74,7 +81,7 @@ class TrackListTile extends ConsumerWidget {
       }
     }
 
-    return InkWell(
+    final tileContent = InkWell(
       onTap: () {
         if (isSelectionMode) {
           onTap();
@@ -98,7 +105,7 @@ class TrackListTile extends ConsumerWidget {
               ? (isDark
                   ? const Color(0xFF84CC16).withValues(alpha: 0.12)
                   : const Color(0xFFF2F8EA))
-              : Colors.transparent,
+              : theme.scaffoldBackgroundColor,
         ),
         child: Row(
           children: [
@@ -242,13 +249,6 @@ class TrackListTile extends ConsumerWidget {
                           onPressed: () {
                             HapticFeedback.lightImpact();
                             downloadManager.downloadTrack(track);
-                            AppSnackBar.show(
-                              context,
-                              message: 'Downloading "${track.title}"...',
-                              type: AppSnackBarType.info,
-                              icon: Icons.download_rounded,
-                              duration: const Duration(seconds: 2),
-                            );
                           },
                         );
                       }
@@ -307,6 +307,7 @@ class TrackListTile extends ConsumerWidget {
                 _TrackTilePopupMenu(
                   track: track,
                   isDark: isDark,
+                  isLiked: isLiked,
                   onLikeToggle: onLikeToggle,
                   onRemoveFromPlaylist: onRemoveFromPlaylist,
                 ),
@@ -315,18 +316,171 @@ class TrackListTile extends ConsumerWidget {
         ),
       ),
     );
+
+    if (isSelectionMode) {
+      return tileContent;
+    }
+
+    final isRemovingFromPlaylist = onRemoveFromPlaylist != null;
+
+    return Dismissible(
+      key: ValueKey('swipe_${key != null ? key.toString() : track.id}'),
+      direction: DismissDirection.horizontal,
+      dismissThresholds: const {
+        DismissDirection.startToEnd: 0.26,
+        DismissDirection.endToStart: 0.26,
+      },
+      movementDuration: const Duration(milliseconds: 200),
+      onUpdate: (details) {
+        if (details.reached && !details.previousReached) {
+          HapticFeedback.selectionClick();
+        }
+      },
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
+          // Swipe Right: Immediately enqueues Play Next with haptic feedback
+          HapticFeedback.mediumImpact();
+          ref.read(audioHandlerProvider).insertNextInQueue(track);
+          AppSnackBar.show(
+            context,
+            message: 'Playing "${track.title}" next',
+            type: AppSnackBarType.info,
+            icon: Icons.playlist_play_rounded,
+          );
+          return false;
+        } else if (direction == DismissDirection.endToStart) {
+          // Swipe Left: Quick toggle Like / Favorite or Remove
+          HapticFeedback.mediumImpact();
+          if (isRemovingFromPlaylist) {
+            onRemoveFromPlaylist!();
+          } else {
+            final wasLiked = isLiked;
+            if (onLikeToggle != null) {
+              onLikeToggle!();
+            } else {
+              ref.read(audioRepositoryProvider).toggleLike(track);
+            }
+            ref.invalidate(likedTracksStreamProvider);
+            AppSnackBar.show(
+              context,
+              message: wasLiked
+                  ? 'Removed "${track.title}" from Liked'
+                  : 'Added "${track.title}" to Liked',
+              type: AppSnackBarType.info,
+              icon: wasLiked ? Icons.favorite_border_rounded : Icons.favorite_rounded,
+            );
+          }
+          return false;
+        }
+        return false;
+      },
+      background: _buildSwipeBackground(
+        alignment: Alignment.centerLeft,
+        iconBackgroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+        iconColor: isDark ? const Color(0xFF111827) : Colors.white,
+        icon: Icons.playlist_play_rounded,
+        title: 'Play Next',
+        textColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+      ),
+      secondaryBackground: isRemovingFromPlaylist
+          ? _buildSwipeBackground(
+              alignment: Alignment.centerRight,
+              iconBackgroundColor: Colors.redAccent,
+              iconColor: Colors.white,
+              icon: Icons.playlist_remove_rounded,
+              title: 'Remove',
+              textColor: Colors.redAccent,
+            )
+          : isLiked
+              ? _buildSwipeBackground(
+                  alignment: Alignment.centerRight,
+                  iconBackgroundColor: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+                  iconColor: isDark ? const Color(0xFFFF6B81) : const Color(0xFFD32F2F),
+                  icon: Icons.favorite_border_rounded,
+                  title: 'Unlike',
+                  textColor: isDark ? const Color(0xFFFF6B81) : const Color(0xFFD32F2F),
+                )
+              : _buildSwipeBackground(
+                  alignment: Alignment.centerRight,
+                  iconBackgroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                  iconColor: isDark ? const Color(0xFF111827) : Colors.white,
+                  icon: Icons.favorite_rounded,
+                  title: 'Like',
+                  textColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                ),
+      child: tileContent,
+    );
+  }
+
+  Widget _buildSwipeBackground({
+    required Alignment alignment,
+    required Color iconBackgroundColor,
+    required Color iconColor,
+    required IconData icon,
+    required String title,
+    required Color textColor,
+  }) {
+    final isEnd = alignment == Alignment.centerRight;
+    return Container(
+      height: 76,
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      color: Colors.transparent,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isEnd) ...[
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: iconBackgroundColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconColor,
+            ),
+          ),
+          if (!isEnd) ...[
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
 class _TrackTilePopupMenu extends ConsumerWidget {
   final Track track;
   final bool isDark;
+  final bool isLiked;
   final VoidCallback? onLikeToggle;
   final VoidCallback? onRemoveFromPlaylist;
 
   const _TrackTilePopupMenu({
     required this.track,
     required this.isDark,
+    required this.isLiked,
     this.onLikeToggle,
     this.onRemoveFromPlaylist,
   });
@@ -334,7 +488,6 @@ class _TrackTilePopupMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
     final downloadManager = ref.watch(downloadManagerProvider);
 
     return ListenableBuilder(
@@ -392,22 +545,26 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                 onRemoveFromPlaylist?.call();
               } else if (value == 'download') {
                 downloadManager.downloadTrack(track);
-                AppSnackBar.show(
-                  context,
-                  message: 'Downloading "${track.title}"...',
-                  type: AppSnackBarType.info,
-                  icon: Icons.download_rounded,
-                );
               } else if (value == 'cancel_download') {
                 downloadManager.cancelDownload(track.id);
               } else if (value == 'delete_device') {
                 showConfirmDeleteTrackDialog(context, ref, track);
               } else if (value == 'like') {
+                final wasLiked = isLiked;
                 if (onLikeToggle != null) {
                   onLikeToggle!();
                 } else {
                   ref.read(audioRepositoryProvider).toggleLike(track);
                 }
+                ref.invalidate(likedTracksStreamProvider);
+                AppSnackBar.show(
+                  context,
+                  message: wasLiked
+                      ? 'Removed "${track.title}" from Liked'
+                      : 'Added "${track.title}" to Liked',
+                  type: AppSnackBarType.info,
+                  icon: wasLiked ? Icons.favorite_border_rounded : Icons.favorite_rounded,
+                );
               }
             },
             itemBuilder: (ctx) => [
@@ -495,17 +652,17 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                 child: Row(
                   children: [
                     Icon(
-                      track.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                       size: 20,
-                      color: track.isLiked ? primaryColor : theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                      color: isLiked ? (isDark ? AppColors.neonLime : AppColors.limeAccentDark) : theme.colorScheme.onSurface.withValues(alpha: 0.75),
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      track.isLiked ? 'Remove from Liked' : 'Save to Liked',
+                      isLiked ? 'Remove from Liked' : 'Save to Liked',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: track.isLiked ? primaryColor : null,
+                        color: isLiked ? (isDark ? AppColors.neonLime : AppColors.limeAccentDark) : null,
                       ),
                     ),
                   ],

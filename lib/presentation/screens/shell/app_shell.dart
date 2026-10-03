@@ -6,27 +6,28 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/player/mini_player.dart';
 import 'package:musify/presentation/screens/player/now_playing_screen.dart';
-import 'package:musify/presentation/screens/home/home_screen.dart';
 import 'package:musify/presentation/screens/search/search_screen.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
+import '../home/home_screen.dart';
 
 LiquidGlassSettings _resolveTabBarGlassSettings({required bool isDark}) {
   return isDark
       ? const LiquidGlassSettings(
           thickness: 30.0,
-          blur: 3.0,
-          chromaticAberration: 0.30,
-          lightIntensity: 0.65,
+          blur: 3.0,                  // Low blur preserves sharp background refraction
+          chromaticAberration: 0.28,  // Clean spectral prism edges
+          lightIntensity: 0.65,       // Specular rim reflection
           ambientStrength: 1.0,
-          refractiveIndex: 1.59,
-          saturation: 0.70,
-          lightAngle: 0.75 * math.pi,
-          glassColor: Color(0x2EFFFFFF),
+          refractiveIndex: 1.59,      // Polycarbonate optical refraction
+          saturation: 0.85,
+          lightAngle: 0.75 * math.pi, // 135° Apple standard upper-left key light
+          glassColor: Color(0x22D2F843), // Refined luminous Neon Lime tint (~13% alpha)
           specularSharpness: GlassSpecularSharpness.sharp,
         )
       : const LiquidGlassSettings(
@@ -36,9 +37,9 @@ LiquidGlassSettings _resolveTabBarGlassSettings({required bool isDark}) {
           lightIntensity: 0.60,
           ambientStrength: 1.0,
           refractiveIndex: 1.55,
-          saturation: 0.85,
+          saturation: 0.90,
           lightAngle: 0.75 * math.pi,
-          glassColor: Color(0x24FFFFFF),
+          glassColor: Color(0x1CD2F842), // Sheer delicate Neon Lime tint (~11% alpha)
           specularSharpness: GlassSpecularSharpness.medium,
         );
 }
@@ -133,6 +134,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
             ),
             child: GlassContainer(
               useOwnLayer: true,
+              quality: GlassQuality.premium,
               clipBehavior: Clip.antiAlias,
               padding: const EdgeInsets.all(5.0),
               shape: const LiquidRoundedSuperellipse(borderRadius: 32),
@@ -193,8 +195,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                                 const SizedBox(width: 8),
                                 Text(
                                   'My music',
-                                  style: TextStyle(
-                                    fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                                  style: AppTypography.caption.copyWith(
                                     fontSize: 12.5,
                                     fontWeight: activeIndex == 0
                                         ? FontWeight.w700
@@ -240,8 +241,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                                 const SizedBox(width: 8),
                                 Text(
                                   'Stream',
-                                  style: TextStyle(
-                                    fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                                  style: AppTypography.caption.copyWith(
                                     fontSize: 12.5,
                                     fontWeight: activeIndex == 1
                                         ? FontWeight.w700
@@ -361,34 +361,39 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                 ),
               );
             },
-            child: GlassScaffold(
-              resizeToAvoidBottomInset: false,
-              backgroundColor: isDark ? Colors.black : Colors.white,
-              bottomBar: isMultiSelection
-                  ? null
-                  : _buildBottomBar(
-                      context: context,
-                      activeIndex: activeIndex,
-                      hasTrack: hasTrack,
-                      isDark: isDark,
-                      theme: theme,
-                    ),
-              body: Stack(
-                children: [
-                  // 1. Main Body Screens with IndexedStack for instant state preservation
-                  IndexedStack(
-                    index: activeIndex,
-                    children: _screens,
-                  ),
+            child: RepaintBoundary(
+              child: GlassScaffold(
+                resizeToAvoidBottomInset: false,
+                backgroundColor: isDark ? Colors.black : Colors.white,
+                bottomBar: isMultiSelection
+                    ? null
+                    : _buildBottomBar(
+                        context: context,
+                        activeIndex: activeIndex,
+                        hasTrack: hasTrack,
+                        isDark: isDark,
+                        theme: theme,
+                      ),
+                body: Material(
+                  type: MaterialType.transparency,
+                  child: Stack(
+                    children: [
+                      // 1. Main Body Screens with IndexedStack for instant state preservation
+                      IndexedStack(
+                        index: activeIndex,
+                        children: _screens,
+                      ),
 
-                  // 2. Dynamic Island Download Status Capsule
-                  Positioned(
-                    top: MediaQuery.of(context).padding.top + 8,
-                    left: 0,
-                    right: 0,
-                    child: const DownloadDynamicIsland(),
+                      // 2. Dynamic Island Download Status Capsule
+                      Positioned(
+                        top: MediaQuery.of(context).padding.top + 8,
+                        left: 0,
+                        right: 0,
+                        child: const DownloadDynamicIsland(),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -409,6 +414,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                   child: IgnorePointer(
                     ignoring: isCollapsed,
                     child: SlideTransition(
+                      transformHitTests: false,
                       position: _slideAnimation,
                       child: child,
                     ),
