@@ -29,10 +29,12 @@ export 'package:musify/services/preferences_service.dart';
 final downloadManagerProvider = Provider<AudioDownloadManager>((ref) {
   final repo = ref.watch(audioRepositoryProvider);
   final saavn = ref.watch(saavnAdapterProvider);
+  final youtube = ref.watch(youtubeAdapterProvider);
   final router = ref.watch(sourceRouterProvider);
   final manager = AudioDownloadManager(
     repo: repo,
     saavnAdapter: saavn,
+    youtubeAdapter: youtube,
     sourceRouter: router,
   );
   ref.onDispose(() => manager.dispose());
@@ -62,7 +64,9 @@ final saavnAdapterProvider = Provider<SaavnSourceAdapter>((ref) {
 });
 
 final youtubeAdapterProvider = Provider<YouTubeSourceAdapter>((ref) {
-  final adapter = YouTubeSourceAdapter();
+  final saavn = ref.watch(saavnAdapterProvider);
+  final repo = ref.watch(audioRepositoryProvider);
+  final adapter = YouTubeSourceAdapter(saavnAdapter: saavn, repo: repo);
   ref.onDispose(() => adapter.close());
   return adapter;
 });

@@ -1,13 +1,34 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:dio/dio.dart';
+import 'package:path/path.dart' as p;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../domain/models/track.dart';
+import '../../domain/repositories/audio_repository.dart';
 import '../../domain/sources/source_adapter.dart';
+import '../../services/download_manager.dart';
+import 'saavn_source_adapter.dart';
 
 class YouTubeSourceAdapter implements SourceAdapter {
   final YoutubeExplode _yt;
+  final SaavnSourceAdapter? saavnAdapter;
+  final AudioRepository? repo;
+  final Dio _dio;
   final Map<String, ({String url, DateTime expiresAt})> _streamCache = {};
 
-  YouTubeSourceAdapter({YoutubeExplode? yt}) : _yt = yt ?? YoutubeExplode();
+  YouTubeSourceAdapter({
+    YoutubeExplode? yt,
+    this.saavnAdapter,
+    this.repo,
+    Dio? dio,
+  })  : _yt = yt ?? YoutubeExplode(),
+        _dio = dio ??
+            Dio(
+              BaseOptions(
+                connectTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 45),
+              ),
+            );
 
   @override
   AudioSourceType get sourceType => AudioSourceType.youtube;
@@ -56,44 +77,205 @@ class YouTubeSourceAdapter implements SourceAdapter {
     }
   }
 
-  @override
-  Future<String> getStreamUrl(Track track) async {
-    final videoId = track.sourceId.isNotEmpty ? track.sourceId : track.id.replaceFirst('youtube:', '');
-    if (videoId.isEmpty) return track.audioUrl;
+  static String getSafeFilename(Track track, String ext) {
+    final safeTitle = track.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final safeArtist = track.artistName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final safeId = track.id.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    return '${safeTitle}_${safeArtist}_$safeId$ext';
+  }
 
-    // Check memory cache
-    final cached = _streamCache[videoId];
-    if (cached != null && DateTime.now().isBefore(cached.expiresAt)) {
-      return cached.url;
+  Future<File?> getExistingDownloadedFile(Track track) async {
+    // 1. Direct path check on track model
+    if (track.filePath != null && track.filePath!.isNotEmpty && File(track.filePath!).existsSync()) {
+      return File(track.filePath!);
     }
 
+    // 2. Check public Musify downloads directory
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-
-      // Prefer highest bitrate audio-only stream
-      AudioStreamInfo? audioStream;
-      try {
-        audioStream = manifest.audioOnly.withHighestBitrate();
-      } catch (_) {
-        if (manifest.audio.isNotEmpty) {
-          audioStream = manifest.audio.withHighestBitrate();
+      final downloadDir = await AudioDownloadManager.getMusifyDownloadsDirectory();
+      final safeId = track.id.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+      final entities = downloadDir.listSync();
+      for (final entity in entities) {
+        if (entity is File && p.basenameWithoutExtension(entity.path).endsWith(safeId)) {
+          if (entity.lengthSync() > 100000) {
+            return entity;
+          }
         }
       }
+    } catch (_) {}
 
-      if (audioStream != null) {
-        final url = audioStream.url.toString();
-        // YouTube stream URLs are valid for ~6 hours; cache for 4 hours
-        _streamCache[videoId] = (
-          url: url,
-          expiresAt: DateTime.now().add(const Duration(hours: 4)),
-        );
-        return url;
-      }
-    } catch (_) {
-      // Fallback on error
+    return null;
+  }
+
+  /// Downloads YouTube track completely to local storage (Music/Musify)
+  /// and saves it to the local library.
+  Future<File?> downloadTrackToFile(
+    Track track, {
+    void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    // Check if track is already downloaded
+    final existing = await getExistingDownloadedFile(track);
+    if (existing != null) {
+      onProgress?.call(1.0);
+      return existing;
     }
 
-    return track.audioUrl;
+    final downloadDir = await AudioDownloadManager.getMusifyDownloadsDirectory();
+
+    // 1. Fast match attempt on JioSaavn (320kbps CDNs, completes in <1s)
+    final saavn = saavnAdapter;
+    final r = repo;
+    if (saavn != null) {
+      try {
+        final query = '${track.title} ${track.artistName}'.trim();
+        final saavnResults = await saavn.search(query, limit: 3);
+        for (final s in saavnResults) {
+          final isTitleMatch = s.title.toLowerCase().contains(track.title.toLowerCase()) ||
+              track.title.toLowerCase().contains(s.title.toLowerCase());
+          if (isTitleMatch) {
+            final saavnUrl = await saavn.getStreamUrl(s);
+            if (saavnUrl.isNotEmpty && saavnUrl.startsWith('http')) {
+              var ext = '.m4a';
+              if (saavnUrl.contains('.mp3')) ext = '.mp3';
+              final savePath = p.join(downloadDir.path, getSafeFilename(track, ext));
+              final tempPath = '$savePath.tmp';
+              final tempFile = File(tempPath);
+              if (tempFile.existsSync()) tempFile.deleteSync();
+
+              await _dio.download(
+                saavnUrl,
+                tempPath,
+                cancelToken: cancelToken,
+                onReceiveProgress: (rec, total) {
+                  if (total > 0 && onProgress != null) {
+                    onProgress(rec / total);
+                  }
+                },
+              );
+
+              if (tempFile.existsSync() && tempFile.lengthSync() > 100000) {
+                final finalFile = await tempFile.rename(savePath);
+                if (r != null) {
+                  await r.saveDownloadedTrack(
+                    track.copyWith(filePath: finalFile.path, isDownloaded: true),
+                    filePath: finalFile.path,
+                    fileSizeBytes: finalFile.lengthSync(),
+                  );
+                }
+                onProgress?.call(1.0);
+                return finalFile;
+              }
+            }
+          }
+        }
+      } catch (_) {
+        // Fall back to direct YouTube stream download
+      }
+    }
+
+    // 2. Direct YouTube Download via unthrottled muxed stream
+    final videoId = track.sourceId.isNotEmpty ? track.sourceId : track.id.replaceFirst('youtube:', '');
+    if (videoId.isEmpty) return null;
+
+    try {
+      final manifest = await _yt.videos.streamsClient.getManifest(
+        videoId,
+        ytClients: [YoutubeApiClient.androidSdkless],
+      );
+
+      // Prefer muxed stream (tag 18, 360p mp4) which YouTube doesn't throttle
+      StreamInfo? stream = manifest.muxed.where((s) => s.tag == 18).firstOrNull ??
+          manifest.muxed.firstOrNull ??
+          manifest.audioOnly.withHighestBitrate();
+
+      final totalBytes = stream.size.totalBytes;
+      final url = stream.url.toString();
+      const ua = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip';
+
+      final ext = stream.container.name == 'webm' ? '.opus' : '.mp4';
+      final savePath = p.join(downloadDir.path, getSafeFilename(track, ext));
+      final tempPath = '$savePath.tmp';
+      final tempFile = File(tempPath);
+      if (tempFile.existsSync()) tempFile.deleteSync();
+
+      final sink = tempFile.openWrite();
+      int start = 0;
+      const chunkSize = 500 * 1024; // 500 KB boundary
+
+      try {
+        while (start < totalBytes) {
+          if (cancelToken?.isCancelled == true) {
+            throw Exception('Download cancelled');
+          }
+
+          final end = (start + chunkSize - 1).clamp(0, totalBytes - 1);
+          final res = await _dio.get<ResponseBody>(
+            url,
+            cancelToken: cancelToken,
+            options: Options(
+              responseType: ResponseType.stream,
+              headers: {
+                'User-Agent': ua,
+                'Range': 'bytes=$start-$end',
+              },
+            ),
+          );
+
+          if (res.statusCode != 200 && res.statusCode != 206) {
+            throw Exception('HTTP ${res.statusCode}');
+          }
+
+          await for (final chunk in res.data!.stream) {
+            sink.add(chunk);
+          }
+
+          start = end + 1;
+          if (totalBytes > 0 && onProgress != null) {
+            onProgress((start / totalBytes).clamp(0.0, 1.0));
+          }
+        }
+
+        await sink.flush();
+        await sink.close();
+      } catch (e) {
+        await sink.close();
+        if (tempFile.existsSync()) {
+          try { tempFile.deleteSync(); } catch (_) {}
+        }
+        rethrow;
+      }
+
+      if (tempFile.existsSync() && tempFile.lengthSync() > 100000) {
+        final finalFile = await tempFile.rename(savePath);
+        if (r != null) {
+          await r.saveDownloadedTrack(
+            track.copyWith(filePath: finalFile.path, isDownloaded: true),
+            filePath: finalFile.path,
+            fileSizeBytes: finalFile.lengthSync(),
+          );
+        }
+        onProgress?.call(1.0);
+        return finalFile;
+      }
+    } catch (_) {
+      // Download failed
+    }
+
+    return null;
+  }
+
+  @override
+  Future<String> getStreamUrl(Track track) async {
+    // Download-first architecture: download to local storage before playing
+    try {
+      final downloaded = await downloadTrackToFile(track);
+      if (downloaded != null && downloaded.existsSync()) {
+        return downloaded.path;
+      }
+    } catch (_) {}
+
+    return track.filePath ?? track.audioUrl;
   }
 
   @override

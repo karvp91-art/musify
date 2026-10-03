@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:musify/data/database/app_database.dart';
@@ -367,6 +368,69 @@ void main() {
       expect(historyAfter.containsKey(track.id), isFalse);
       final localTracksAfter = await repository.getLocalTracks();
       expect(localTracksAfter.any((t) => t.id == track.id), isFalse);
+    });
+
+    test('deduplicates local tracks when an online/YouTube track shares same filePath', () async {
+      const sharedPath = '/storage/emulated/0/Music/Musify/PROS BANDIDO (Slowed).mp4';
+
+      final ytTrack = Track(
+        id: 'youtube:47uCwhd0dD0',
+        title: 'PROS BANDIDO (Slowed)',
+        artistName: 'DRAXEDIT',
+        source: AudioSourceType.youtube,
+        sourceId: '47uCwhd0dD0',
+        durationMs: 133000,
+        artworkUrl: 'https://i.ytimg.com/vi/47uCwhd0dD0/hqdefault.jpg',
+        audioUrl: '',
+        filePath: sharedPath,
+        fileSizeBytes: 3000000,
+        isDownloaded: true,
+        addedAt: DateTime.now(),
+      );
+
+      // Save the YouTube downloaded track
+      await repository.saveDownloadedTrack(ytTrack, filePath: sharedPath, fileSizeBytes: 3000000);
+
+      // Also simulate a raw scanner inserting a duplicate local track
+      final duplicateLocalTrack = Track(
+        id: 'local:$sharedPath',
+        title: 'PROS BANDIDO (Slowed) ...',
+        artistName: 'Unknown Artist',
+        source: AudioSourceType.local,
+        sourceId: sharedPath,
+        durationMs: 133000,
+        audioUrl: sharedPath,
+        filePath: sharedPath,
+        isDownloaded: true,
+        addedAt: DateTime.now(),
+      );
+
+      // Directly insert to simulate prior bug state
+      await db.into(db.localTracks).insert(
+        LocalTracksCompanion.insert(
+          id: duplicateLocalTrack.id,
+          title: duplicateLocalTrack.title,
+          artistName: duplicateLocalTrack.artistName,
+          source: duplicateLocalTrack.source.name,
+          sourceId: duplicateLocalTrack.sourceId,
+          durationMs: duplicateLocalTrack.durationMs,
+          audioUrl: duplicateLocalTrack.audioUrl,
+          filePath: Value(duplicateLocalTrack.filePath),
+          isDownloaded: const Value(true),
+          addedAt: duplicateLocalTrack.addedAt,
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+
+      // Now query getLocalTracks()
+      final tracks = await repository.getLocalTracks();
+
+      // Only ONE track should be returned, and it MUST be the rich YouTube track!
+      expect(tracks.length, 1);
+      expect(tracks.first.id, 'youtube:47uCwhd0dD0');
+      expect(tracks.first.artistName, 'DRAXEDIT');
+      expect(tracks.first.title, 'PROS BANDIDO (Slowed)');
+      expect(tracks.first.artworkUrl, isNotNull);
     });
   });
 }

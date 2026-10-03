@@ -20,6 +20,7 @@ class TrackListTile extends ConsumerWidget {
   final bool isSelectionMode;
   final bool isSelected;
   final VoidCallback? onLongPress;
+  final bool isYouTubeSection;
 
   const TrackListTile({
     super.key,
@@ -34,6 +35,7 @@ class TrackListTile extends ConsumerWidget {
     this.isSelectionMode = false,
     this.isSelected = false,
     this.onLongPress,
+    this.isYouTubeSection = false,
   });
 
   String _formatDuration(int ms) {
@@ -79,11 +81,27 @@ class TrackListTile extends ConsumerWidget {
       }
     }
 
+    final isYt = isYouTubeSection || track.source == AudioSourceType.youtube;
+
     final tileContent = InkWell(
       onTap: () {
         if (isSelectionMode) {
           onTap();
-        } else if (isCurrent) {
+          return;
+        }
+        if (isYt && !track.isDownloaded) {
+          final downloadManager = ref.read(downloadManagerProvider);
+          if (!downloadManager.isDownloaded(track.id)) {
+            HapticFeedback.lightImpact();
+            AppSnackBar.show(
+              context,
+              message: 'YouTube is for download only. Downloading to Music folder...',
+            );
+            downloadManager.downloadTrack(track);
+            return;
+          }
+        }
+        if (isCurrent) {
           handlePlayPauseAction();
         } else {
           onTap();
@@ -188,25 +206,42 @@ class TrackListTile extends ConsumerWidget {
                             color: const Color(0xFFFF0000).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text(
-                            'YT',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFFFF3333),
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'YT',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFFF3333),
+                                ),
+                              ),
+                              if (track.isDownloaded) ...[
+                                const SizedBox(width: 3),
+                                const Icon(
+                                  Icons.check_rounded,
+                                  size: 10,
+                                  color: Color(0xFF22C55E),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ],
                       Expanded(
                         child: Text(
-                          'By ${track.artistName}${durationStr.isNotEmpty ? ' • $durationStr' : ''}',
+                          isYt && !track.isDownloaded
+                              ? 'By ${track.artistName} • Download only (no streaming)'
+                              : 'By ${track.artistName}${durationStr.isNotEmpty ? ' • $durationStr' : ''}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                            color: isYt && !track.isDownloaded
+                                ? (isDark ? const Color(0xFFFF6666) : const Color(0xFFCC0000))
+                                : theme.colorScheme.onSurface.withValues(alpha: 0.55),
                             fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: isYt && !track.isDownloaded ? FontWeight.w600 : FontWeight.w500,
                           ),
                         ),
                       ),
@@ -219,10 +254,7 @@ class TrackListTile extends ConsumerWidget {
             if (!isSelectionMode) ...[
               const SizedBox(width: 6),
 
-              // Inline Download Indicator / Button
-              // Short-circuit: skip ChangeNotifier subscription for local tracks
-              // that will never show download UI (eliminates ~80% of listener overhead)
-              if (track.source != AudioSourceType.local)
+              if (track.source != AudioSourceType.local || isYouTubeSection)
                 Consumer(
                   builder: (context, ref, _) {
                     final downloadManager = ref.watch(downloadManagerProvider);
@@ -233,80 +265,184 @@ class TrackListTile extends ConsumerWidget {
                         final isDownloaded = state.isDownloaded || track.isDownloaded;
                         final isDownloading = state.isDownloading;
 
-                        if (isDownloading) {
-                          return GestureDetector(
-                            onTap: () => downloadManager.cancelDownload(track.id),
-                            child: Tooltip(
-                              message: 'Cancel download',
-                              child: SizedBox(
-                                width: 32,
-                                height: 32,
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      value: state.progress > 0 ? state.progress : null,
-                                      strokeWidth: 2.4,
-                                      color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                        // When in YouTube section (or undownloaded YouTube track):
+                        // Only show Download button — no streaming play button!
+                        if (isYt && !isDownloaded) {
+                          if (isDownloading) {
+                            return GestureDetector(
+                              onTap: () {
+                                downloadManager.cancelDownload(track.id);
+                                AppSnackBar.show(
+                                  context,
+                                  message: 'Cancelled download for "${track.title}"',
+                                );
+                              },
+                              child: Tooltip(
+                                message: 'Cancel download (${(state.progress * 100).toInt()}%)',
+                                child: Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+                                  ),
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        value: state.progress > 0 ? state.progress : null,
+                                        strokeWidth: 2.4,
+                                        color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        } else if (!isDownloaded) {
-                          return IconButton(
-                            icon: Icon(
-                              Icons.download_rounded,
-                              size: 20,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                            ),
-                            tooltip: 'Download song',
-                            onPressed: () {
+                            );
+                          }
+
+                          return GestureDetector(
+                            onTap: () {
                               HapticFeedback.lightImpact();
+                              AppSnackBar.show(
+                                context,
+                                message: 'YouTube is for download only. Downloading to Music folder...',
+                              );
                               downloadManager.downloadTrack(track);
                             },
+                            child: Tooltip(
+                              message: 'Download to permanent Music folder',
+                              child: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isDark
+                                      ? const Color(0xFFFF0000).withValues(alpha: 0.18)
+                                      : const Color(0xFFFFEEEE),
+                                ),
+                                child: const Icon(
+                                  Icons.download_rounded,
+                                  size: 20,
+                                  color: Color(0xFFFF3333),
+                                ),
+                              ),
+                            ),
                           );
                         }
-                        return const SizedBox.shrink();
+
+                        // Standard Track (or already-downloaded YouTube track):
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!isDownloaded && !isYt) ...[
+                              if (isDownloading) ...[
+                                GestureDetector(
+                                  onTap: () => downloadManager.cancelDownload(track.id),
+                                  child: Tooltip(
+                                    message: 'Cancel download',
+                                    child: SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            value: state.progress > 0 ? state.progress : null,
+                                            strokeWidth: 2.4,
+                                            color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ] else ...[
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.download_rounded,
+                                    size: 20,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                                  ),
+                                  tooltip: 'Download song',
+                                  onPressed: () {
+                                    HapticFeedback.lightImpact();
+                                    downloadManager.downloadTrack(track);
+                                  },
+                                ),
+                              ],
+                              const SizedBox(width: 4),
+                            ],
+
+                            // Trailing Play / Pause Button
+                            GestureDetector(
+                              onTap: handlePlayPauseAction,
+                              child: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isCurrent
+                                      ? (isDark ? AppColors.neonLime : AppColors.neonLime)
+                                      : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
+                                  boxShadow: isCurrent
+                                      ? [
+                                          BoxShadow(
+                                            color: (isDark ? AppColors.neonLime : Colors.black).withValues(alpha: 0.20),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Icon(
+                                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                  size: 20,
+                                  color: isCurrent
+                                      ? const Color(0xFF111827)
+                                      : (isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
                       },
                     );
                   },
-                ),
-
-              const SizedBox(width: 4),
-
-              // Trailing: Borderless Circular Play / Pause Action Button
-              GestureDetector(
-                onTap: handlePlayPauseAction,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isCurrent
-                        ? (isDark ? AppColors.neonLime : AppColors.neonLime)
-                        : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
-                    boxShadow: isCurrent
-                        ? [
-                            BoxShadow(
-                              color: (isDark ? AppColors.neonLime : Colors.black).withValues(alpha: 0.20),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ]
-                        : null,
+                )
+              else
+                // Pure Local track: direct play button
+                GestureDetector(
+                  onTap: handlePlayPauseAction,
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isCurrent
+                          ? (isDark ? AppColors.neonLime : AppColors.neonLime)
+                          : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
+                      boxShadow: isCurrent
+                          ? [
+                              BoxShadow(
+                                color: (isDark ? AppColors.neonLime : Colors.black).withValues(alpha: 0.20),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      size: 20,
+                      color: isCurrent
+                          ? const Color(0xFF111827)
+                          : (isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028)),
+                    ),
                   ),
-                  child: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    size: 20,
-                    color: isCurrent
-                        ? (isDark ? const Color(0xFF111827) : const Color(0xFF111827))
-                        : (isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028)),
-                  ),
                 ),
-              ),
 
               const SizedBox(width: 2),
 

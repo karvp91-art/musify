@@ -31,10 +31,8 @@ Future<void> main() async {
       androidNotificationChannelDescription: AppConstants.audioChannelDescription,
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
-      androidNotificationClickStartsActivity: true,
-      androidNotificationIcon: 'drawable/ic_music_note',
-      androidShowNotificationBadge: true,
-      preloadArtwork: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+      
     ),
   );
 
@@ -58,7 +56,7 @@ class MusifyApp extends ConsumerWidget {
 
     return LiquidGlassWidgets.wrap(
       brightnessResolver: Theme.maybeBrightnessOf,
-      adaptiveQuality: true,
+      adaptiveQuality: false,
       child: ToastificationWrapper(
         child: MaterialApp(
           title: AppConstants.appName,

@@ -10,8 +10,12 @@ class SourceRouter {
 
   SourceAdapter? getAdapter(AudioSourceType type) => _adapters[type];
 
-  Future<List<Track>> searchAll(String query) async {
-    final futures = _adapters.values.map((adapter) async {
+  Future<List<Track>> searchAll(String query, {bool includeLocal = true}) async {
+    final targetAdapters = includeLocal
+        ? _adapters.values
+        : _adapters.values.where((adapter) => adapter.sourceType != AudioSourceType.local);
+
+    final futures = targetAdapters.map((adapter) async {
       try {
         return await adapter.search(query);
       } catch (_) {

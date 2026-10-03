@@ -184,12 +184,27 @@ class LocalFilesScanner {
     final List<LocalTracksCompanion> collectedTracks = [];
     int scannedFilesCounter = 0;
 
+    // Load existing tracked file paths so we never insert a duplicate "local:..."
+    // record for a song that was already downloaded from YouTube or JioSaavn
+    final existingRows = await _db.select(_db.localTracks).get();
+    final existingOnlinePaths = <String>{};
+    for (final row in existingRows) {
+      if (row.filePath != null && row.filePath!.isNotEmpty) {
+        if (row.source != AudioSourceType.local.name ||
+            row.id.startsWith('youtube:') ||
+            row.id.startsWith('saavn:')) {
+          existingOnlinePaths.add(p.normalize(row.filePath!));
+        }
+      }
+    }
+
     for (final dir in rootScanDirs) {
       if (await dir.exists()) {
         await _crawlDirectorySafe(
           dir,
           visitedPaths,
           collectedTracks,
+          existingOnlinePaths: existingOnlinePaths,
           onFileScanned: (count, path) {
             scannedFilesCounter += count;
             onProgress?.call(ScanProgress(
@@ -211,6 +226,7 @@ class LocalFilesScanner {
           dlDir,
           visitedPaths,
           collectedTracks,
+          existingOnlinePaths: existingOnlinePaths,
           onFileScanned: (count, path) {
             scannedFilesCounter += count;
             onProgress?.call(ScanProgress(
@@ -234,6 +250,7 @@ class LocalFilesScanner {
             musifyExtDir,
             visitedPaths,
             collectedTracks,
+            existingOnlinePaths: existingOnlinePaths,
             onFileScanned: (count, path) {
               scannedFilesCounter += count;
               onProgress?.call(ScanProgress(
@@ -254,6 +271,15 @@ class LocalFilesScanner {
         batch.insertAllOnConflictUpdate(_db.localTracks, collectedTracks);
       });
     }
+
+    // Clean up any historical duplicate local entries that share a filePath with an online/downloaded track
+    try {
+      await _db.customStatement(
+        "DELETE FROM local_tracks WHERE source = 'local' AND file_path IN ("
+        "  SELECT file_path FROM local_tracks WHERE source != 'local' AND file_path IS NOT NULL AND file_path != ''"
+        ");",
+      );
+    } catch (_) {}
 
     onProgress?.call(ScanProgress(
       filesScanned: scannedFilesCounter,
@@ -287,6 +313,7 @@ class LocalFilesScanner {
     List<LocalTracksCompanion> collectedTracks, {
     void Function(int count, String currentPath)? onFileScanned,
     bool markAsDownloaded = false,
+    Set<String>? existingOnlinePaths,
   }) async {
     final queue = Queue<Directory>()..add(root);
 
@@ -320,6 +347,12 @@ class LocalFilesScanner {
           } else if (entity is File) {
             // During the general scan pass, skip files inside Musify download dirs
             if (!markAsDownloaded && _isMusifyDownloadPath(currentPath)) continue;
+
+            // Skip if this file is already tracked as an online/downloaded track (e.g. YouTube / JioSaavn)
+            if (existingOnlinePaths != null && existingOnlinePaths.contains(p.normalize(entity.path))) {
+              continue;
+            }
+
             onFileScanned?.call(1, currentPath);
             final ext = p.extension(entity.path).toLowerCase();
             if (supportedExtensions.contains(ext)) {

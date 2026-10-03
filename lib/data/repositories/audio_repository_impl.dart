@@ -114,7 +114,36 @@ class AudioRepositoryImpl implements AudioRepository {
                 tbl.title.equals('musify downloads') |
                 (tbl.source.equals('local') & tbl.filePath.like('%musify_downloads%'))))
           .go();
+      // Remove any duplicate local track pointing to a file path owned by an online/downloaded track
+      await _db.customStatement(
+        "DELETE FROM local_tracks WHERE source = 'local' AND file_path IN ("
+        "  SELECT file_path FROM local_tracks WHERE source != 'local' AND file_path IS NOT NULL AND file_path != ''"
+        ");",
+      );
     } catch (_) {}
+  }
+
+  List<Track> _deduplicateTracks(List<Track> tracks) {
+    final seen = <String, Track>{};
+    final unique = <Track>[];
+    for (final t in tracks) {
+      final key = t.filePath != null && t.filePath!.isNotEmpty
+          ? t.filePath!.toLowerCase()
+          : t.id;
+      if (!seen.containsKey(key)) {
+        seen[key] = t;
+        unique.add(t);
+      } else {
+        final existing = seen[key]!;
+        // If an entry is already present, prefer the richer online track (e.g. YouTube/JioSaavn with artwork & artist)
+        if (existing.source == AudioSourceType.local && t.source != AudioSourceType.local) {
+          final idx = unique.indexOf(existing);
+          if (idx != -1) unique[idx] = t;
+          seen[key] = t;
+        }
+      }
+    }
+    return unique;
   }
 
   @override
@@ -126,10 +155,11 @@ class AudioRepositoryImpl implements AudioRepository {
           tbl.title.isNotValue('musify downloads'))
       ..orderBy([(t) => OrderingTerm.asc(t.title)]);
     final rows = await query.get();
-    return rows
+    final tracks = rows
         .map(_toDomainTrack)
         .where((t) => !(t.source == AudioSourceType.local && (t.filePath?.contains('musify_downloads') ?? false)))
         .toList();
+    return _deduplicateTracks(tracks);
   }
 
   @override
@@ -140,10 +170,13 @@ class AudioRepositoryImpl implements AudioRepository {
           (tbl.source.equals(AudioSourceType.local.name) | tbl.isDownloaded.equals(true)) &
           tbl.title.isNotValue('musify downloads'))
       ..orderBy([(t) => OrderingTerm.asc(t.title)]);
-    return query.watch().map((rows) => rows
-        .map(_toDomainTrack)
-        .where((t) => !(t.source == AudioSourceType.local && (t.filePath?.contains('musify_downloads') ?? false)))
-        .toList());
+    return query.watch().map((rows) {
+      final tracks = rows
+          .map(_toDomainTrack)
+          .where((t) => !(t.source == AudioSourceType.local && (t.filePath?.contains('musify_downloads') ?? false)))
+          .toList();
+      return _deduplicateTracks(tracks);
+    });
   }
 
   @override
@@ -159,6 +192,12 @@ class AudioRepositoryImpl implements AudioRepository {
       isDownloaded: true,
       addedAt: DateTime.now(),
     );
+    // Delete any duplicate local file entry that points to this exact physical file
+    try {
+      await (_db.delete(_db.localTracks)
+            ..where((tbl) => tbl.filePath.equals(filePath) & tbl.id.isNotValue(updated.id)))
+          .go();
+    } catch (_) {}
     await _db.into(_db.localTracks).insert(
       _toCompanion(updated),
       mode: InsertMode.insertOrReplace,

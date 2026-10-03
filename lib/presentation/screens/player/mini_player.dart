@@ -171,8 +171,8 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 ],
               ),
               child: GlassContainer(
-                useOwnLayer: false,
-                quality: GlassQuality.standard,
+                useOwnLayer: true,
+                quality: GlassQuality.premium,
                 clipBehavior: Clip.antiAlias,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 shape: const LiquidRoundedSuperellipse(borderRadius: 28),

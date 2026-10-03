@@ -78,5 +78,50 @@ void main() {
       expect(track.id, equals('youtube:test1234'));
       expect(track.codec, equals('opus'));
     });
+
+    test('getSafeFilename generates sanitized filenames without invalid characters', () {
+      final track = Track(
+        id: 'youtube:123/456*789',
+        title: 'Song: The Best <Hit>?',
+        artistName: 'Artist / "Band" | Group',
+        source: AudioSourceType.youtube,
+        sourceId: '123_456',
+        durationMs: 180000,
+        audioUrl: '',
+        codec: 'mp4',
+        bitrate: 160,
+        addedAt: DateTime.now(),
+      );
+
+      final filename = YouTubeSourceAdapter.getSafeFilename(track, '.mp4');
+      expect(filename.contains('/'), isFalse);
+      expect(filename.contains(':'), isFalse);
+      expect(filename.contains('?'), isFalse);
+      expect(filename.contains('<'), isFalse);
+      expect(filename.contains('>'), isFalse);
+      expect(filename.contains('|'), isFalse);
+      expect(filename.contains('"'), isFalse);
+      expect(filename.endsWith('.mp4'), isTrue);
+    });
+
+    test('getExistingDownloadedFile returns file when track has valid local filePath', () async {
+      final track = Track(
+        id: 'youtube:test_local',
+        title: 'Local Test',
+        artistName: 'Local Artist',
+        source: AudioSourceType.youtube,
+        sourceId: 'test_local',
+        durationMs: 180000,
+        filePath: 'pubspec.yaml', // existing file
+        audioUrl: '',
+        codec: 'mp4',
+        bitrate: 160,
+        addedAt: DateTime.now(),
+      );
+
+      final file = await adapter.getExistingDownloadedFile(track);
+      expect(file, isNotNull);
+      expect(file!.existsSync(), isTrue);
+    });
   });
 }

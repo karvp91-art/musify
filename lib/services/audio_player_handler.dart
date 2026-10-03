@@ -372,11 +372,21 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
           if ((url.isEmpty || !url.startsWith('http')) && _trackUrlResolver != null) {
             url = await _trackUrlResolver!(nextTrack);
             if (url.isNotEmpty && nextIndex >= 0 && nextIndex < _playlist.length) {
-              _playlist[nextIndex] = nextTrack.copyWith(audioUrl: url);
+              final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
+              if (isLocal) {
+                _playlist[nextIndex] = nextTrack.copyWith(filePath: url, isDownloaded: true);
+              } else {
+                _playlist[nextIndex] = nextTrack.copyWith(audioUrl: url);
+              }
             }
           }
           if (url.isNotEmpty) {
-            await _inactivePlayer.setUrl(url);
+            final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
+            if (isLocal) {
+              await _inactivePlayer.setFilePath(url);
+            } else {
+              await _inactivePlayer.setUrl(url);
+            }
           }
         }
 
@@ -612,13 +622,26 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       } else {
         var url = track.audioUrl;
         if ((url.isEmpty || !url.startsWith('http')) && _trackUrlResolver != null) {
+          playbackState.add(playbackState.value.copyWith(
+            processingState: AudioProcessingState.buffering,
+          ));
           url = await _trackUrlResolver!(track);
           if (url.isNotEmpty && _currentIndex >= 0 && _currentIndex < _playlist.length) {
-            _playlist[_currentIndex] = track.copyWith(audioUrl: url);
+            final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
+            if (isLocal) {
+              _playlist[_currentIndex] = track.copyWith(filePath: url, isDownloaded: true);
+            } else {
+              _playlist[_currentIndex] = track.copyWith(audioUrl: url);
+            }
           }
         }
         if (url.isNotEmpty) {
-          await _activePlayer.setUrl(url);
+          final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
+          if (isLocal) {
+            await _activePlayer.setFilePath(url);
+          } else {
+            await _activePlayer.setUrl(url);
+          }
         }
       }
       await _activePlayer.play();

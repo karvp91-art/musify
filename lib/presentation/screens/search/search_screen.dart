@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/core/constants/app_constants.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
@@ -69,7 +70,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     });
 
     final router = ref.read(sourceRouterProvider);
-    final results = await router.searchAll(trimmed);
+    final results = await router.searchAll(trimmed, includeLocal: false);
 
     if (mounted) {
       setState(() {
@@ -104,22 +105,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   List<Track> _getFilteredResults() {
+    final onlineResults = _searchResults.where((t) => t.source != AudioSourceType.local).toList();
     if (_selectedFilter == 'All' || _selectedFilter == 'Songs') {
-      return _searchResults;
+      return onlineResults;
     }
     if (_selectedFilter == 'JioSaavn') {
-      return _searchResults.where((t) => t.source == AudioSourceType.saavn).toList();
+      return onlineResults.where((t) => t.source == AudioSourceType.saavn).toList();
     }
     if (_selectedFilter == 'YouTube') {
-      return _searchResults.where((t) => t.source == AudioSourceType.youtube).toList();
+      return onlineResults.where((t) => t.source == AudioSourceType.youtube).toList();
     }
     if (_selectedFilter == 'Artists') {
-      return _searchResults;
+      return onlineResults;
     }
     if (_selectedFilter == 'Albums') {
-      return _searchResults.where((t) => t.albumTitle != null).toList();
+      return onlineResults.where((t) => t.albumTitle != null).toList();
     }
-    return _searchResults;
+    return onlineResults;
   }
 
   // --- Top Bar matching HomeScreen (with centered title) ---
@@ -183,15 +185,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               _performSearch(query, addToHistory: true);
             }
           },
-          style: TextStyle(
+          style: AppTypography.style(
             color: isDark ? Colors.white : const Color(0xFF1E2028),
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
           decoration: InputDecoration(
             hintText: 'Search songs, artists, genres...',
-            hintStyle: TextStyle(
-              fontSize: 13.5,
+            hintStyle: AppTypography.bodySmall.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
             ),
             prefixIcon: GestureDetector(
@@ -267,9 +268,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
                 child: Text(
                   item,
-                  style: TextStyle(
+                  style: AppTypography.bodySmall.copyWith(
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    fontSize: 13.5,
                     color: isSelected ? Colors.black : unselectedTextColor,
                   ),
                 ),
@@ -325,8 +325,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     },
                     child: Text(
                       'Clear all',
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: AppTypography.caption.copyWith(
                         fontWeight: FontWeight.w600,
                         color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
@@ -362,7 +361,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           Expanded(
                             child: Text(
                               item,
-                              style: TextStyle(
+                              style: AppTypography.style(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w500,
                                 color: isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028),
@@ -493,9 +492,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                         const SizedBox(height: 2),
                                         Text(
                                           '320kbps Direct Stream',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
+                                          style: AppTypography.caption.copyWith(
                                             color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                                           ),
                                         ),
@@ -518,7 +515,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                           const SizedBox(width: 5),
                                           Text(
                                             '320 KBPS',
-                                            style: TextStyle(
+                                            style: AppTypography.style(
                                               fontSize: 10.5,
                                               fontWeight: FontWeight.w800,
                                               color: primaryColor,
@@ -639,45 +636,83 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                 ),
                               ),
                             )
-                          : ListView.builder(
-                              physics: const ClampingScrollPhysics(),
-                              padding: EdgeInsets.only(bottom: bottomPadding),
-                              itemExtent: 76.0,
-                              itemCount: filteredResults.length,
-                              itemBuilder: (context, index) {
-                                final track = filteredResults[index];
-                                final isCurrent = currentPlayingTrackId == track.id;
-                                final isTilePlaying = isCurrent && isPlaybackPlaying;
+                          : Column(
+                              children: [
+                                if (_selectedFilter == 'YouTube')
+                                  Container(
+                                    margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E1414) : const Color(0xFFFFF4F4),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: const Color(0xFFFF0000).withValues(alpha: 0.25),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.info_outline_rounded,
+                                          size: 18,
+                                          color: Color(0xFFFF3333),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            'YouTube is for download only, not streaming. Songs will be saved directly into your permanent music folder.',
+                                            style: AppTypography.caption.copyWith(
+                                              color: isDark ? Colors.white70 : const Color(0xFF551111),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: ListView.builder(
+                                    physics: const ClampingScrollPhysics(),
+                                    padding: EdgeInsets.only(bottom: bottomPadding),
+                                    itemExtent: 76.0,
+                                    itemCount: filteredResults.length,
+                                    itemBuilder: (context, index) {
+                                      final track = filteredResults[index];
+                                      final isCurrent = currentPlayingTrackId == track.id;
+                                      final isTilePlaying = isCurrent && isPlaybackPlaying;
 
-                                return TrackListTile(
-                                  key: ValueKey('search_${track.id}'),
-                                  track: track,
-                                  isCurrent: isCurrent,
-                                  isPlaying: isTilePlaying,
-                                  onTap: () {
-                                    if (isCurrent) {
-                                      HapticFeedback.selectionClick();
-                                      if (isPlaybackPlaying) {
-                                        audioHandler.pause();
-                                      } else {
-                                        audioHandler.play();
-                                      }
-                                      return;
-                                    }
-                                    _historyTimer?.cancel();
-                                    final query = _searchController.text.trim();
-                                    if (query.isNotEmpty) {
-                                      ref.read(searchHistoryProvider.notifier).addQuery(query);
-                                    } else {
-                                      ref.read(searchHistoryProvider.notifier).addQuery(track.title);
-                                    }
-                                    audioHandler.playTrackList(filteredResults, startIndex: index);
-                                  },
-                                  onLikeToggle: () {
-                                    ref.read(audioRepositoryProvider).toggleLike(track);
-                                  },
-                                );
-                              },
+                                      return TrackListTile(
+                                        key: ValueKey('search_${track.id}'),
+                                        track: track,
+                                        isCurrent: isCurrent,
+                                        isPlaying: isTilePlaying,
+                                        isYouTubeSection: _selectedFilter == 'YouTube',
+                                        onTap: () {
+                                          if (isCurrent) {
+                                            HapticFeedback.selectionClick();
+                                            if (isPlaybackPlaying) {
+                                              audioHandler.pause();
+                                            } else {
+                                              audioHandler.play();
+                                            }
+                                            return;
+                                          }
+                                          _historyTimer?.cancel();
+                                          final query = _searchController.text.trim();
+                                          if (query.isNotEmpty) {
+                                            ref.read(searchHistoryProvider.notifier).addQuery(query);
+                                          } else {
+                                            ref.read(searchHistoryProvider.notifier).addQuery(track.title);
+                                          }
+                                          audioHandler.playTrackList(filteredResults, startIndex: index);
+                                        },
+                                        onLikeToggle: () {
+                                          ref.read(audioRepositoryProvider).toggleLike(track);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
             ),
           ],

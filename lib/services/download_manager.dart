@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:musify/data/sources/saavn_source_adapter.dart';
+import 'package:musify/data/sources/youtube_source_adapter.dart';
 import 'package:musify/data/sources/source_router.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/domain/repositories/audio_repository.dart';
@@ -46,6 +47,7 @@ class AudioDownloadManager extends ChangeNotifier {
   final AudioRepository repo;
   final Dio _dio;
   final SaavnSourceAdapter _saavnAdapter;
+  final YouTubeSourceAdapter? youtubeAdapter;
   final SourceRouter? sourceRouter;
 
   final Map<String, DownloadState> _states = {};
@@ -71,6 +73,7 @@ class AudioDownloadManager extends ChangeNotifier {
     required this.repo,
     Dio? dio,
     SaavnSourceAdapter? saavnAdapter,
+    this.youtubeAdapter,
     this.sourceRouter,
   })  : _dio = dio ??
             Dio(
@@ -220,6 +223,49 @@ class AudioDownloadManager extends ChangeNotifier {
     _cancelTokens[track.id] = cancelToken;
 
     try {
+      // If YouTube track, utilize dedicated downloadTrackToFile directly
+      if (track.source == AudioSourceType.youtube && youtubeAdapter != null) {
+        final downloadedFile = await youtubeAdapter!.downloadTrackToFile(
+          track,
+          cancelToken: cancelToken,
+          onProgress: (progress) {
+            final now = DateTime.now();
+            if (progress >= 1.0 || now.difference(_lastProgressUpdate).inMilliseconds > 90) {
+              _lastProgressUpdate = now;
+              _activeProgress = progress;
+              _states[track.id] = DownloadState(
+                status: DownloadStatus.downloading,
+                progress: progress,
+              );
+              notifyListeners();
+            }
+          },
+        );
+
+        if (downloadedFile != null && downloadedFile.existsSync()) {
+          _cancelTokens.remove(track.id);
+          _activeDownloadingTrack = null;
+          _lastCompletedTrack = track;
+          _activeProgress = 1.0;
+          _states[track.id] = const DownloadState(
+            status: DownloadStatus.downloaded,
+            progress: 1.0,
+          );
+          notifyListeners();
+
+          Future.delayed(const Duration(milliseconds: 2600), () {
+            if (_lastCompletedTrack?.id == track.id) {
+              _lastCompletedTrack = null;
+              notifyListeners();
+            }
+          });
+
+          return true;
+        } else {
+          throw Exception('Failed to download YouTube audio file.');
+        }
+      }
+
       // 1. Resolve Audio Streaming URL
       var downloadUrl = track.audioUrl;
       if (downloadUrl.isEmpty || !downloadUrl.startsWith('http')) {
@@ -229,6 +275,27 @@ class AudioDownloadManager extends ChangeNotifier {
         } else if (track.source == AudioSourceType.saavn) {
           downloadUrl = await _saavnAdapter.getStreamUrl(track);
         }
+      }
+
+      // Check if resolvePlayUrl already downloaded/saved the file locally
+      if (File(downloadUrl).existsSync() || (track.filePath != null && File(track.filePath!).existsSync())) {
+        final filePath = File(downloadUrl).existsSync() ? downloadUrl : track.filePath!;
+        final fileSizeBytes = await File(filePath).length();
+        await repo.saveDownloadedTrack(
+          track.copyWith(filePath: filePath, isDownloaded: true),
+          filePath: filePath,
+          fileSizeBytes: fileSizeBytes,
+        );
+        _cancelTokens.remove(track.id);
+        _activeDownloadingTrack = null;
+        _lastCompletedTrack = track;
+        _activeProgress = 1.0;
+        _states[track.id] = const DownloadState(
+          status: DownloadStatus.downloaded,
+          progress: 1.0,
+        );
+        notifyListeners();
+        return true;
       }
 
       if (downloadUrl.isEmpty || !downloadUrl.startsWith('http')) {

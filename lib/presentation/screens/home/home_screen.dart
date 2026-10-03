@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/models/track.dart';
@@ -369,7 +370,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: isDark ? Colors.white70 : Colors.black87,
                 ),
                 const SizedBox(width: 12),
-                Text(allSelected ? 'Deselect All' : 'Select All'),
+                Text(
+                  allSelected ? 'Deselect All' : 'Select All',
+                  style: AppTypography.style(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
               ],
             ),
           ),
@@ -383,7 +387,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: isDark ? Colors.white70 : Colors.black87,
                 ),
                 const SizedBox(width: 12),
-                const Text('Download Selected'),
+                Text(
+                  'Download Selected',
+                  style: AppTypography.style(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
               ],
             ),
           ),
@@ -397,7 +404,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: isDark ? Colors.white70 : Colors.black87,
                 ),
                 const SizedBox(width: 12),
-                const Text('Add to Playlist'),
+                Text(
+                  'Add to Playlist',
+                  style: AppTypography.style(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
               ],
             ),
           ),
@@ -412,7 +422,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: isDark ? Colors.white70 : Colors.black87,
                 ),
                 const SizedBox(width: 12),
-                const Text('Cancel Selection'),
+                Text(
+                  'Cancel Selection',
+                  style: AppTypography.style(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
               ],
             ),
           ),
@@ -456,10 +469,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 '${selectedTracks.length} ${selectedTracks.length == 1 ? "song" : "songs"} selected',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF111827),
+                style: AppTypography.button.copyWith(
+                  color: const Color(0xFF111827),
                   fontWeight: FontWeight.w800,
-                  fontSize: 14,
                   letterSpacing: -0.2,
                 ),
               ),
@@ -583,8 +595,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF111827),
+            style: AppTypography.style(
+              color: const Color(0xFF111827),
               fontSize: 10,
               fontWeight: FontWeight.w700,
               height: 1.1,
@@ -694,7 +706,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: TextField(
                   controller: _searchController,
                   autofocus: true,
-                  style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 14),
+                  style: AppTypography.style(color: theme.colorScheme.onSurface, fontSize: 14, fontWeight: FontWeight.w500),
                   onChanged: (val) {
                     setState(() {
                       _searchQuery = val;
@@ -702,8 +714,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                   decoration: InputDecoration(
                     hintText: 'Search songs, artists, albums...',
-                    hintStyle: TextStyle(
-                      fontSize: 13.5,
+                    hintStyle: AppTypography.bodySmall.copyWith(
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
                     ),
                     prefixIcon: Icon(Icons.search_rounded, size: 20, color: theme.colorScheme.primary),
@@ -770,9 +781,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 child: Text(
                   filter,
-                  style: TextStyle(
+                  style: AppTypography.bodySmall.copyWith(
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    fontSize: 13.5,
                     color: isSelected ? Colors.black : unselectedTextColor,
                   ),
                 ),
@@ -869,7 +879,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
       },
       loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
-      error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Error: $e'))),
+      error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Error: $e', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)))),
     );
   }
 
@@ -886,7 +896,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Center(
                 child: Text(
                   'No liked songs yet. Heart songs to add them here!',
-                  style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
                 ),
               ),
             ),
@@ -942,7 +952,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
       },
       loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
-      error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Error: $e', style: const TextStyle(color: Colors.white70)))),
+      error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Error: $e', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)))),
     );
   }
 
@@ -1004,7 +1014,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   const SizedBox(height: 18),
                   FilledButton.tonalIcon(
                     icon: const Icon(Icons.search_rounded, size: 18),
-                    label: const Text('Search & Download'),
+                    label: Text('Search & Download', style: theme.textTheme.labelLarge),
                     onPressed: () {
                       ref.read(currentTabIndexProvider.notifier).setIndex(1);
                     },
@@ -1191,13 +1201,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       _searchQuery.isNotEmpty
                                           ? 'No music matching "$_searchQuery"'
                                           : 'No offline audio tracks found',
-                                      style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
+                                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
                                     ),
                                     if (_searchQuery.isEmpty) ...[
                                       const SizedBox(height: 14),
                                       FilledButton.tonalIcon(
                                         icon: const Icon(Icons.refresh_rounded, size: 18),
-                                        label: const Text('Scan Device Storage'),
+                                        label: Text('Scan Device Storage', style: theme.textTheme.labelLarge),
                                         onPressed: () async {
                                           await startScanWithProgressDialog(context, ref);
                                         },
@@ -1270,7 +1280,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   error: (err, _) => Center(
                     child: Text(
                       'Failed to load music: $err',
-                      style: const TextStyle(color: Colors.white70),
+                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error),
                     ),
                   ),
                 ),
