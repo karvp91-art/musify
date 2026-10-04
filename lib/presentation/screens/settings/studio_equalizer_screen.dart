@@ -16,23 +16,23 @@ Future<void> openStudioEqualizerScreen(BuildContext context) {
   );
 }
 
-/// Borderless circular action button matching HomeScreen top header
-class _GlassCircleButton extends StatelessWidget {
+/// Circular header button matching the top app bar actions
+class _CircleHeaderButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final double iconSize;
 
-  const _GlassCircleButton({
+  const _CircleHeaderButton({
     required this.icon,
     required this.onTap,
-    this.iconSize = 20,
+    this.iconSize = 22,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final defaultIconColor =
-        isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
+        isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -41,8 +41,8 @@ class _GlassCircleButton extends StatelessWidget {
         onTap();
       },
       child: Container(
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
@@ -61,6 +61,162 @@ class _GlassCircleButton extends StatelessWidget {
 class StudioEqualizerScreen extends ConsumerWidget {
   const StudioEqualizerScreen({super.key});
 
+  void _showMoreMenu(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final eqNotifier = ref.read(equalizerProvider.notifier);
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.refresh_rounded),
+                  title: Text(
+                    'Reset Equalizer to Flat',
+                    style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.of(ctx).pop();
+                    eqNotifier.resetToFlat();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.power_settings_new_rounded),
+                  title: Text(
+                    'Toggle Equalizer',
+                    style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.of(ctx).pop();
+                    final current = ref.read(equalizerProvider).isEnabled;
+                    eqNotifier.setEnabled(!current);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAllPresetsModal(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final eqState = ref.read(equalizerProvider);
+    final eqNotifier = ref.read(equalizerProvider.notifier);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.4,
+          maxChildSize: 0.85,
+          expand: false,
+          builder: (_, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'All Presets',
+                    style: AppTypography.headlineSmall.copyWith(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView.separated(
+                      controller: scrollController,
+                      itemCount: _allPresets.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        final preset = _allPresets[index];
+                        final isSelected = eqState.preset == preset.name;
+
+                        return ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          tileColor: isSelected
+                              ? AppColors.neonLime.withValues(alpha: isDark ? 0.22 : 0.15)
+                              : Colors.transparent,
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              color: isSelected
+                                  ? AppColors.neonLime
+                                  : (isDark ? const Color(0xFF181A22) : Colors.white),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              preset.icon,
+                              size: 20,
+                              color: isSelected ? Colors.black : (isDark ? Colors.white70 : Colors.black87),
+                            ),
+                          ),
+                          title: Text(
+                            preset.label,
+                            style: AppTypography.bodyLarge.copyWith(
+                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                              color: isSelected
+                                  ? (isDark ? AppColors.neonLime : const Color(0xFF367010))
+                                  : Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle_rounded, color: AppColors.neonLime)
+                              : null,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            eqNotifier.setPreset(preset.name);
+                            Navigator.of(ctx).pop();
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final eqState = ref.watch(equalizerProvider);
@@ -68,247 +224,121 @@ class StudioEqualizerScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final bgColor = theme.scaffoldBackgroundColor;
-    final cardBg = isDark ? const Color(0xFF14161F) : const Color(0xFFF5F6F9);
-    final textMuted = isDark ? Colors.white54 : Colors.black45;
-    final accentTextColor = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
+    final bgColor = isDark ? theme.scaffoldBackgroundColor : Colors.white;
+    final textMuted = isDark ? Colors.white54 : const Color(0xFF8E92A0);
+    final activeGreenColor = isDark ? AppColors.neonLime : const Color(0xFF3E8016);
 
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
         child: Column(
           children: [
-            // Top App Bar Header with borderless buttons matching HomeScreen
+            // Top App Bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  _GlassCircleButton(
+                  _CircleHeaderButton(
                     icon: Icons.chevron_left_rounded,
-                    iconSize: 22,
+                    iconSize: 26,
                     onTap: () => Navigator.of(context).pop(),
                   ),
-
-                  const SizedBox(width: 14),
-
-                  // Title & Subtitle with AppTypography
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              'Equalizer',
-                              style: AppTypography.headlineSmall.copyWith(
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: eqState.isEnabled
-                                    ? accentTextColor.withValues(alpha: isDark ? 0.18 : 0.12)
-                                    : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'PRO DSP',
-                                style: AppTypography.style(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: eqState.isEnabled ? accentTextColor : textMuted,
-                                  letterSpacing: 0.6,
-                                ),
-                              ),
-                            ),
-                          ],
+                    child: Center(
+                      child: Text(
+                        'Equalizer',
+                        style: AppTypography.headlineSmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onSurface,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          eqState.isEnabled
-                              ? '5-band parametric curve • Active'
-                              : 'Hardware DSP Bypassed',
-                          style: AppTypography.caption.copyWith(
-                            color: textMuted,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-
-                  // Master DSP Power Switch
-                  Switch.adaptive(
-                    value: eqState.isEnabled,
-                    activeTrackColor: AppColors.neonLime.withValues(alpha: 0.4),
-                    activeThumbColor: AppColors.neonLime,
-                    onChanged: (enabled) {
-                      HapticFeedback.selectionClick();
-                      eqNotifier.setEnabled(enabled);
-                    },
+                  _CircleHeaderButton(
+                    icon: Icons.more_vert_rounded,
+                    iconSize: 22,
+                    onTap: () => _showMoreMenu(context, ref),
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 6),
-
             // Scrollable Content
             Expanded(
               child: ListView(
                 physics: const ClampingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 32),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 children: [
-                  // 1. High-Precision Frequency Response Visualizer (Borderless)
-                  _FrequencyCurveCanvas(
-                    isEnabled: eqState.isEnabled,
-                    gains: eqState.bandGains,
-                    isDark: isDark,
+                  // 1. Equalizer Header & Controls (Open Canvas - directly on background)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Equalizer',
+                              style: AppTypography.headlineSmall.copyWith(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Customize your sound frequencies',
+                              style: AppTypography.bodySmall.copyWith(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        Switch(
+                          value: eqState.isEnabled,
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: AppColors.neonLime,
+                          inactiveThumbColor: Colors.white,
+                          inactiveTrackColor: isDark
+                              ? const Color(0xFF2C2F3D)
+                              : const Color(0xFFD6D9E0),
+                          trackOutlineColor:
+                              WidgetStateProperty.all(Colors.transparent),
+                          onChanged: (val) {
+                            HapticFeedback.selectionClick();
+                            eqNotifier.setEnabled(val);
+                          },
+                        ),
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 20),
 
-                  // 2. Presets Carousel Header
-                  Row(
-                    children: [
-                      Text(
-                        'STUDIO PRESETS',
-                        style: AppTypography.style(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: textMuted,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (eqState.preset != 'Flat' ||
-                          eqState.bandGains.any((g) => g.abs() > 0.01))
-                        InkWell(
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            eqNotifier.resetToFlat();
+                  // 7 Vertical Band Sliders sitting directly on open canvas
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: List.generate(7, (index) {
+                        final freq = index < EqualizerPresets.bandFrequencies.length
+                            ? EqualizerPresets.bandFrequencies[index]
+                            : 'Band ${index + 1}';
+                        final gain = index < eqState.bandGains.length
+                            ? eqState.bandGains[index]
+                            : 0.0;
+
+                        return _VerticalBandSlider(
+                          label: freq,
+                          gain: gain,
+                          isEnabled: eqState.isEnabled,
+                          isDark: isDark,
+                          onChanged: (newGain) {
+                            eqNotifier.setBandGain(index, newGain);
                           },
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            child: Row(
-                              children: [
-                                Icon(Icons.refresh_rounded, size: 14, color: accentTextColor),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Reset to Flat',
-                                  style: AppTypography.style(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: accentTextColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  // Presets Horizontal Carousel (Borderless Pills)
-                  SizedBox(
-                    height: 40,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      physics: const ClampingScrollPhysics(),
-                      itemCount: EqualizerPresets.presets.keys.length,
-                      separatorBuilder: (context, _) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final name = EqualizerPresets.presets.keys.elementAt(index);
-                        final isSelected = eqState.preset == name;
-
-                        return GestureDetector(
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            eqNotifier.setPreset(name);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? AppColors.neonLime
-                                  : (isDark ? const Color(0xFF1B1D26) : const Color(0xFFECEEF2)),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Center(
-                              child: Text(
-                                name,
-                                style: AppTypography.style(
-                                  fontSize: 13,
-                                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                  color: isSelected
-                                      ? Colors.black
-                                      : (isDark ? Colors.white70 : Colors.black87),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // 3. Frequency Band Sliders (Borderless Card & Minimalist Glass Faders)
-                  Row(
-                    children: [
-                      Text(
-                        'BAND GAINS (-12 dB to +12 dB)',
-                        style: AppTypography.style(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: textMuted,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'Tap dB badge to reset',
-                        style: AppTypography.caption.copyWith(color: textMuted),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: Column(
-                      children: List.generate(5, (index) {
-                        final freq = EqualizerPresets.bandFrequencies[index];
-                        final label = EqualizerPresets.bandLabels[index];
-                        final gain = eqState.bandGains[index];
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          child: _BandGainRow(
-                            frequency: freq,
-                            label: label,
-                            gain: gain,
-                            isEnabled: eqState.isEnabled,
-                            isDark: isDark,
-                            onGainChanged: (newGain) {
-                              eqNotifier.setBandGain(index, newGain);
-                            },
-                            onResetBand: () {
-                              HapticFeedback.selectionClick();
-                              eqNotifier.setBandGain(index, 0.0);
-                            },
-                          ),
                         );
                       }),
                     ),
@@ -316,54 +346,193 @@ class StudioEqualizerScreen extends ConsumerWidget {
 
                   const SizedBox(height: 24),
 
-                  // 4. Studio DSP Enhancements (Borderless Card)
-                  Text(
-                    'ACOUSTIC ENHANCEMENTS',
-                    style: AppTypography.style(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                      color: textMuted,
+                  // 2. Presets Section
+                  Row(
+                    children: [
+                      Text(
+                        'Presets',
+                        style: AppTypography.headlineSmall.copyWith(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => _showAllPresetsModal(context, ref),
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'See all',
+                              style: AppTypography.bodySmall.copyWith(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: activeGreenColor,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: activeGreenColor,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Horizontal Presets Row
+                  SizedBox(
+                    height: 94,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      physics: const ClampingScrollPhysics(),
+                      itemCount: _horizontalPresets.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 14),
+                      itemBuilder: (context, index) {
+                        final preset = _horizontalPresets[index];
+                        final isSelected = eqState.preset == preset.name;
+
+                        return GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            eqNotifier.setPreset(preset.name);
+                          },
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                width: 58,
+                                height: 58,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.neonLime
+                                      : (isDark
+                                          ? const Color(0xFF20222B)
+                                          : const Color(0xFFF3F4F6)),
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  preset.icon,
+                                  size: 26,
+                                  color: isSelected
+                                      ? Colors.black
+                                      : (isDark
+                                          ? Colors.white70
+                                          : const Color(0xFF1E2028)),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                preset.label,
+                                style: AppTypography.caption.copyWith(
+                                  fontSize: 12,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 28),
 
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
+                  // 3. Audio Effect Section Header (Open Canvas)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _EnhancementSliderRow(
-                          icon: Icons.speaker_group_rounded,
-                          title: 'Sub-Bass & Punch',
-                          subtitle: '${(eqState.bassBoost * 100).round()}% Loudness Boost',
-                          value: eqState.bassBoost,
-                          isEnabled: eqState.isEnabled,
-                          isDark: isDark,
-                          onChanged: (val) => eqNotifier.setBassBoost(val),
+                        Text(
+                          'Audio Enhancements',
+                          style: AppTypography.headlineSmall.copyWith(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: theme.colorScheme.onSurface,
+                          ),
                         ),
-                        const SizedBox(height: 14),
-                        Divider(
-                          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.05),
-                          height: 1,
-                        ),
-                        const SizedBox(height: 14),
-                        _EnhancementSliderRow(
-                          icon: Icons.surround_sound_rounded,
-                          title: 'Spatial Soundstage',
-                          subtitle: '${(eqState.virtualizer * 100).round()}% 3D Width',
-                          value: eqState.virtualizer,
-                          isEnabled: eqState.isEnabled,
-                          isDark: isDark,
-                          onChanged: (val) => eqNotifier.setVirtualizer(val),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Fine-tune bass, spatial depth & loudness output',
+                          style: AppTypography.bodySmall.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: textMuted,
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // Audio Effect Tiles with GlassSlider
+                  _AudioEffectCard(
+                    icon: Icons.graphic_eq_rounded,
+                    title: 'Bass Boost',
+                    subtitle: 'Enhance low frequencies',
+                    isEnabled: eqState.isEnabled,
+                    isActive: eqState.bassBoost > 0.01,
+                    sliderValue: eqState.bassBoost,
+                    isDark: isDark,
+                    onChanged: (val) {
+                      HapticFeedback.selectionClick();
+                      eqNotifier.setBassBoost(val ? 0.6 : 0.0);
+                    },
+                    onSliderChanged: (val) {
+                      eqNotifier.setBassBoost(val);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  _AudioEffectCard(
+                    icon: Icons.surround_sound_rounded,
+                    title: 'Virtualizer',
+                    subtitle: 'Create a wider sound stage',
+                    isEnabled: eqState.isEnabled,
+                    isActive: eqState.virtualizer > 0.01,
+                    sliderValue: eqState.virtualizer,
+                    isDark: isDark,
+                    onChanged: (val) {
+                      HapticFeedback.selectionClick();
+                      eqNotifier.setVirtualizer(val ? 0.6 : 0.0);
+                    },
+                    onSliderChanged: (val) {
+                      eqNotifier.setVirtualizer(val);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+
+                  _AudioEffectCard(
+                    icon: Icons.flare_rounded,
+                    title: 'Loudness',
+                    subtitle: 'Boost overall volume',
+                    isEnabled: eqState.isEnabled,
+                    isActive: eqState.loudness > 0.01,
+                    sliderValue: eqState.loudness,
+                    isDark: isDark,
+                    onChanged: (val) {
+                      HapticFeedback.selectionClick();
+                      eqNotifier.setLoudness(val ? 0.6 : 0.0);
+                    },
+                    onSliderChanged: (val) {
+                      eqNotifier.setLoudness(val);
+                    },
+                  ),
+
+                  // Bottom padding for mini-player
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
@@ -374,392 +543,281 @@ class StudioEqualizerScreen extends ConsumerWidget {
   }
 }
 
-/// Dynamic Spline Canvas of the 5 EQ bands (Borderless)
-class _FrequencyCurveCanvas extends StatelessWidget {
-  final bool isEnabled;
-  final List<double> gains;
-  final bool isDark;
-
-  const _FrequencyCurveCanvas({
-    required this.isEnabled,
-    required this.gains,
-    required this.isDark,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 160,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0D0F16) : const Color(0xFFECEEF2),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _EqualizerScreenSplinePainter(
-                  gains: gains,
-                  isEnabled: isEnabled,
-                  isDark: isDark,
-                ),
-              ),
-            ),
-            if (!isEnabled)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  alignment: Alignment.center,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E212B) : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'HARDWARE DSP BYPASSED',
-                      style: AppTypography.style(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2,
-                        color: isDark ? Colors.white70 : Colors.black87,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EqualizerScreenSplinePainter extends CustomPainter {
-  final List<double> gains;
-  final bool isEnabled;
-  final bool isDark;
-
-  _EqualizerScreenSplinePainter({
-    required this.gains,
-    required this.isEnabled,
-    required this.isDark,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final centerY = size.height / 2;
-
-    // Draw subtle grid lines (+12 dB, +6 dB, 0 dB, -6 dB, -12 dB)
-    final gridPaint = Paint()
-      ..color = isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.04)
-      ..strokeWidth = 1.0;
-
-    final centerGridPaint = Paint()
-      ..color = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08)
-      ..strokeWidth = 1.0;
-
-    canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), centerGridPaint);
-    canvas.drawLine(Offset(0, size.height * 0.15), Offset(size.width, size.height * 0.15), gridPaint);
-    canvas.drawLine(Offset(0, size.height * 0.32), Offset(size.width, size.height * 0.32), gridPaint);
-    canvas.drawLine(Offset(0, size.height * 0.68), Offset(size.width, size.height * 0.68), gridPaint);
-    canvas.drawLine(Offset(0, size.height * 0.85), Offset(size.width, size.height * 0.85), gridPaint);
-
-    if (gains.length < 5) return;
-
-    final xCoords = [
-      size.width * 0.12,
-      size.width * 0.31,
-      size.width * 0.50,
-      size.width * 0.69,
-      size.width * 0.88,
-    ];
-
-    final points = <Offset>[];
-    for (int i = 0; i < 5; i++) {
-      final gain = gains[i].clamp(-12.0, 12.0);
-      final normalized = (gain / 12.0);
-      final y = centerY - (normalized * (size.height * 0.38));
-      points.add(Offset(xCoords[i], y));
-    }
-
-    final path = Path();
-    path.moveTo(0, centerY);
-    path.lineTo(points[0].dx * 0.4, (centerY + points[0].dy) / 2);
-    path.lineTo(points[0].dx, points[0].dy);
-
-    for (int i = 0; i < points.length - 1; i++) {
-      final p0 = points[i];
-      final p1 = points[i + 1];
-      final controlX = (p0.dx + p1.dx) / 2;
-      path.cubicTo(controlX, p0.dy, controlX, p1.dy, p1.dx, p1.dy);
-    }
-
-    final last = points.last;
-    path.lineTo(size.width - (size.width - last.dx) * 0.4, (last.dy + centerY) / 2);
-    path.lineTo(size.width, centerY);
-
-    // Gradient fill under the curve
-    final fillPath = Path.from(path)
-      ..lineTo(size.width, centerY)
-      ..lineTo(0, centerY)
-      ..close();
-
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: isEnabled
-            ? [
-                AppColors.neonLime.withValues(alpha: 0.32),
-                AppColors.neonLime.withValues(alpha: 0.02),
-              ]
-            : [
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.0),
-              ],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-
-    canvas.drawPath(fillPath, fillPaint);
-
-    // Stroke curve
-    final strokePaint = Paint()
-      ..color = isEnabled ? AppColors.neonLime : (isDark ? Colors.white38 : Colors.black38)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.6
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    canvas.drawPath(path, strokePaint);
-
-    // Glowing pins
-    for (final pt in points) {
-      if (isEnabled) {
-        final glowPaint = Paint()
-          ..color = AppColors.neonLime.withValues(alpha: 0.45)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
-        canvas.drawCircle(pt, 6.0, glowPaint);
-      }
-
-      final pinPaint = Paint()
-        ..color = isEnabled ? AppColors.neonLime : (isDark ? Colors.white70 : Colors.black54)
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(pt, 3.6, pinPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _EqualizerScreenSplinePainter oldDelegate) {
-    return oldDelegate.isEnabled != isEnabled ||
-        oldDelegate.isDark != isDark ||
-        oldDelegate.gains != gains;
-  }
-}
-
-/// A single frequency band row with decibel readout and Liquid Glass Slider.
-class _BandGainRow extends StatelessWidget {
-  final String frequency;
+/// A single vertical band slider with top decibel readout, vertical GlassSlider track, and bottom frequency label
+class _VerticalBandSlider extends StatelessWidget {
   final String label;
   final double gain;
   final bool isEnabled;
   final bool isDark;
-  final ValueChanged<double> onGainChanged;
-  final VoidCallback onResetBand;
-
-  const _BandGainRow({
-    required this.frequency,
-    required this.label,
-    required this.gain,
-    required this.isEnabled,
-    required this.isDark,
-    required this.onGainChanged,
-    required this.onResetBand,
-  });
-
-  String _formatGain(double val) {
-    if (val.abs() < 0.05) return '0.0 dB';
-    final sign = val > 0 ? '+' : '';
-    return '$sign${val.toStringAsFixed(1)} dB';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final activeColor = AppColors.neonLime;
-    final inactiveTrack = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.black.withValues(alpha: 0.08);
-
-    final isNonZero = gain.abs() > 0.05;
-
-    return Row(
-      children: [
-        // Frequency and Subtitle with AppTypography
-        SizedBox(
-          width: 76,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                frequency,
-                style: AppTypography.style(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isEnabled
-                      ? (isDark ? Colors.white : Colors.black87)
-                      : (isDark ? Colors.white38 : Colors.black38),
-                ),
-              ),
-              Text(
-                label,
-                style: AppTypography.caption.copyWith(
-                  fontSize: 11,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Liquid Glass Slider (Rule 2: useOwnLayer on page platter)
-        Expanded(
-          child: GlassSlider(
-            value: gain.clamp(-12.0, 12.0),
-            min: -12.0,
-            max: 12.0,
-            activeColor: isEnabled ? activeColor : (isDark ? Colors.white38 : Colors.black38),
-            thumbColor: isEnabled ? activeColor : (isDark ? Colors.white54 : Colors.black45),
-            inactiveColor: inactiveTrack,
-            glowColor: isEnabled
-                ? activeColor.withValues(alpha: 0.45)
-                : Colors.transparent,
-            glowRadius: 2.5,
-            useOwnLayer: true,
-            onChangeStart: (_) => HapticFeedback.selectionClick(),
-            onChanged: isEnabled
-                ? (val) {
-                    onGainChanged(val);
-                  }
-                : null,
-          ),
-        ),
-
-        const SizedBox(width: 10),
-
-        // Tappable Decibel Readout Badge (Borderless, tap to reset)
-        GestureDetector(
-          onTap: isEnabled && isNonZero ? onResetBand : null,
-          child: Container(
-            width: 62,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            decoration: BoxDecoration(
-              color: isNonZero && isEnabled
-                  ? (isDark ? activeColor.withValues(alpha: 0.18) : AppColors.limeAccentDark.withValues(alpha: 0.12))
-                  : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              _formatGain(gain),
-              textAlign: TextAlign.center,
-              style: AppTypography.style(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: isEnabled
-                    ? (isNonZero
-                        ? (isDark ? activeColor : AppColors.limeAccentDark)
-                        : (isDark ? Colors.white70 : Colors.black87))
-                    : (isDark ? Colors.white38 : Colors.black38),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Enhancement slider for Bass Boost and Virtualizer
-class _EnhancementSliderRow extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final double value;
-  final bool isEnabled;
-  final bool isDark;
   final ValueChanged<double> onChanged;
 
-  const _EnhancementSliderRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
+  const _VerticalBandSlider({
+    required this.label,
+    required this.gain,
     required this.isEnabled,
     required this.isDark,
     required this.onChanged,
   });
 
+  String _formatGain(double val) {
+    final rounded = val.round();
+    if (rounded > 0) return '+$rounded';
+    return '$rounded';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final activeColor = AppColors.neonLime;
-    final accentTextColor = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
-    final inactiveTrack = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.black.withValues(alpha: 0.08);
+    final textMuted = isDark ? Colors.white54 : const Color(0xFF8E92A0);
+    final valueTextColor = isEnabled
+        ? (isDark ? Colors.white : const Color(0xFF181A22))
+        : (isDark ? Colors.white30 : Colors.black26);
 
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 22,
-          color: isEnabled && value > 0.01
-              ? accentTextColor
-              : (isDark ? Colors.white38 : Colors.black38),
-        ),
-        const SizedBox(width: 12),
+        // Top decibel readout (+4, +2, 0, -1, etc.)
         SizedBox(
-          width: 130,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: AppTypography.bodySmall.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: isEnabled
-                      ? (isDark ? Colors.white : Colors.black87)
-                      : (isDark ? Colors.white38 : Colors.black38),
-                ),
-              ),
-              Text(
-                subtitle,
-                style: AppTypography.caption.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: isEnabled && value > 0.01
-                      ? accentTextColor
-                      : (isDark ? Colors.white38 : Colors.black38),
-                ),
-              ),
-            ],
+          height: 20,
+          child: Text(
+            _formatGain(gain),
+            style: AppTypography.style(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: valueTextColor,
+            ),
           ),
         ),
-        Expanded(
-          child: GlassSlider(
-            value: value.clamp(0.0, 1.0),
-            min: 0.0,
-            max: 1.0,
-            activeColor: isEnabled ? activeColor : (isDark ? Colors.white38 : Colors.black38),
-            thumbColor: isEnabled ? activeColor : (isDark ? Colors.white54 : Colors.black45),
-            inactiveColor: inactiveTrack,
-            glowColor: isEnabled ? activeColor.withValues(alpha: 0.45) : Colors.transparent,
-            glowRadius: 2.5,
-            useOwnLayer: true,
-            onChangeStart: (_) => HapticFeedback.selectionClick(),
-            onChanged: isEnabled ? onChanged : null,
+
+        const SizedBox(height: 6),
+
+        // Vertical GlassSlider inside RotatedBox (quarterTurns: 3 so min is at bottom and max is at top)
+        SizedBox(
+          height: 175,
+          width: 36,
+          child: Center(
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: SizedBox(
+                width: 170,
+                child: GlassSlider(
+                  value: gain.clamp(-10.0, 10.0),
+                  min: -10.0,
+                  max: 10.0,
+                  divisions: 20,
+                  activeColor: isEnabled
+                      ? AppColors.neonLime
+                      : (isDark ? Colors.white38 : Colors.black38),
+                  thumbColor: isEnabled
+                      ? AppColors.neonLime
+                      : (isDark ? Colors.white54 : Colors.black45),
+                  inactiveColor: isDark
+                      ? const Color(0xFF282B38)
+                      : const Color(0xFFE5E7EB),
+                  glowColor: isEnabled
+                      ? AppColors.neonLime.withValues(alpha: 0.45)
+                      : Colors.transparent,
+                  glowRadius: 2.0,
+                  trackHeight: 4.0,
+                  thumbRadius: 10.0,
+                  useOwnLayer: true,
+                  onChangeStart: (_) => HapticFeedback.selectionClick(),
+                  onChanged: isEnabled
+                      ? (val) {
+                          onChanged(val.roundToDouble());
+                        }
+                      : null,
+                  onChangeEnd: (_) => HapticFeedback.lightImpact(),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        // Bottom frequency label (60Hz, 150Hz, etc.)
+        Text(
+          label,
+          style: AppTypography.caption.copyWith(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: isEnabled ? textMuted : (isDark ? Colors.white24 : Colors.black26),
           ),
         ),
       ],
     );
   }
 }
+
+/// A card for Audio Enhancements (Bass Boost, Virtualizer, Loudness) with optional GlassSlider fine-tuning
+class _AudioEffectCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isEnabled;
+  final bool isActive;
+  final bool isDark;
+  final ValueChanged<bool> onChanged;
+  final double? sliderValue;
+  final ValueChanged<double>? onSliderChanged;
+
+  const _AudioEffectCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.isEnabled,
+    required this.isActive,
+    required this.isDark,
+    required this.onChanged,
+    this.sliderValue,
+    this.onSliderChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textMuted = isDark ? Colors.white54 : const Color(0xFF8E92A0);
+
+    final iconBg = isDark
+        ? AppColors.neonLime.withValues(alpha: 0.18)
+        : const Color(0xFFEFFCC8);
+    final iconColor = isDark ? AppColors.neonLime : const Color(0xFF3E8016);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              // Squircle icon badge
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  icon,
+                  size: 22,
+                  color: iconColor,
+                ),
+              ),
+
+              const SizedBox(width: 14),
+
+              // Title & Subtitle
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTypography.headlineSmall.copyWith(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: AppTypography.bodySmall.copyWith(
+                        fontSize: 12,
+                        color: textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Switch toggle
+              Switch(
+                value: isActive,
+                activeThumbColor: Colors.white,
+                activeTrackColor: AppColors.neonLime,
+                inactiveThumbColor: Colors.white,
+                inactiveTrackColor: isDark
+                    ? const Color(0xFF2C2F3D)
+                    : const Color(0xFFD6D9E0),
+                trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+                onChanged: isEnabled ? onChanged : null,
+              ),
+            ],
+          ),
+
+          // Liquid Glass Slider for fine-tuning when effect is active
+          if (isActive && sliderValue != null && onSliderChanged != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: GlassSlider(
+                    value: sliderValue!.clamp(0.0, 1.0),
+                    min: 0.0,
+                    max: 1.0,
+                    activeColor: AppColors.neonLime,
+                    thumbColor: AppColors.neonLime,
+                    inactiveColor: isDark
+                        ? Colors.white.withValues(alpha: 0.14)
+                        : const Color(0xFFE2E4E9),
+                    glowColor: AppColors.neonLime.withValues(alpha: 0.4),
+                    glowRadius: 2.0,
+                    trackHeight: 4.0,
+                    thumbRadius: 9.0,
+                    useOwnLayer: true,
+                    onChangeStart: (_) => HapticFeedback.selectionClick(),
+                    onChanged: onSliderChanged,
+                    onChangeEnd: (_) => HapticFeedback.lightImpact(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${(sliderValue! * 100).round()}%',
+                  style: AppTypography.style(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: iconColor,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PresetItemData {
+  final String name;
+  final String label;
+  final IconData icon;
+
+  const _PresetItemData(this.name, this.label, this.icon);
+}
+
+final _horizontalPresets = [
+  const _PresetItemData('Custom', 'Custom', Icons.tune_rounded),
+  const _PresetItemData('Normal', 'Normal', Icons.equalizer_rounded),
+  const _PresetItemData('Bass Boost', 'Bass Boost', Icons.volume_up_rounded),
+  const _PresetItemData('Vocal', 'Vocal', Icons.person_outline_rounded),
+  const _PresetItemData('Rock', 'Rock', Icons.electric_bolt_rounded),
+  const _PresetItemData('Pop', 'Pop', Icons.music_note_rounded),
+];
+
+final _allPresets = [
+  const _PresetItemData('Custom', 'Custom', Icons.tune_rounded),
+  const _PresetItemData('Normal', 'Normal (Flat)', Icons.equalizer_rounded),
+  const _PresetItemData('Bass Boost', 'Bass Boost', Icons.volume_up_rounded),
+  const _PresetItemData('Vocal', 'Vocal', Icons.person_outline_rounded),
+  const _PresetItemData('Rock', 'Rock', Icons.electric_bolt_rounded),
+  const _PresetItemData('Pop', 'Pop', Icons.music_note_rounded),
+  const _PresetItemData('Electronic', 'Electronic', Icons.album_outlined),
+  const _PresetItemData('Hip-Hop', 'Hip-Hop', Icons.headphones_outlined),
+  const _PresetItemData('Jazz', 'Jazz', Icons.nightlife_outlined),
+  const _PresetItemData('Classical', 'Classical', Icons.piano_outlined),
+  const _PresetItemData('Acoustic', 'Acoustic', Icons.queue_music_outlined),
+];

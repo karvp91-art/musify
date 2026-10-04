@@ -107,7 +107,7 @@ class _ThemeSelectionBottomSheetState extends ConsumerState<ThemeSelectionBottom
     final nightStart = prefsService.getNightStartTime();
     final isCurrentlyDay = prefsService.isDayTime();
 
-    final cardBg = isDark ? Colors.black : Colors.white;
+    final cardBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
     final dividerColor = isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB);
     final activeAccent = isDark ? AppColors.neonLime : const Color(0xFF659814);
 

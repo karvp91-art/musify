@@ -161,7 +161,7 @@ class _PlaylistFormBottomSheetState extends ConsumerState<_PlaylistFormBottomShe
       curve: Curves.easeOutCubic,
       child: Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF14151B) : Colors.white,
+          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
           borderRadius: BorderRadius.circular(28),
           border: Border.all(
             color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),

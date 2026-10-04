@@ -179,7 +179,7 @@ class _AddToPlaylistBottomSheetState extends ConsumerState<AddToPlaylistBottomSh
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.black : Colors.white,
+        color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
           color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),

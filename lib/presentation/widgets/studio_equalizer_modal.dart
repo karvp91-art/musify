@@ -271,9 +271,13 @@ class StudioEqualizerModal extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
 
-                ...List.generate(5, (index) {
-                  final freq = EqualizerPresets.bandFrequencies[index];
-                  final label = EqualizerPresets.bandLabels[index];
+                ...List.generate(eqState.bandGains.length, (index) {
+                  final freq = index < EqualizerPresets.bandFrequencies.length
+                      ? EqualizerPresets.bandFrequencies[index]
+                      : '${index + 1}';
+                  final label = index < EqualizerPresets.bandLabels.length
+                      ? EqualizerPresets.bandLabels[index]
+                      : '';
                   final gain = eqState.bandGains[index];
 
                   return _BandGainRow(
@@ -430,24 +434,18 @@ class _EqualizerSplinePainter extends CustomPainter {
     canvas.drawLine(Offset(0, size.height * 0.15), Offset(size.width, size.height * 0.15), gridPaint);
     canvas.drawLine(Offset(0, size.height * 0.85), Offset(size.width, size.height * 0.85), gridPaint);
 
-    if (gains.length < 5) return;
+    if (gains.isEmpty) return;
 
-    // Points at 5 standard frequency horizontal ratios: 10%, 30%, 50%, 70%, 90%
-    final xCoords = [
-      size.width * 0.10,
-      size.width * 0.30,
-      size.width * 0.50,
-      size.width * 0.70,
-      size.width * 0.90,
-    ];
-
+    final count = gains.length;
     final points = <Offset>[];
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < count; i++) {
+      final x = count == 1
+          ? size.width * 0.5
+          : size.width * (0.08 + (i / (count - 1)) * 0.84);
       final gain = gains[i].clamp(-12.0, 12.0);
-      // Map -12dB .. +12dB to size.height * 0.85 .. size.height * 0.15
       final normalized = (gain / 12.0);
       final y = centerY - (normalized * (size.height * 0.38));
-      points.add(Offset(xCoords[i], y));
+      points.add(Offset(x, y));
     }
 
     // Generate smooth Bézier spline path

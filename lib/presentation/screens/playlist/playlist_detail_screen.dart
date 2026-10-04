@@ -129,7 +129,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? Colors.black : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
           side: BorderSide(
@@ -514,7 +514,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     return Theme(
       data: Theme.of(context).copyWith(
         popupMenuTheme: PopupMenuThemeData(
-          color: isDark ? Colors.black : Colors.white,
+          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -1201,7 +1201,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                               Theme(
                                 data: theme.copyWith(
                                   popupMenuTheme: PopupMenuThemeData(
-                                    color: isDark ? Colors.black : Colors.white,
+                                    color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
                                     surfaceTintColor: Colors.transparent,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(18),
@@ -1664,9 +1664,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                       });
                                     } else if (isCurrent) {
                                       HapticFeedback.selectionClick();
-                                      if (isPlaybackPlaying) {
-                                        audioHandler.pause();
-                                      } else {
+                                      if (!isPlaybackPlaying) {
                                         audioHandler.play();
                                       }
                                     } else {

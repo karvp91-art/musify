@@ -226,7 +226,7 @@ class _PlaylistListTile extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: isDark ? Colors.black : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(22),
           side: BorderSide(
@@ -354,7 +354,7 @@ class _PlaylistListTile extends ConsumerWidget {
             width: 1,
           ),
         ),
-        color: isDark ? Colors.black : Colors.white,
+        color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
         icon: Icon(
           Icons.more_vert_rounded,
           size: 20,

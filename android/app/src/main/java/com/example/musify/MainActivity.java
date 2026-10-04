@@ -10,6 +10,8 @@ public class MainActivity extends AudioServiceActivity {
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
         flutterEngine.getPlugins().add(new MediaStorePlugin());
+        flutterEngine.getPlugins().add(new RingtonePlugin());
+        flutterEngine.getPlugins().add(new MusifyWidgetPlugin());
     }
 }
 

@@ -122,11 +122,13 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       final isEnabled = preferencesService!.getEqualizerEnabled();
       final gains = preferencesService!.getEqualizerBandGains();
       final bass = preferencesService!.getEqualizerBassBoost();
+      final loudness = preferencesService!.getEqualizerLoudness();
       // Apply asynchronously without blocking player startup
       applyEqualizerSettings(
         enabled: isEnabled,
         bandGains: gains,
         bassBoost: bass,
+        loudness: loudness,
       ).catchError((_) {});
     }
   }
@@ -145,6 +147,7 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     required bool enabled,
     required List<double> bandGains,
     required double bassBoost,
+    double loudness = 0.0,
   }) async {
     // Equalizer bands on Android Hardware for Deck A
     try {
@@ -176,10 +179,10 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
     // Loudness enhancer / Bass boost for Deck A
     try {
-      final boostEnabled = enabled && bassBoost > 0.01;
+      final boostEnabled = enabled && (bassBoost > 0.01 || loudness > 0.01);
       await _loudnessA.setEnabled(boostEnabled);
       if (boostEnabled) {
-        final gainDb = bassBoost * 6.0;
+        final gainDb = (bassBoost * 4.0) + (loudness * 4.0);
         await _loudnessA.setTargetGain(gainDb);
       }
     } catch (_) {
@@ -188,10 +191,10 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
     // Loudness enhancer / Bass boost for Deck B
     try {
-      final boostEnabled = enabled && bassBoost > 0.01;
+      final boostEnabled = enabled && (bassBoost > 0.01 || loudness > 0.01);
       await _loudnessB.setEnabled(boostEnabled);
       if (boostEnabled) {
-        final gainDb = bassBoost * 6.0;
+        final gainDb = (bassBoost * 4.0) + (loudness * 4.0);
         await _loudnessB.setTargetGain(gainDb);
       }
     } catch (_) {

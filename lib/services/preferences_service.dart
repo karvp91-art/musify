@@ -96,6 +96,7 @@ class PreferencesService {
   static const String keyEqualizerGains = 'equalizer_band_gains';
   static const String keyEqualizerBassBoost = 'equalizer_bass_boost';
   static const String keyEqualizerVirtualizer = 'equalizer_virtualizer';
+  static const String keyEqualizerLoudness = 'equalizer_loudness';
 
   /// Check whether storage scan has completed at least once
   bool hasScannedStorage() {
@@ -157,20 +158,33 @@ class PreferencesService {
     return _setString(keyEqualizerPreset, preset);
   }
 
-  /// Retrieve 5-band equalizer gains in decibels (default: [0.0, 0.0, 0.0, 0.0, 0.0])
+  /// Retrieve equalizer gains in decibels (default 7 bands: [4.0, 2.0, 0.0, -1.0, 2.0, 3.0, 4.0])
   List<double> getEqualizerGains() {
     final raw = _getString(keyEqualizerGains);
-    if (raw == null || raw.trim().isEmpty) return const [0.0, 0.0, 0.0, 0.0, 0.0];
+    if (raw == null || raw.trim().isEmpty) {
+      return const [4.0, 2.0, 0.0, -1.0, 2.0, 3.0, 4.0];
+    }
     try {
       final parts = raw.split(',').map((s) => double.tryParse(s.trim()) ?? 0.0).toList();
-      if (parts.length == 5) return parts;
+      if (parts.length == 7) return parts;
+      if (parts.length == 5) {
+        return [
+          parts[0],
+          (parts[0] + parts[1]) / 2,
+          parts[1],
+          parts[2],
+          (parts[2] + parts[3]) / 2,
+          parts[3],
+          parts[4],
+        ];
+      }
     } catch (_) {}
-    return const [0.0, 0.0, 0.0, 0.0, 0.0];
+    return const [4.0, 2.0, 0.0, -1.0, 2.0, 3.0, 4.0];
   }
 
   List<double> getEqualizerBandGains() => getEqualizerGains();
 
-  /// Store 5-band equalizer gains
+  /// Store equalizer gains
   Future<bool> setEqualizerGains(List<double> gains) {
     final str = gains.map((g) => g.toStringAsFixed(1)).join(',');
     return _setString(keyEqualizerGains, str);
@@ -196,6 +210,16 @@ class PreferencesService {
   /// Set virtualizer / surround sound level (0.0 to 1.0)
   Future<bool> setEqualizerVirtualizer(double value) {
     return _setDouble(keyEqualizerVirtualizer, value.clamp(0.0, 1.0));
+  }
+
+  /// Retrieve loudness enhancer level (0.0 to 1.0, default: 0.6)
+  double getEqualizerLoudness() {
+    return _getDouble(keyEqualizerLoudness) ?? 0.6;
+  }
+
+  /// Set loudness enhancer level (0.0 to 1.0)
+  Future<bool> setEqualizerLoudness(double value) {
+    return _setDouble(keyEqualizerLoudness, value.clamp(0.0, 1.0));
   }
 
   static const int defaultDayStartHour = 6; // 06:00 AM

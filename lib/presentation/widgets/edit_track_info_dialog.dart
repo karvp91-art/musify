@@ -90,7 +90,7 @@ class _EditTrackInfoDialogState extends ConsumerState<_EditTrackInfoDialog> {
     final primary = theme.colorScheme.primary;
 
     return Dialog(
-      backgroundColor: isDark ? const Color(0xFF1A1D26) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
       child: Padding(

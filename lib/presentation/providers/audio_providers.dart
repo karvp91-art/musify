@@ -22,7 +22,13 @@ import 'package:musify/services/download_manager.dart';
 import 'package:musify/services/preferences_service.dart';
 
 import 'package:musify/domain/models/equalizer_state.dart';
+import 'package:musify/domain/models/search_result_models.dart';
+import 'package:musify/domain/models/artist_details.dart';
+import 'package:musify/domain/models/album_details.dart';
 export 'package:musify/domain/models/equalizer_state.dart';
+export 'package:musify/domain/models/search_result_models.dart';
+export 'package:musify/domain/models/artist_details.dart';
+export 'package:musify/domain/models/album_details.dart';
 export 'package:musify/services/preferences_service.dart';
 
 // Download Manager Provider
@@ -95,6 +101,21 @@ final saavnTrendingTracksProvider = FutureProvider<List<Track>>((ref) async {
 final saavnGenreTracksProvider = FutureProvider.family<List<Track>, String>((ref, genre) async {
   final saavn = ref.watch(saavnAdapterProvider);
   return saavn.getTracksByGenre(genre, limit: 15);
+});
+
+final saavnMultiSearchProvider = FutureProvider.family<SearchMultiResult, String>((ref, query) async {
+  final saavn = ref.watch(saavnAdapterProvider);
+  return saavn.searchMulti(query);
+});
+
+final saavnArtistDetailsProvider = FutureProvider.family<ArtistDetails?, String>((ref, artistId) async {
+  final saavn = ref.watch(saavnAdapterProvider);
+  return saavn.getArtistDetails(artistId);
+});
+
+final saavnAlbumDetailsProvider = FutureProvider.family<AlbumDetails?, String>((ref, albumId) async {
+  final saavn = ref.watch(saavnAdapterProvider);
+  return saavn.getAlbumDetails(albumId);
 });
 
 // Audio Handler (Global Audio Service singleton injected at startup)
@@ -413,6 +434,7 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
       bandGains: prefs.getEqualizerBandGains(),
       bassBoost: prefs.getEqualizerBassBoost(),
       virtualizer: prefs.getEqualizerVirtualizer(),
+      loudness: prefs.getEqualizerLoudness(),
     );
   }
 
@@ -424,12 +446,14 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     prefs.setEqualizerBandGains(next.bandGains);
     prefs.setEqualizerBassBoost(next.bassBoost);
     prefs.setEqualizerVirtualizer(next.virtualizer);
+    prefs.setEqualizerLoudness(next.loudness);
 
     try {
       ref.read(audioHandlerProvider).applyEqualizerSettings(
         enabled: next.isEnabled,
         bandGains: next.bandGains,
         bassBoost: next.bassBoost,
+        loudness: next.loudness,
       );
     } catch (_) {}
   }
@@ -464,12 +488,17 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     _applyToHandler(state.copyWith(virtualizer: value.clamp(0.0, 1.0)));
   }
 
+  void setLoudness(double value) {
+    _applyToHandler(state.copyWith(loudness: value.clamp(0.0, 1.0)));
+  }
+
   void resetToFlat() {
     _applyToHandler(state.copyWith(
-      preset: 'Flat',
-      bandGains: const [0.0, 0.0, 0.0, 0.0, 0.0],
+      preset: 'Normal',
+      bandGains: const [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
       bassBoost: 0.0,
       virtualizer: 0.0,
+      loudness: 0.0,
     ));
   }
 }

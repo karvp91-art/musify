@@ -7,7 +7,9 @@ import android.provider.MediaStore;
 
 import androidx.annotation.NonNull;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
@@ -48,6 +50,9 @@ public class MediaStorePlugin implements FlutterPlugin, MethodChannel.MethodCall
             }
             Map<String, Object> metadata = queryMediaStore(filePath);
             result.success(metadata);
+        } else if ("getAllAudio".equals(call.method)) {
+            List<Map<String, Object>> allAudio = queryAllAudio();
+            result.success(allAudio);
         } else {
             result.notImplemented();
         }
@@ -133,5 +138,48 @@ public class MediaStorePlugin implements FlutterPlugin, MethodChannel.MethodCall
             return cursor.getInt(idx);
         }
         return 0;
+    }
+
+    private List<Map<String, Object>> queryAllAudio() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        String[] projection = {
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.DATE_MODIFIED,
+        };
+
+        Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        Cursor cursor = null;
+        try {
+            cursor = contentResolver.query(uri, projection, null, null, MediaStore.Audio.Media.DATE_MODIFIED + " DESC");
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    String data = getStringColumn(cursor, MediaStore.Audio.Media.DATA);
+                    if (data == null || data.isEmpty()) continue;
+
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("filePath", data);
+                    map.put("title", getStringColumn(cursor, MediaStore.Audio.Media.TITLE));
+                    map.put("artist", getStringColumn(cursor, MediaStore.Audio.Media.ARTIST));
+                    map.put("album", getStringColumn(cursor, MediaStore.Audio.Media.ALBUM));
+                    map.put("durationMs", getLongColumn(cursor, MediaStore.Audio.Media.DURATION));
+                    map.put("fileSizeBytes", getLongColumn(cursor, MediaStore.Audio.Media.SIZE));
+                    map.put("dateModified", getLongColumn(cursor, MediaStore.Audio.Media.DATE_MODIFIED));
+
+                    list.add(map);
+                }
+            }
+        } catch (Exception e) {
+            // Silently handle query failures
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        return list;
     }
 }

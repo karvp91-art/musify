@@ -129,6 +129,8 @@ class LocalFilesScanner {
       currentDirectory: 'Preparing directories...',
     ));
 
+    final Set<String> visitedFilePaths = {};
+
     try {
       if (Platform.isAndroid) {
         final rootDir = Directory('/storage/emulated/0');
@@ -137,25 +139,45 @@ class LocalFilesScanner {
             await for (final entity in rootDir.list(recursive: false, followLinks: false)) {
               if (entity is Directory) {
                 final dirName = p.basename(entity.path);
+                final lower = dirName.toLowerCase();
                 // Skip hidden directories and system Android directory
-                if (!dirName.startsWith('.') && dirName != 'Android') {
+                if (!dirName.startsWith('.') && lower != 'android') {
                   rootScanDirs.add(entity);
                 }
               }
             }
-          } catch (_) {
-            // Fallback: standard user directories
-            rootScanDirs.addAll([
-              Directory('/storage/emulated/0/Music'),
-              Directory('/storage/emulated/0/Download'),
-              Directory('/storage/emulated/0/Audio'),
-              Directory('/storage/emulated/0/Documents'),
-              Directory('/storage/emulated/0/Podcasts'),
-              Directory('/storage/emulated/0/Recordings'),
-              Directory('/storage/emulated/0/bluetooth'),
-              Directory('/storage/emulated/0/Media'),
-              Directory('/storage/emulated/0/Songs'),
-            ]);
+          } catch (_) {}
+        }
+
+        // Always ensure standard music, ringtones, recordings, and audio folders are included
+        final candidateAudioDirs = [
+          Directory('/storage/emulated/0/Music'),
+          Directory('/storage/emulated/0/Download'),
+          Directory('/storage/emulated/0/Documents'),
+          Directory('/storage/emulated/0/bluetooth'),
+          Directory('/storage/emulated/0/Songs'),
+          Directory('/storage/emulated/0/Ringtones'),
+          Directory('/storage/emulated/0/Recordings'),
+          Directory('/storage/emulated/0/Audio'),
+          Directory('/storage/emulated/0/Notifications'),
+          Directory('/storage/emulated/0/Alarms'),
+          Directory('/storage/emulated/0/Podcasts'),
+          Directory('/storage/emulated/0/Sounds'),
+          Directory('/storage/emulated/0/Voice Recorder'),
+          Directory('/storage/emulated/0/VoiceRecorder'),
+          Directory('/storage/emulated/0/SoundRecorder'),
+          Directory('/storage/emulated/0/Call Recordings'),
+          Directory('/storage/emulated/0/CallRecordings'),
+          Directory('/storage/emulated/0/MIUI/sound_recorder'),
+          Directory('/storage/emulated/0/Samsung/Voice Recorder'),
+          Directory('/storage/emulated/0/WhatsApp/Media/WhatsApp Audio'),
+          Directory('/storage/emulated/0/WhatsApp/Media/WhatsApp Voice Notes'),
+          Directory('/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio'),
+          Directory('/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes'),
+        ];
+        for (final dir in candidateAudioDirs) {
+          if (!rootScanDirs.any((d) => d.path == dir.path)) {
+            rootScanDirs.add(dir);
           }
         }
 
@@ -189,6 +211,7 @@ class LocalFilesScanner {
     // record for a song that was already downloaded from YouTube or JioSaavn
     final existingRows = await _db.select(_db.localTracks).get();
     final existingOnlinePaths = <String>{};
+    final existingArtworks = <String, String>{};
     for (final row in existingRows) {
       if (row.filePath != null && row.filePath!.isNotEmpty) {
         if (row.source != AudioSourceType.local.name ||
@@ -197,15 +220,72 @@ class LocalFilesScanner {
           existingOnlinePaths.add(p.normalize(row.filePath!));
         }
       }
+      if (row.artworkUrl != null && row.artworkUrl!.isNotEmpty) {
+        existingArtworks[row.id] = row.artworkUrl!;
+      }
     }
 
+    // Phase 1: High-Speed Android MediaStore OS Query
+    // MediaStore indexes all device music, ringtones, notifications, and voice recordings
+    if (Platform.isAndroid) {
+      try {
+        final mediaStoreFiles = await MediaStoreBridge.getAllAudio();
+        for (final msFile in mediaStoreFiles) {
+          final normPath = p.normalize(msFile.filePath);
+          if (visitedFilePaths.contains(normPath) || existingOnlinePaths.contains(normPath)) {
+            continue;
+          }
+          final file = File(msFile.filePath);
+          if (await file.exists()) {
+            visitedFilePaths.add(normPath);
+            scannedFilesCounter++;
+            final track = await _parseFileToTrack(file);
+            if (track != null) {
+              final effectiveArtwork = (track.artworkUrl != null && track.artworkUrl!.isNotEmpty)
+                  ? track.artworkUrl
+                  : existingArtworks[track.id];
+
+              collectedTracks.add(
+                LocalTracksCompanion(
+                  id: Value(track.id),
+                  title: Value(track.title),
+                  artistName: Value(track.artistName),
+                  albumTitle: Value(track.albumTitle),
+                  source: Value(track.source.name),
+                  sourceId: Value(track.sourceId),
+                  durationMs: Value(track.durationMs),
+                  artworkUrl: Value(effectiveArtwork),
+                  audioUrl: Value(track.audioUrl),
+                  filePath: Value(track.filePath),
+                  fileSizeBytes: Value(track.fileSizeBytes),
+                  codec: Value(track.codec),
+                  bitrate: Value(track.bitrate),
+                  isLiked: Value(track.isLiked),
+                  isDownloaded: Value(true),
+                  addedAt: Value(track.addedAt),
+                ),
+              );
+              onProgress?.call(ScanProgress(
+                filesScanned: scannedFilesCounter,
+                tracksFound: collectedTracks.length,
+                currentDirectory: p.basename(file.parent.path),
+              ));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Phase 2: Deep File System Crawl across all user storage locations
     for (final dir in rootScanDirs) {
       if (await dir.exists()) {
         await _crawlDirectorySafe(
           dir,
           visitedPaths,
           collectedTracks,
+          visitedFilePaths: visitedFilePaths,
           existingOnlinePaths: existingOnlinePaths,
+          existingArtworks: existingArtworks,
           onFileScanned: (count, path) {
             scannedFilesCounter += count;
             onProgress?.call(ScanProgress(
@@ -227,7 +307,9 @@ class LocalFilesScanner {
           dlDir,
           visitedPaths,
           collectedTracks,
+          visitedFilePaths: visitedFilePaths,
           existingOnlinePaths: existingOnlinePaths,
+          existingArtworks: existingArtworks,
           onFileScanned: (count, path) {
             scannedFilesCounter += count;
             onProgress?.call(ScanProgress(
@@ -251,7 +333,9 @@ class LocalFilesScanner {
             musifyExtDir,
             visitedPaths,
             collectedTracks,
+            visitedFilePaths: visitedFilePaths,
             existingOnlinePaths: existingOnlinePaths,
+            existingArtworks: existingArtworks,
             onFileScanned: (count, path) {
               scannedFilesCounter += count;
               onProgress?.call(ScanProgress(
@@ -315,6 +399,8 @@ class LocalFilesScanner {
     void Function(int count, String currentPath)? onFileScanned,
     bool markAsDownloaded = false,
     Set<String>? existingOnlinePaths,
+    Set<String>? visitedFilePaths,
+    Map<String, String>? existingArtworks,
   }) async {
     final queue = Queue<Directory>()..add(root);
 
@@ -332,7 +418,7 @@ class LocalFilesScanner {
 
           if (entity is Directory) {
             final lower = entityName.toLowerCase();
-            // Skip system/non-audio directories, but NOT Musify download dirs
+            // Skip system/non-audio cache directories
             if (lower != 'android' &&
                 lower != 'node_modules' &&
                 lower != '.git' &&
@@ -349,16 +435,24 @@ class LocalFilesScanner {
             // During the general scan pass, skip files inside Musify download dirs
             if (!markAsDownloaded && _isMusifyDownloadPath(currentPath)) continue;
 
-            // Skip if this file is already tracked as an online/downloaded track (e.g. YouTube / JioSaavn)
-            if (existingOnlinePaths != null && existingOnlinePaths.contains(p.normalize(entity.path))) {
+            final normPath = p.normalize(entity.path);
+            if (visitedFilePaths != null && visitedFilePaths.contains(normPath)) {
               continue;
             }
+            if (existingOnlinePaths != null && existingOnlinePaths.contains(normPath)) {
+              continue;
+            }
+            visitedFilePaths?.add(normPath);
 
             onFileScanned?.call(1, currentPath);
             final ext = p.extension(entity.path).toLowerCase();
             if (supportedExtensions.contains(ext)) {
               final track = await _parseFileToTrack(entity);
               if (track != null) {
+                final effectiveArtwork = (track.artworkUrl != null && track.artworkUrl!.isNotEmpty)
+                    ? track.artworkUrl
+                    : existingArtworks?[track.id];
+
                 collectedTracks.add(
                   LocalTracksCompanion(
                     id: Value(track.id),
@@ -368,7 +462,7 @@ class LocalFilesScanner {
                     source: Value(track.source.name),
                     sourceId: Value(track.sourceId),
                     durationMs: Value(track.durationMs),
-                    artworkUrl: Value(track.artworkUrl),
+                    artworkUrl: Value(effectiveArtwork),
                     audioUrl: Value(track.audioUrl),
                     filePath: Value(track.filePath),
                     fileSizeBytes: Value(track.fileSizeBytes),
@@ -560,6 +654,16 @@ class LocalFilesScanner {
       int durationMs = mediaStore?.durationMs ?? id3?.durationMs ?? 0;
       if (durationMs <= 0 && ext == 'wav' && stat.size > 44) {
         durationMs = (((stat.size - 44) / 176400) * 1000).round();
+      }
+
+      // If duration is unknown, estimate from file size assuming ~128kbps (16000 bytes/sec)
+      if (durationMs <= 0 && stat.size > 2048) {
+        durationMs = ((stat.size / 16000) * 1000).round();
+      }
+
+      // Ignore corrupted or completely empty files (< 1KB)
+      if (durationMs < 0 || stat.size < 1024) {
+        return null;
       }
 
       return Track(

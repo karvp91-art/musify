@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/core/theme/app_typography.dart';
 
 class CustomSeekBar extends StatefulWidget {
   final Duration position;
@@ -56,13 +57,14 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
         ? Duration(milliseconds: _dragValue!.round())
         : widget.position;
 
+    // High visibility inactive track line across both dark and light modes
     final inactiveTrack = isDark
-        ? Colors.white.withValues(alpha: 0.16)
-        : Colors.black.withValues(alpha: 0.08);
+        ? Colors.white.withValues(alpha: 0.22)
+        : const Color(0xFFCDD2DC);
 
     final timeColor = isDark
-        ? Colors.white.withValues(alpha: 0.55)
-        : theme.colorScheme.onSurface.withValues(alpha: 0.55);
+        ? Colors.white.withValues(alpha: 0.60)
+        : AppColors.onSurfaceMutedLight;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -76,7 +78,7 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
             activeColor: activeColor,
             thumbColor: activeColor,
             inactiveColor: inactiveTrack,
-            glowColor: activeColor.withValues(alpha: isDark ? 0.60 : 0.40),
+            glowColor: activeColor.withValues(alpha: isDark ? 0.60 : 0.35),
             glowRadius: 2.5,
             useOwnLayer: true,
             onChangeStart: (val) {
@@ -107,18 +109,20 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
             children: [
               Text(
                 _formatTime(displayPosition),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: isDragging ? FontWeight.w600 : FontWeight.w400,
+                style: AppTypography.style(
+                  fontWeight: isDragging ? FontWeight.w700 : FontWeight.w500,
                   fontSize: 12,
                   color: isDragging ? activeColor : timeColor,
+                  letterSpacing: -0.1,
                 ),
               ),
               Text(
                 _formatRemaining(displayPosition, widget.duration),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w400,
+                style: AppTypography.style(
+                  fontWeight: FontWeight.w500,
                   fontSize: 12,
                   color: timeColor,
+                  letterSpacing: -0.1,
                 ),
               ),
             ],

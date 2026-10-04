@@ -19,6 +19,7 @@ import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/create_playlist_modal.dart';
 import 'package:musify/presentation/screens/settings/audio_settings_screen.dart';
+import 'package:musify/services/online_artwork_enricher.dart';
 import '../playlist/playlist_detail_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -37,7 +38,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isSelectionMode = false;
   final Set<String> _selectedTrackIds = {};
 
-  final List<String> _filters = const ['All', 'Playlists', 'Liked Songs', 'Downloaded'];
+  final List<String> _filters = const ['All', 'Audio', 'Playlists', 'Liked Songs', 'Downloaded'];
 
   @override
   void initState() {
@@ -48,6 +49,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (prefs.hasScannedStorage()) {
         triggerBackgroundStorageScan(ref);
       }
+      // Silently fetch online artwork for local songs missing cover art
+      OnlineArtworkEnricher.triggerBackgroundEnrichment(ref);
     });
   }
 
@@ -312,7 +315,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Theme(
       data: Theme.of(context).copyWith(
         popupMenuTheme: PopupMenuThemeData(
-          color: isDark ? Colors.black : Colors.white,
+          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -929,9 +932,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     });
                   } else if (isCurrent) {
                     HapticFeedback.selectionClick();
-                    if (isPlaybackPlaying) {
-                      audioHandler.pause();
-                    } else {
+                    if (!isPlaybackPlaying) {
                       audioHandler.play();
                     }
                   } else {
@@ -1054,9 +1055,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 });
               } else if (isCurrent) {
                 HapticFeedback.selectionClick();
-                if (isPlaybackPlaying) {
-                  audioHandler.pause();
-                } else {
+                if (!isPlaybackPlaying) {
                   audioHandler.play();
                 }
               } else {
@@ -1087,40 +1086,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final audioHandler = ref.watch(audioHandlerProvider);
 
     final localTracks = sortedTracksAsync.value ?? [];
+    final musicTracks = localTracks.where((t) => !t.isAudioClip).toList();
+    final audioClipTracks = localTracks.where((t) => t.isAudioClip).toList();
     final query = _searchQuery.trim().toLowerCase();
+
+    List<Track> baseFilterTracks;
+    if (_selectedFilter == 'Audio') {
+      baseFilterTracks = audioClipTracks;
+    } else if (_selectedFilter == 'Downloaded') {
+      baseFilterTracks = localTracks.where((t) {
+        final isFromApp = t.source != AudioSourceType.local ||
+            (t.filePath != null && t.filePath!.contains('musify_downloads'));
+        return t.isDownloaded && isFromApp;
+      }).toList();
+    } else if (_selectedFilter == 'Liked Songs') {
+      final likedTracksAsync = ref.watch(likedTracksStreamProvider);
+      baseFilterTracks = likedTracksAsync.value ?? [];
+    } else {
+      // 'All' tab: strictly full music tracks, excluding ringtones, recordings, and short audio snippets
+      baseFilterTracks = musicTracks;
+    }
+
     final displayedTracks = query.isEmpty
-        ? localTracks
-        : localTracks.where((t) {
+        ? baseFilterTracks
+        : baseFilterTracks.where((t) {
             return t.title.toLowerCase().contains(query) ||
                 t.artistName.toLowerCase().contains(query) ||
                 (t.albumTitle?.toLowerCase().contains(query) ?? false);
           }).toList();
 
-    List<Track> currentVisibleTracks = displayedTracks;
-    if (_selectedFilter == 'Downloaded') {
-      final downloadedTracks = localTracks.where((t) {
-        final isFromApp = t.source != AudioSourceType.local ||
-            (t.filePath != null && t.filePath!.contains('musify_downloads'));
-        return t.isDownloaded && isFromApp;
-      }).toList();
-      currentVisibleTracks = query.isEmpty
-          ? downloadedTracks
-          : downloadedTracks.where((t) {
-              return t.title.toLowerCase().contains(query) ||
-                  t.artistName.toLowerCase().contains(query) ||
-                  (t.albumTitle?.toLowerCase().contains(query) ?? false);
-            }).toList();
-    } else if (_selectedFilter == 'Liked Songs') {
-      final likedTracksAsync = ref.watch(likedTracksStreamProvider);
-      final likedTracks = likedTracksAsync.value ?? [];
-      currentVisibleTracks = query.isEmpty
-          ? likedTracks
-          : likedTracks.where((t) {
-              return t.title.toLowerCase().contains(query) ||
-                  t.artistName.toLowerCase().contains(query) ||
-                  (t.albumTitle?.toLowerCase().contains(query) ?? false);
-            }).toList();
-    }
+    final List<Track> currentVisibleTracks = displayedTracks;
 
     return PopScope(
       canPop: !_isSelectionMode,
@@ -1156,22 +1151,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   backgroundColor: isDark ? const Color(0xFF1E2028) : Colors.white,
                   onRefresh: () async {
                     await triggerBackgroundStorageScan(ref);
+                    OnlineArtworkEnricher.triggerBackgroundEnrichment(ref);
                     ref.invalidate(localTracksProvider);
                     ref.invalidate(trackPlayCountsProvider);
                     ref.invalidate(likedTracksStreamProvider);
                     ref.invalidate(playlistsStreamProvider);
                   },
                   child: sortedTracksAsync.when(
-                    data: (localTracks) {
-                      final query = _searchQuery.trim().toLowerCase();
-                      final displayedTracks = query.isEmpty
-                          ? localTracks
-                          : localTracks.where((t) {
-                              return t.title.toLowerCase().contains(query) ||
-                                  t.artistName.toLowerCase().contains(query) ||
-                                  (t.albumTitle?.toLowerCase().contains(query) ?? false);
-                            }).toList();
-
+                    data: (_) {
                       return CustomScrollView(
                         physics: const ClampingScrollPhysics(
                           parent: AlwaysScrollableScrollPhysics(),
@@ -1192,22 +1179,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 child: Column(
                                   children: [
                                     Icon(
-                                      Icons.music_off_rounded,
+                                      _selectedFilter == 'Audio'
+                                          ? Icons.mic_none_rounded
+                                          : Icons.music_off_rounded,
                                       size: 48,
                                       color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                                     ),
                                     const SizedBox(height: 12),
                                     Text(
                                       _searchQuery.isNotEmpty
-                                          ? 'No music matching "$_searchQuery"'
-                                          : 'No offline audio tracks found',
-                                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
+                                          ? 'No audio matching "$_searchQuery"'
+                                          : (_selectedFilter == 'Audio'
+                                              ? 'No audio recordings, ringtones, or voice notes found'
+                                              : 'No offline audio tracks found'),
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                      ),
                                     ),
                                     if (_searchQuery.isEmpty) ...[
                                       const SizedBox(height: 14),
-                                      FilledButton.tonalIcon(
-                                        icon: const Icon(Icons.refresh_rounded, size: 18),
-                                        label: Text('Scan Device Storage', style: theme.textTheme.labelLarge),
+                                      FilledButton.icon(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: theme.brightness == Brightness.dark
+                                              ? const Color(0xFF222C1D)
+                                              : const Color(0xFFE4F2DC),
+                                          foregroundColor: theme.brightness == Brightness.dark
+                                              ? AppColors.neonLime
+                                              : AppColors.limeAccentDark,
+                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                          elevation: 0,
+                                        ),
+                                        icon: Icon(
+                                          Icons.refresh_rounded,
+                                          size: 18,
+                                          color: theme.brightness == Brightness.dark
+                                              ? AppColors.neonLime
+                                              : AppColors.limeAccentDark,
+                                        ),
+                                        label: Text(
+                                          'Scan Device Storage',
+                                          style: AppTypography.style(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: theme.brightness == Brightness.dark
+                                                ? AppColors.neonLime
+                                                : AppColors.limeAccentDark,
+                                          ),
+                                        ),
                                         onPressed: () async {
                                           await startScanWithProgressDialog(context, ref);
                                         },
@@ -1247,9 +1268,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       });
                                     } else if (isCurrent) {
                                       HapticFeedback.selectionClick();
-                                      if (isPlaybackPlaying) {
-                                        audioHandler.pause();
-                                      } else {
+                                      if (!isPlaybackPlaying) {
                                         audioHandler.play();
                                       }
                                     } else {
@@ -1469,7 +1488,7 @@ class _HomePlaylistItem extends ConsumerWidget {
             Theme(
               data: theme.copyWith(
                 popupMenuTheme: PopupMenuThemeData(
-                  color: isDark ? Colors.black : Colors.white,
+                  color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
                   surfaceTintColor: Colors.transparent,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),

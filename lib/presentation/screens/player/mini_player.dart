@@ -313,6 +313,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 size: size,
                 isCircle: true,
                 ambientGlow: false,
+                fallbackIcon: Icons.music_note_rounded,
               ),
 
               // 2. Outer vinyl groove rim

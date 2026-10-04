@@ -275,6 +275,15 @@ class AudioRepositoryImpl implements AudioRepository {
   }
 
   @override
+  Future<void> updateTrackArtwork(String trackId, String artworkUrl) async {
+    await (_db.update(_db.localTracks)..where((tbl) => tbl.id.equals(trackId))).write(
+      LocalTracksCompanion(
+        artworkUrl: Value(artworkUrl),
+      ),
+    );
+  }
+
+  @override
   Future<List<Track>> getLikedTracks() async {
     final query = _db.select(_db.localTracks)
       ..where((tbl) => tbl.isLiked.equals(true))

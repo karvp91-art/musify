@@ -95,6 +95,18 @@ class AppTheme {
         elevation: 0,
         pressElevation: 0,
       ),
+      popupMenuTheme: const PopupMenuThemeData(
+        color: AppColors.surfacePillLight,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.surfacePillLight,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(
+        backgroundColor: AppColors.surfacePillLight,
+        surfaceTintColor: Colors.transparent,
+      ),
       textTheme: _buildTextTheme(
         primaryColor: AppColors.onSurfaceLight,
         mutedColor: AppColors.onSurfaceMutedLight,
@@ -143,15 +155,15 @@ class AppTheme {
         ),
       ),
       popupMenuTheme: const PopupMenuThemeData(
-        color: Colors.black,
+        color: AppColors.surfacePillDark,
         surfaceTintColor: Colors.transparent,
       ),
       bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: Colors.black,
+        backgroundColor: AppColors.surfacePillDark,
         surfaceTintColor: Colors.transparent,
       ),
       dialogTheme: const DialogThemeData(
-        backgroundColor: Colors.black,
+        backgroundColor: AppColors.surfacePillDark,
         surfaceTintColor: Colors.transparent,
       ),
       cardTheme: CardThemeData(

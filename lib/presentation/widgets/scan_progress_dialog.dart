@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/data/repositories/local_files_scanner.dart';
+import 'package:musify/services/online_artwork_enricher.dart';
 import '../providers/audio_providers.dart';
 
 /// Triggers background device scan and opens the redesigned floating modal bottom sheet
@@ -55,6 +56,7 @@ Future<void> triggerBackgroundStorageScan(WidgetRef ref) async {
     ref.read(preferencesServiceProvider).setHasScannedStorage(true);
     ref.read(isScanningProvider.notifier).setScanning(false);
     ref.invalidate(localTracksProvider);
+    OnlineArtworkEnricher.triggerBackgroundEnrichment(ref);
   } catch (e) {
     ref.read(isScanningProvider.notifier).setScanning(false);
   }
@@ -84,6 +86,7 @@ Future<void> _triggerDeviceScan(WidgetRef ref) async {
       isCompleted: true,
     ));
     ref.invalidate(localTracksProvider);
+    OnlineArtworkEnricher.triggerBackgroundEnrichment(ref);
   } catch (e) {
     ref.read(isScanningProvider.notifier).setScanning(false);
     ref.read(scanProgressProvider.notifier).setProgress(ScanProgress(
@@ -136,7 +139,7 @@ class _ScanStorageBottomSheetState extends ConsumerState<ScanStorageBottomSheet>
       _rotationController.repeat();
     }
 
-    final cardBg = isDark ? Colors.black : Colors.white;
+    final cardBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
     final dividerColor = isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB);
     final activeAccent = isDark ? AppColors.neonLime : const Color(0xFF659814);
 

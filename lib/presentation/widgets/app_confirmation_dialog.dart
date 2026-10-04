@@ -48,12 +48,12 @@ class AppConfirmationDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final dialogBg = isDark ? Colors.black : Colors.white;
+    final dialogBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
     final titleColor = isDark ? Colors.white : const Color(0xFF111827);
     final descColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     final badgeCircleBg = isDark ? const Color(0xFF381A22) : const Color(0xFFFFE8EC);
     const badgeSquareBg = Color(0xFFFF4D6D);
-    final cancelBtnBg = isDark ? const Color(0xFF222533) : const Color(0xFFF1F3F6);
+    final cancelBtnBg = isDark ? const Color(0xFF14161F) : const Color(0xFFDFE2E8);
     final cancelBtnText = isDark ? Colors.white : const Color(0xFF1E2028);
     final confirmBtnBg = confirmColor ?? AppColors.neonLime;
     final confirmBtnText = confirmTextColor ?? const Color(0xFF111827);

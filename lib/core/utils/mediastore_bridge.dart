@@ -60,4 +60,62 @@ class MediaStoreBridge {
       return null;
     }
   }
+
+  /// Queries MediaStore for all audio files indexed by Android OS.
+  /// This returns every audio file across music, ringtones, notifications, and recordings in <50ms.
+  static Future<List<MediaStoreAudioFile>> getAllAudio() async {
+    if (!Platform.isAndroid) return [];
+
+    try {
+      final result = await _channel.invokeMethod<List<dynamic>>('getAllAudio');
+      if (result == null || result.isEmpty) return [];
+
+      final list = <MediaStoreAudioFile>[];
+      for (final item in result) {
+        if (item is Map) {
+          final filePath = item['filePath'] as String?;
+          if (filePath == null || filePath.isEmpty) continue;
+
+          list.add(
+            MediaStoreAudioFile(
+              filePath: filePath,
+              title: item['title'] as String?,
+              artist: item['artist'] as String?,
+              album: item['album'] as String?,
+              durationMs: item['durationMs'] != null ? (item['durationMs'] as num).toInt() : 0,
+              fileSizeBytes: item['fileSizeBytes'] != null ? (item['fileSizeBytes'] as num).toInt() : 0,
+              dateModified: item['dateModified'] != null ? (item['dateModified'] as num).toInt() : 0,
+            ),
+          );
+        }
+      }
+      return list;
+    } on PlatformException {
+      return [];
+    } on MissingPluginException {
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+}
+
+class MediaStoreAudioFile {
+  final String filePath;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final int durationMs;
+  final int fileSizeBytes;
+  final int dateModified;
+
+  const MediaStoreAudioFile({
+    required this.filePath,
+    this.title,
+    this.artist,
+    this.album,
+    this.durationMs = 0,
+    this.fileSizeBytes = 0,
+    this.dateModified = 0,
+  });
 }

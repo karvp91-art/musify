@@ -18,23 +18,23 @@ Future<void> openAudioSettingsScreen(BuildContext context) {
   );
 }
 
-/// Borderless circular action button matching HomeScreen top header
-class _GlassCircleButton extends StatelessWidget {
+/// Borderless circular action button matching top header
+class _CircleHeaderButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final double iconSize;
 
-  const _GlassCircleButton({
+  const _CircleHeaderButton({
     required this.icon,
     required this.onTap,
-    this.iconSize = 20,
+    this.iconSize = 22,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final defaultIconColor =
-        isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
+        isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -43,8 +43,8 @@ class _GlassCircleButton extends StatelessWidget {
         onTap();
       },
       child: Container(
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
@@ -77,27 +77,28 @@ class AudioSettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final bgColor = theme.scaffoldBackgroundColor;
-    final cardBg = isDark ? const Color(0xFF14161F) : const Color(0xFFF5F6F9);
-    final textMuted = isDark ? Colors.white54 : Colors.black45;
-    final accentTextColor = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
+    final bgColor = isDark ? theme.scaffoldBackgroundColor : Colors.white;
+    final textMuted = isDark ? Colors.white54 : const Color(0xFF8E92A0);
+    final activeGreenColor = isDark ? AppColors.neonLime : const Color(0xFF3E8016);
+    final iconBgColor = isDark
+        ? AppColors.neonLime.withValues(alpha: 0.18)
+        : const Color(0xFFEFFCC8);
 
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
         child: Column(
           children: [
-            // Top App Bar Header with borderless buttons matching HomeScreen
+            // Top App Bar Header
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  _GlassCircleButton(
+                  _CircleHeaderButton(
                     icon: Icons.chevron_left_rounded,
-                    iconSize: 22,
+                    iconSize: 26,
                     onTap: () => Navigator.of(context).pop(),
                   ),
-
                   const SizedBox(width: 14),
 
                   // Title & Subtitle with AppTypography
@@ -122,8 +123,8 @@ class AudioSettingsScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  // Right: Theme switcher button matching HomeScreen
-                  _GlassCircleButton(
+                  // Right: Theme switcher button
+                  _CircleHeaderButton(
                     icon: ref.watch(themePreferenceProvider).icon,
                     iconSize: 20,
                     onTap: () => showThemeSelectionModal(context),
@@ -134,112 +135,110 @@ class AudioSettingsScreen extends ConsumerWidget {
 
             const SizedBox(height: 6),
 
-            // Scrollable Settings Content (Borderless & Minimal)
+            // Scrollable Settings Content (Open Canvas Layout)
             Expanded(
               child: ListView(
                 physics: const ClampingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 32),
                 children: [
-                  // 1. Studio Equalizer Hero Workstation Card
+                  // 1. Studio Equalizer (Open Canvas)
                   _SectionHeader(title: 'STUDIO DSP EQUALIZER', textMuted: textMuted),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
 
-                  GestureDetector(
-                    onTap: () {
-                      openStudioEqualizerScreen(context);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: cardBg,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: eqState.isEnabled
-                                      ? accentTextColor.withValues(alpha: isDark ? 0.15 : 0.12)
-                                      : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Icon(
-                                  Icons.tune_rounded,
-                                  color: eqState.isEnabled ? accentTextColor : textMuted,
-                                  size: 24,
-                                ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: iconBgColor,
+                                borderRadius: BorderRadius.circular(13),
                               ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'Studio Equalizer',
-                                          style: AppTypography.bodyLarge.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                            color: theme.colorScheme.onSurface,
-                                          ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.tune_rounded,
+                                color: activeGreenColor,
+                                size: 22,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Studio Equalizer',
+                                        style: AppTypography.headlineSmall.copyWith(
+                                          fontSize: 16.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: theme.colorScheme.onSurface,
                                         ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: eqState.isEnabled
-                                                ? accentTextColor.withValues(alpha: isDark ? 0.2 : 0.12)
-                                                : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            eqState.isEnabled ? eqState.preset : 'OFF',
-                                            style: AppTypography.style(
-                                              fontSize: 9.5,
-                                              fontWeight: FontWeight.w800,
-                                              color: eqState.isEnabled ? accentTextColor : textMuted,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      eqState.isEnabled
-                                          ? '5-band parametric curve & bass boost active'
-                                          : 'Hardware DSP Bypassed • Tap to configure',
-                                      style: AppTypography.caption.copyWith(
-                                        color: textMuted,
                                       ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: iconBgColor,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          eqState.isEnabled ? eqState.preset : 'OFF',
+                                          style: AppTypography.style(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: activeGreenColor,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    eqState.isEnabled
+                                        ? '7-band parametric curve & enhancements active'
+                                        : 'Hardware DSP Bypassed • Tap to configure',
+                                    style: AppTypography.caption.copyWith(
+                                      color: textMuted,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                              Switch.adaptive(
-                                value: eqState.isEnabled,
-                                activeTrackColor: AppColors.neonLime.withValues(alpha: 0.4),
-                                activeThumbColor: AppColors.neonLime,
-                                onChanged: (val) {
-                                  HapticFeedback.selectionClick();
-                                  eqNotifier.setEnabled(val);
-                                },
-                              ),
-                            ],
-                          ),
+                            ),
+                            Switch(
+                              value: eqState.isEnabled,
+                              activeThumbColor: Colors.white,
+                              activeTrackColor: AppColors.neonLime,
+                              inactiveThumbColor: Colors.white,
+                              inactiveTrackColor: isDark
+                                  ? const Color(0xFF2C2F3D)
+                                  : const Color(0xFFD6D9E0),
+                              trackOutlineColor:
+                                  WidgetStateProperty.all(Colors.transparent),
+                              onChanged: (val) {
+                                HapticFeedback.selectionClick();
+                                eqNotifier.setEnabled(val);
+                              },
+                            ),
+                          ],
+                        ),
 
-                          const SizedBox(height: 14),
+                        const SizedBox(height: 14),
 
-                          // Mini dynamic frequency curve preview (Borderless)
-                          Container(
-                            height: 75,
+                        // Mini dynamic frequency curve preview (Sitting directly on canvas)
+                        GestureDetector(
+                          onTap: () => openStudioEqualizerScreen(context),
+                          child: Container(
+                            height: 76,
                             width: double.infinity,
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF0C0E15) : const Color(0xFFECEEF2),
+                              color: isDark ? const Color(0xFF13151F) : const Color(0xFFF2F4F7),
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: ClipRRect(
@@ -253,47 +252,49 @@ class AudioSettingsScreen extends ConsumerWidget {
                               ),
                             ),
                           ),
+                        ),
 
-                          const SizedBox(height: 14),
+                        const SizedBox(height: 10),
 
-                          // Open Equalizer Action
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text(
-                                'Open Equalizer Workstation',
-                                style: AppTypography.style(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: accentTextColor,
+                        // Open Equalizer Action link
+                        GestureDetector(
+                          onTap: () => openStudioEqualizerScreen(context),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'Open Equalizer Workstation',
+                                  style: AppTypography.style(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: activeGreenColor,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.arrow_forward_rounded,
-                                size: 16,
-                                color: accentTextColor,
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 16,
+                                  color: activeGreenColor,
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
-                  // 2. Playback Transitions Section
+                  // 2. Playback Transitions Section (Open Canvas)
                   _SectionHeader(title: 'PLAYBACK TRANSITIONS', textMuted: textMuted),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
 
-                  // Gapless Playback Card (Borderless)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
+                  // Gapless Playback (Direct on canvas)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -301,14 +302,13 @@ class AudioSettingsScreen extends ConsumerWidget {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: isGapless
-                                ? accentTextColor.withValues(alpha: isDark ? 0.15 : 0.12)
-                                : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
-                            borderRadius: BorderRadius.circular(14),
+                            color: iconBgColor,
+                            borderRadius: BorderRadius.circular(13),
                           ),
+                          alignment: Alignment.center,
                           child: Icon(
                             Icons.all_inclusive_rounded,
-                            color: isGapless ? accentTextColor : textMuted,
+                            color: activeGreenColor,
                             size: 22,
                           ),
                         ),
@@ -319,7 +319,8 @@ class AudioSettingsScreen extends ConsumerWidget {
                             children: [
                               Text(
                                 'Gapless Playback',
-                                style: AppTypography.bodyLarge.copyWith(
+                                style: AppTypography.headlineSmall.copyWith(
+                                  fontSize: 16.5,
                                   fontWeight: FontWeight.w800,
                                   color: theme.colorScheme.onSurface,
                                 ),
@@ -337,10 +338,16 @@ class AudioSettingsScreen extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Switch.adaptive(
+                        Switch(
                           value: isGapless,
-                          activeTrackColor: AppColors.neonLime.withValues(alpha: 0.4),
-                          activeThumbColor: AppColors.neonLime,
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: AppColors.neonLime,
+                          inactiveThumbColor: Colors.white,
+                          inactiveTrackColor: isDark
+                              ? const Color(0xFF2C2F3D)
+                              : const Color(0xFFD6D9E0),
+                          trackOutlineColor:
+                              WidgetStateProperty.all(Colors.transparent),
                           onChanged: (val) {
                             HapticFeedback.selectionClick();
                             gaplessNotifier.setEnabled(val);
@@ -350,15 +357,11 @@ class AudioSettingsScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 22),
 
-                  // Crossfade Duration Slider Card (Borderless)
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
+                  // Track Crossfade (Direct on canvas)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -368,14 +371,13 @@ class AudioSettingsScreen extends ConsumerWidget {
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: crossfade > 0
-                                    ? accentTextColor.withValues(alpha: isDark ? 0.15 : 0.12)
-                                    : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
-                                borderRadius: BorderRadius.circular(14),
+                                color: iconBgColor,
+                                borderRadius: BorderRadius.circular(13),
                               ),
+                              alignment: Alignment.center,
                               child: Icon(
                                 Icons.swap_horiz_rounded,
-                                color: crossfade > 0 ? accentTextColor : textMuted,
+                                color: activeGreenColor,
                                 size: 24,
                               ),
                             ),
@@ -386,7 +388,8 @@ class AudioSettingsScreen extends ConsumerWidget {
                                 children: [
                                   Text(
                                     'Track Crossfade',
-                                    style: AppTypography.bodyLarge.copyWith(
+                                    style: AppTypography.headlineSmall.copyWith(
+                                      fontSize: 16.5,
                                       fontWeight: FontWeight.w800,
                                       color: theme.colorScheme.onSurface,
                                     ),
@@ -406,19 +409,15 @@ class AudioSettingsScreen extends ConsumerWidget {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                               decoration: BoxDecoration(
-                                color: crossfade > 0
-                                    ? accentTextColor.withValues(alpha: isDark ? 0.18 : 0.12)
-                                    : (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2)),
+                                color: iconBgColor,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
-                                crossfade > 0 ? '${crossfade}s' : '0s (Off)',
+                                crossfade > 0 ? '${crossfade}s' : '0s',
                                 style: AppTypography.style(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w800,
-                                  color: crossfade > 0
-                                      ? accentTextColor
-                                      : (isDark ? Colors.white70 : Colors.black87),
+                                  color: activeGreenColor,
                                 ),
                               ),
                             ),
@@ -427,7 +426,7 @@ class AudioSettingsScreen extends ConsumerWidget {
 
                         const SizedBox(height: 14),
 
-                        // Liquid Glass Slider
+                        // Liquid Glass Crossfade Slider
                         GlassSlider(
                           value: crossfade.toDouble().clamp(0.0, 10.0),
                           min: 0.0,
@@ -436,12 +435,14 @@ class AudioSettingsScreen extends ConsumerWidget {
                           activeColor: AppColors.neonLime,
                           thumbColor: AppColors.neonLime,
                           inactiveColor: isDark
-                              ? Colors.white.withValues(alpha: 0.12)
-                              : Colors.black.withValues(alpha: 0.08),
+                              ? Colors.white.withValues(alpha: 0.14)
+                              : const Color(0xFFE2E4E9),
                           glowColor: crossfade > 0
                               ? AppColors.neonLime.withValues(alpha: 0.45)
                               : Colors.transparent,
                           glowRadius: 2.5,
+                          trackHeight: 4.5,
+                          thumbRadius: 10.0,
                           useOwnLayer: true,
                           onChangeStart: (_) => HapticFeedback.selectionClick(),
                           onChanged: (val) {
@@ -465,24 +466,21 @@ class AudioSettingsScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
-                  // 3. Audio Streaming Quality (Borderless Cards)
+                  // 3. Audio Streaming Quality (Open Canvas)
                   _SectionHeader(title: 'AUDIO STREAMING QUALITY', textMuted: textMuted),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
 
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Default Streaming Bitrate',
-                          style: AppTypography.bodyLarge.copyWith(
+                          style: AppTypography.headlineSmall.copyWith(
+                            fontSize: 16.5,
                             fontWeight: FontWeight.w800,
                             color: theme.colorScheme.onSurface,
                           ),
@@ -494,7 +492,7 @@ class AudioSettingsScreen extends ConsumerWidget {
                             color: textMuted,
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
 
                         ...[
                           (
@@ -534,9 +532,21 @@ class AudioSettingsScreen extends ConsumerWidget {
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? AppColors.neonLime.withValues(alpha: 0.12)
-                                    : (isDark ? const Color(0xFF1B1D27) : const Color(0xFFECEEF2)),
+                                    ? (isDark
+                                        ? AppColors.neonLime.withValues(alpha: 0.16)
+                                        : const Color(0xFFEFFCC8))
+                                    : (isDark
+                                        ? const Color(0xFF141620)
+                                        : const Color(0xFFF3F4F6)),
                                 borderRadius: BorderRadius.circular(16),
+                                border: isSelected
+                                    ? Border.all(
+                                        color: isDark
+                                            ? AppColors.neonLime.withValues(alpha: 0.35)
+                                            : const Color(0xFFD6F59A),
+                                        width: 1.0,
+                                      )
+                                    : null,
                               ),
                               child: Row(
                                 children: [
@@ -545,7 +555,7 @@ class AudioSettingsScreen extends ConsumerWidget {
                                         ? Icons.radio_button_checked_rounded
                                         : Icons.radio_button_off_rounded,
                                     size: 20,
-                                    color: isSelected ? accentTextColor : textMuted,
+                                    color: isSelected ? activeGreenColor : textMuted,
                                   ),
                                   const SizedBox(width: 14),
                                   Expanded(
@@ -555,11 +565,11 @@ class AudioSettingsScreen extends ConsumerWidget {
                                         Text(
                                           tier.$2,
                                           style: AppTypography.style(
-                                            fontSize: 14,
+                                            fontSize: 14.5,
                                             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                                             color: isSelected
-                                                ? accentTextColor
-                                                : (isDark ? Colors.white : Colors.black87),
+                                                ? (isDark ? AppColors.neonLime : const Color(0xFF2C600B))
+                                                : theme.colorScheme.onSurface,
                                           ),
                                         ),
                                         const SizedBox(height: 2),
@@ -576,7 +586,9 @@ class AudioSettingsScreen extends ConsumerWidget {
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
                                       color: isSelected
-                                          ? accentTextColor.withValues(alpha: isDark ? 0.22 : 0.12)
+                                          ? (isDark
+                                              ? AppColors.neonLime.withValues(alpha: 0.25)
+                                              : Colors.white.withValues(alpha: 0.7))
                                           : (isDark ? const Color(0xFF20222B) : const Color(0xFFDFE2E8)),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
@@ -585,7 +597,9 @@ class AudioSettingsScreen extends ConsumerWidget {
                                       style: AppTypography.style(
                                         fontSize: 9,
                                         fontWeight: FontWeight.w800,
-                                        color: isSelected ? accentTextColor : textMuted,
+                                        color: isSelected
+                                            ? (isDark ? AppColors.neonLime : const Color(0xFF2C600B))
+                                            : textMuted,
                                         letterSpacing: 0.5,
                                       ),
                                     ),
@@ -599,34 +613,31 @@ class AudioSettingsScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
-                  // 4. Appearance & Theme Link Card (Borderless)
+                  // 4. Appearance & Theme (Open Canvas)
                   _SectionHeader(title: 'LOOK & FEEL', textMuted: textMuted),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
 
                   GestureDetector(
                     onTap: () {
                       showThemeSelectionModal(context);
                     },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                      decoration: BoxDecoration(
-                        color: cardBg,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                       child: Row(
                         children: [
                           Container(
                             width: 44,
                             height: 44,
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF222C1D) : const Color(0xFFDFEDE0),
-                              borderRadius: BorderRadius.circular(14),
+                              color: iconBgColor,
+                              borderRadius: BorderRadius.circular(13),
                             ),
+                            alignment: Alignment.center,
                             child: Icon(
                               Icons.palette_outlined,
-                              color: accentTextColor,
+                              color: activeGreenColor,
                               size: 22,
                             ),
                           ),
@@ -637,7 +648,8 @@ class AudioSettingsScreen extends ConsumerWidget {
                               children: [
                                 Text(
                                   'Appearance & Theme',
-                                  style: AppTypography.bodyLarge.copyWith(
+                                  style: AppTypography.headlineSmall.copyWith(
+                                    fontSize: 16.5,
                                     fontWeight: FontWeight.w800,
                                     color: theme.colorScheme.onSurface,
                                   ),
@@ -661,6 +673,9 @@ class AudioSettingsScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
+
+                  // Bottom padding for mini player
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
@@ -684,7 +699,7 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: AppTypography.style(
-          fontSize: 11,
+          fontSize: 11.5,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.0,
           color: textMuted,
@@ -708,23 +723,18 @@ class _MiniCurvePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
+    if (gains.isEmpty) return;
 
-    if (gains.length < 5) return;
-
-    final xCoords = [
-      size.width * 0.10,
-      size.width * 0.30,
-      size.width * 0.50,
-      size.width * 0.70,
-      size.width * 0.90,
-    ];
-
+    final count = gains.length;
     final points = <Offset>[];
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < count; i++) {
+      final x = count == 1
+          ? size.width * 0.5
+          : size.width * (0.08 + (i / (count - 1)) * 0.84);
       final gain = gains[i].clamp(-12.0, 12.0);
       final normalized = (gain / 12.0);
       final y = centerY - (normalized * (size.height * 0.38));
-      points.add(Offset(xCoords[i], y));
+      points.add(Offset(x, y));
     }
 
     final path = Path();

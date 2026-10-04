@@ -50,6 +50,53 @@ class Track {
 
   bool get isLocal => source == AudioSourceType.local;
 
+  /// Returns true if this track represents an auxiliary audio file
+  /// such as a voice recording, call recording, notification tone,
+  /// WhatsApp audio snippet, or ringtone, rather than a full song.
+  bool get isAudioClip {
+    if (source != AudioSourceType.local) return false;
+
+    // 1. Duration threshold (< 30 seconds is virtually always a tone/snippet)
+    if (durationMs > 0 && durationMs < 30000) return true;
+
+    // 2. Directory or path indicators
+    final path = (filePath ?? audioUrl).toLowerCase();
+    if (path.contains('/ringtones/') ||
+        path.contains('/notifications/') ||
+        path.contains('/alarms/') ||
+        path.contains('/recordings/') ||
+        path.contains('/voice recorder/') ||
+        path.contains('/call recordings/') ||
+        path.contains('/call recorder/') ||
+        path.contains('/whatsapp audio/') ||
+        path.contains('/whatsapp voice notes/') ||
+        path.contains('/voice notes/') ||
+        path.contains('_ringtone_')) {
+      return true;
+    }
+
+    // 3. Name or album indicators
+    final titleLower = title.toLowerCase();
+    final albumLower = (albumTitle ?? '').toLowerCase();
+    final artistLower = artistName.toLowerCase();
+    if (titleLower.contains('ringtone') ||
+        albumLower.contains('ringtone') ||
+        albumLower.contains('recording') ||
+        artistLower == 'ringtones' ||
+        artistLower == 'ringtone') {
+      return true;
+    }
+
+    // 4. Short clips (< 60s) with hashtag titles or unknown artist
+    if (durationMs > 0 && durationMs < 60000) {
+      if (titleLower.contains('#') || artistLower == 'unknown artist') {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   Track copyWith({
     String? id,
     String? title,

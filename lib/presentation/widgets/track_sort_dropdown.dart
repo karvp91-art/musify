@@ -47,7 +47,7 @@ class TrackSortDropdown extends ConsumerWidget {
           width: 1,
         ),
       ),
-      color: isDark ? Colors.black : Colors.white,
+      color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
       items: TrackSortOption.values.map((option) {
         final isSelected = option == currentSort;
         return PopupMenuItem<TrackSortOption>(
