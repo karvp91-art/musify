@@ -257,6 +257,24 @@ class AudioRepositoryImpl implements AudioRepository {
   }
 
   @override
+  Future<void> updateTrackMetadata(String trackId, {String? title, String? artistName, String? albumTitle}) async {
+    final updates = <String, Value>{};
+    if (title != null) updates['title'] = Value(title);
+    if (artistName != null) updates['artistName'] = Value(artistName);
+    if (albumTitle != null) updates['albumTitle'] = Value(albumTitle);
+
+    if (updates.isEmpty) return;
+
+    await (_db.update(_db.localTracks)..where((tbl) => tbl.id.equals(trackId))).write(
+      LocalTracksCompanion(
+        title: title != null ? Value(title) : const Value.absent(),
+        artistName: artistName != null ? Value(artistName) : const Value.absent(),
+        albumTitle: albumTitle != null ? Value(albumTitle) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
   Future<List<Track>> getLikedTracks() async {
     final query = _db.select(_db.localTracks)
       ..where((tbl) => tbl.isLiked.equals(true))

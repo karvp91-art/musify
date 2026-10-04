@@ -8,6 +8,7 @@ abstract class AudioRepository {
   Future<void> saveDownloadedTrack(Track track, {required String filePath, required int fileSizeBytes});
   Future<void> removeDownloadedTrack(String trackId);
   Future<bool> deleteTrack(Track track);
+  Future<void> updateTrackMetadata(String trackId, {String? title, String? artistName, String? albumTitle});
   Future<List<Track>> getLikedTracks();
   Future<void> toggleLike(Track track);
   Future<bool> isTrackLiked(String trackId);

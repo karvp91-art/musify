@@ -2,41 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
-
-LiquidGlassSettings _resolveMiniPlayerGlassSettings({required bool isDark}) {
-  return isDark
-      ? const LiquidGlassSettings(
-          thickness: 30.0,
-          blur: 3.0,                  // Low blur preserves sharp background refraction
-          chromaticAberration: 0.28,  // Clean spectral prism edges
-          lightIntensity: 0.65,       // Specular rim reflection
-          ambientStrength: 1.0,
-          refractiveIndex: 1.59,      // Polycarbonate optical refraction
-          saturation: 0.85,
-          lightAngle: 0.75 * math.pi, // 135° Apple standard upper-left key light
-          glassColor: Color(0x22D2F843), // Refined luminous Neon Lime tint (~13% alpha)
-          specularSharpness: GlassSpecularSharpness.sharp,
-        )
-      : const LiquidGlassSettings(
-          thickness: 28.0,
-          blur: 3.0,
-          chromaticAberration: 0.25,
-          lightIntensity: 0.60,
-          ambientStrength: 1.0,
-          refractiveIndex: 1.55,
-          saturation: 0.90,
-          lightAngle: 0.75 * math.pi,
-          glassColor: Color(0x1CD2F843), // Sheer delicate Neon Lime tint (~11% alpha)
-          specularSharpness: GlassSpecularSharpness.medium,
-        );
-}
-
 class MiniPlayer extends ConsumerStatefulWidget {
   final VoidCallback onExpand;
   final Track? fallbackTrack;
@@ -116,11 +86,9 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
 
     if (track == null) return const SizedBox.shrink();
 
-    final titleColor = isDark ? Colors.white : const Color(0xFF111827);
-    final artistColor = isDark
-        ? Colors.white.withValues(alpha: 0.70)
-        : const Color(0xFF111827).withValues(alpha: 0.65);
-    final accentColor = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
+    const titleColor = Colors.black;
+    final artistColor = Colors.black.withValues(alpha: 0.85);
+    const accentColor = Colors.black;
 
     // Reactively sync animation state with playback state
     ref.listen<bool>(isPlaybackPlayingProvider, (_, playing) {
@@ -160,24 +128,25 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
             child: Container(
               constraints: const BoxConstraints(minHeight: 78),
               margin: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
+                color: AppColors.neonLime,
+                borderRadius: BorderRadius.circular(32),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.06),
+                    color: AppColors.neonLime.withValues(alpha: isDark ? 0.35 : 0.45),
+                    blurRadius: 16,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.12),
                     blurRadius: 10,
-                    offset: const Offset(0, 3),
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: GlassContainer(
-                useOwnLayer: true,
-                quality: GlassQuality.premium,
-                clipBehavior: Clip.antiAlias,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: const LiquidRoundedSuperellipse(borderRadius: 28),
-                settings: _resolveMiniPlayerGlassSettings(isDark: isDark),
-                child: Row(
+              child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // 1. Spinning Circular Vinyl Artwork matching NowPlaying turntable
@@ -241,9 +210,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                           _MiniPlayerProgressSection(
                             accentColor: accentColor,
                             textColor: artistColor,
-                            inactiveColor: isDark
-                                ? Colors.white.withValues(alpha: 0.16)
-                                : Colors.black.withValues(alpha: 0.08),
+                            inactiveColor: Colors.black.withValues(alpha: 0.18),
                           ),
                         ],
                       ),
@@ -267,12 +234,11 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         height: 42,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppColors.neonLime,
+                          color: Colors.black,
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.neonLime.withValues(alpha: isDark ? 0.35 : 0.45),
-                              blurRadius: 10,
-                              spreadRadius: 1,
+                              color: Colors.black.withValues(alpha: 0.25),
+                              blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
                           ],
@@ -280,7 +246,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         child: Icon(
                           isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                           size: 24,
-                          color: Colors.black,
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -299,14 +265,12 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         height: 38,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.12)
-                              : Colors.black.withValues(alpha: 0.06),
+                          color: Colors.black.withValues(alpha: 0.10),
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.skip_next_rounded,
                           size: 20,
-                          color: isDark ? Colors.white.withValues(alpha: 0.85) : Colors.black87,
+                          color: Colors.black,
                         ),
                       ),
                     ),
@@ -314,7 +278,6 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 ),
               ),
             ),
-          ),
         ),
       ),
     );
@@ -384,19 +347,19 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 height: size * 0.16,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isDark ? Colors.black : Colors.white,
+                  color: Colors.black,
                   border: Border.all(
-                    color: themePrimary.withValues(alpha: 0.7),
-                    width: 1.0,
+                    color: const Color(0xFFD4AF37),
+                    width: 1.2,
                   ),
                 ),
                 child: Center(
                   child: Container(
                     width: size * 0.045,
                     height: size * 0.045,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isDark ? Colors.black : const Color(0xFF20222B),
+                      color: Colors.black,
                     ),
                   ),
                 ),

@@ -7,6 +7,7 @@ import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
+import 'package:musify/presentation/widgets/edit_track_info_dialog.dart';
 import '../providers/audio_providers.dart';
 
 export 'add_to_playlist_modal.dart';
@@ -141,6 +142,16 @@ void showTrackDropdownMenu({
       ],
       const PopupMenuDivider(height: 1),
       PopupMenuItem(
+        value: 'edit_info',
+        child: Row(
+          children: [
+            Icon(Icons.edit_note_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+            const SizedBox(width: 12),
+            const Text('Edit Info', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+      PopupMenuItem(
         value: 'like',
         child: Row(
           children: [
@@ -195,6 +206,10 @@ void showTrackDropdownMenu({
   } else if (selected == 'delete_device') {
     if (context.mounted) {
       showConfirmDeleteTrackDialog(context, ref, track);
+    }
+  } else if (selected == 'edit_info') {
+    if (context.mounted) {
+      showEditTrackInfoDialog(context, ref, track);
     }
   } else if (selected == 'like') {
     repo.toggleLike(track);

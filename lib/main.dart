@@ -56,7 +56,7 @@ class MusifyApp extends ConsumerWidget {
 
     return LiquidGlassWidgets.wrap(
       brightnessResolver: Theme.maybeBrightnessOf,
-      adaptiveQuality: false,
+      adaptiveQuality: true,
       child: ToastificationWrapper(
         child: MaterialApp(
           title: AppConstants.appName,

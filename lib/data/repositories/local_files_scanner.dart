@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:musify/core/utils/audio_metadata_reader.dart';
 import 'package:musify/core/utils/audio_name_sanitizer.dart';
+import 'package:musify/core/utils/mediastore_bridge.dart';
 import 'package:musify/domain/models/track.dart';
 import '../database/app_database.dart';
 import 'sample_audio_generator.dart';
@@ -394,19 +395,98 @@ class LocalFilesScanner {
       final parentFolder = p.basename(file.parent.path);
       final stat = await file.stat();
 
-      // 1. Try reading embedded ID3 tags
+      // ── Source 1: Embedded ID3 tags ──
       final id3 = await AudioMetadataReader.readMetadata(file);
 
+      // ── Source 2: Android MediaStore (OS-level media scanner) ──
+      final mediaStore = await MediaStoreBridge.getMetadata(file.path);
+
+      // ── Source 3: Filename parsing ──
+      final filenameParsed = AudioNameSanitizer.parseFileName(
+        fileName,
+        folderName: parentFolder,
+      );
+
+      // ── Cross-validate and pick the best title/artist/album ──
       String title = '';
       String artist = '';
-      String? album = id3?.album;
+      String? album;
 
-      if (id3?.artist != null && !AudioNameSanitizer.isJunkArtist(id3!.artist)) {
-        artist = AudioNameSanitizer.cleanText(id3.artist!);
+      // Collect candidates from each source
+      final String? id3Title = (id3?.title != null && id3!.title!.trim().isNotEmpty)
+          ? AudioNameSanitizer.cleanText(id3.title!)
+          : null;
+      final String? id3Artist = (id3?.artist != null && !AudioNameSanitizer.isJunkArtist(id3!.artist))
+          ? AudioNameSanitizer.cleanText(id3.artist!)
+          : null;
+      final String? id3Album = id3?.album;
+
+      final String? msTitle = mediaStore?.title;
+      final String? msArtist = (mediaStore?.artist != null && !AudioNameSanitizer.isJunkArtist(mediaStore!.artist))
+          ? mediaStore.artist
+          : null;
+      final String? msAlbum = (mediaStore?.album != null && !AudioNameSanitizer.isJunkArtist(mediaStore!.album))
+          ? mediaStore.album
+          : null;
+
+      final String fnTitle = filenameParsed.title;
+      final String fnArtist = filenameParsed.artist;
+      final String? fnAlbum = filenameParsed.album;
+
+      // ── Strategy: Cross-validate ID3 against MediaStore and filename ──
+      // If ID3 has both title and artist, check if they might be swapped
+      // by comparing against what the filename and MediaStore say.
+      if (id3Title != null && id3Artist != null) {
+        // Check if ID3 title/artist are reversed compared to other sources
+        final bool filenameContradicts = _metadataContradicts(
+          id3Title: id3Title,
+          id3Artist: id3Artist,
+          otherTitle: fnTitle,
+          otherArtist: fnArtist,
+        );
+        final bool mediaStoreContradicts = msTitle != null && msArtist != null && _metadataContradicts(
+          id3Title: id3Title,
+          id3Artist: id3Artist,
+          otherTitle: msTitle,
+          otherArtist: msArtist,
+        );
+
+        if (filenameContradicts || mediaStoreContradicts) {
+          // Two sources agree the tags are wrong. Use MediaStore if available, else filename.
+          if (msTitle != null && msArtist != null) {
+            title = msTitle;
+            artist = msArtist;
+          } else {
+            title = fnTitle;
+            artist = fnArtist;
+          }
+        } else {
+          // ID3 tags seem consistent with other sources, use them
+          title = id3Title;
+          artist = id3Artist;
+        }
+      } else if (id3Title != null && id3Artist == null) {
+        // ID3 has title but no artist
+        title = id3Title;
+        // Try to get artist from MediaStore, then filename
+        artist = msArtist ?? fnArtist;
+      } else if (id3Title == null && id3Artist != null) {
+        // ID3 has artist but no title - get title from MediaStore or filename
+        artist = id3Artist;
+        title = msTitle ?? fnTitle;
+      } else {
+        // No useful ID3 data - prefer MediaStore, fall back to filename
+        if (msTitle != null && msTitle.isNotEmpty) {
+          title = msTitle;
+          artist = msArtist ?? fnArtist;
+        } else {
+          title = fnTitle;
+          artist = fnArtist;
+        }
       }
-      if (id3?.title != null && id3!.title!.trim().isNotEmpty) {
-        title = AudioNameSanitizer.cleanText(id3.title!);
-      }
+
+      // ── Resolve album ──
+      album = id3Album ?? msAlbum ?? fnAlbum;
 
       // If ID3 title contains separators (e.g. YouTube full video title dumped into ID3 title)
       // and artist is empty or junk, parse the combined title
@@ -423,22 +503,8 @@ class LocalFilesScanner {
         }
       }
 
-      // 2. If ID3 title is missing or generic, parse from filename
-      if (title.isEmpty) {
-        final parsed = AudioNameSanitizer.parseFileName(
-          fileName,
-          folderName: parentFolder,
-          fallbackArtist: artist.isNotEmpty ? artist : null,
-          fallbackAlbum: album,
-        );
-        title = parsed.title;
-        if (artist.isEmpty || AudioNameSanitizer.isJunkArtist(artist)) {
-          artist = parsed.artist;
-        }
-        if (parsed.album != null && (album == null || album.isEmpty || album == 'Local Audio')) {
-          album = parsed.album;
-        }
-      } else if (artist.isEmpty || AudioNameSanitizer.isJunkArtist(artist)) {
+      // If artist is still missing, try to extract from filename
+      if (artist.isEmpty || AudioNameSanitizer.isJunkArtist(artist)) {
         final parsed = AudioNameSanitizer.parseFileName(
           fileName,
           folderName: parentFolder,
@@ -454,7 +520,7 @@ class LocalFilesScanner {
         }
       }
 
-      // 3. Disambiguate title and artist (fixes swapped tags and separates movie/album)
+      // ── Final disambiguation pass ──
       final disambiguated = AudioNameSanitizer.disambiguateTitleAndArtist(
         title: title,
         artist: artist,
@@ -464,7 +530,7 @@ class LocalFilesScanner {
       artist = disambiguated.artist;
       album = disambiguated.album ?? album;
 
-      // 3. Extract and cache album artwork if present
+      // ── Extract and cache album artwork if present ──
       String? artworkPath;
       if (id3?.artworkBytes != null && id3!.artworkBytes!.isNotEmpty) {
         try {
@@ -490,8 +556,8 @@ class LocalFilesScanner {
 
       final ext = p.extension(file.path).replaceAll('.', '').toLowerCase();
 
-      // Estimate / calculate duration for standard audio
-      int durationMs = id3?.durationMs ?? 0;
+      // ── Resolve duration: prefer MediaStore > ID3 > WAV estimate ──
+      int durationMs = mediaStore?.durationMs ?? id3?.durationMs ?? 0;
       if (durationMs <= 0 && ext == 'wav' && stat.size > 44) {
         durationMs = (((stat.size - 44) / 176400) * 1000).round();
       }
@@ -518,4 +584,60 @@ class LocalFilesScanner {
       return null;
     }
   }
+
+  /// Checks if one metadata source contradicts another (title/artist appear swapped).
+  /// Returns true if the ID3 title matches the other's artist AND the ID3 artist matches the other's title.
+  static bool _metadataContradicts({
+    required String id3Title,
+    required String id3Artist,
+    required String otherTitle,
+    required String otherArtist,
+  }) {
+    if (otherTitle.isEmpty || otherArtist.isEmpty ||
+        otherArtist == 'Unknown Artist') {
+      return false;
+    }
+
+    final id3TitleLower = id3Title.toLowerCase().trim();
+    final id3ArtistLower = id3Artist.toLowerCase().trim();
+    final otherTitleLower = otherTitle.toLowerCase().trim();
+    final otherArtistLower = otherArtist.toLowerCase().trim();
+
+    // Direct swap: ID3 title == other artist AND ID3 artist == other title
+    if (_fuzzyMatch(id3TitleLower, otherArtistLower) &&
+        _fuzzyMatch(id3ArtistLower, otherTitleLower)) {
+      return true;
+    }
+
+    // Partial swap: ID3 title contains the other's artist name as a significant portion
+    if (_fuzzyMatch(id3TitleLower, otherArtistLower) &&
+        !_fuzzyMatch(id3TitleLower, otherTitleLower)) {
+      // The ID3 title looks more like the other source's artist
+      // Check via artist scoring
+      final titleAsArtistScore = AudioNameSanitizer.calculateArtistScore(id3Title);
+      final artistAsArtistScore = AudioNameSanitizer.calculateArtistScore(id3Artist);
+      if (titleAsArtistScore > artistAsArtistScore && titleAsArtistScore >= 10) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Fuzzy string matching: checks if strings are similar enough to be considered the same.
+  static bool _fuzzyMatch(String a, String b) {
+    if (a == b) return true;
+    if (a.isEmpty || b.isEmpty) return false;
+
+    // Normalise: remove common separators and extra spaces
+    final normA = a.replaceAll(RegExp(r'[\s_\-\.]+'), ' ').trim();
+    final normB = b.replaceAll(RegExp(r'[\s_\-\.]+'), ' ').trim();
+    if (normA == normB) return true;
+
+    // One contains the other
+    if (normA.contains(normB) || normB.contains(normA)) return true;
+
+    return false;
+  }
 }
+

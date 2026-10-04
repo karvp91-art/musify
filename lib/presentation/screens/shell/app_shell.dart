@@ -4,7 +4,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
@@ -15,34 +14,6 @@ import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/screens/search/search_screen.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import '../home/home_screen.dart';
-
-LiquidGlassSettings _resolveTabBarGlassSettings({required bool isDark}) {
-  return isDark
-      ? const LiquidGlassSettings(
-          thickness: 30.0,
-          blur: 3.0,                  // Low blur preserves sharp background refraction
-          chromaticAberration: 0.28,  // Clean spectral prism edges
-          lightIntensity: 0.65,       // Specular rim reflection
-          ambientStrength: 1.0,
-          refractiveIndex: 1.59,      // Polycarbonate optical refraction
-          saturation: 0.85,
-          lightAngle: 0.75 * math.pi, // 135° Apple standard upper-left key light
-          glassColor: Color(0x22D2F843), // Refined luminous Neon Lime tint (~13% alpha)
-          specularSharpness: GlassSpecularSharpness.sharp,
-        )
-      : const LiquidGlassSettings(
-          thickness: 28.0,
-          blur: 3.0,
-          chromaticAberration: 0.25,
-          lightIntensity: 0.60,
-          ambientStrength: 1.0,
-          refractiveIndex: 1.55,
-          saturation: 0.90,
-          lightAngle: 0.75 * math.pi,
-          glassColor: Color(0x1CD2F842), // Sheer delicate Neon Lime tint (~11% alpha)
-          specularSharpness: GlassSpecularSharpness.medium,
-        );
-}
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -122,24 +93,27 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
           Container(
             width: dockWidth,
             height: 64.0,
+            padding: const EdgeInsets.all(5.0),
             decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xE614161C)
+                  : const Color(0xF2FFFFFF),
               borderRadius: BorderRadius.circular(32),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.12)
+                    : Colors.black.withValues(alpha: 0.08),
+                width: 1.0,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
+                  color: Colors.black.withValues(alpha: isDark ? 0.40 : 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
-            child: GlassContainer(
-              useOwnLayer: true,
-              quality: GlassQuality.premium,
-              clipBehavior: Clip.antiAlias,
-              padding: const EdgeInsets.all(5.0),
-              shape: const LiquidRoundedSuperellipse(borderRadius: 32),
-              settings: _resolveTabBarGlassSettings(isDark: isDark),
-              child: Stack(
+            child: Stack(
                 children: [
                   // Clean standard Ease-In-Out Slide Indicator
                   AnimatedAlign(
@@ -265,8 +239,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                 ],
               ),
             ),
-          ),
-          SizedBox(height: bottomInset),
+            SizedBox(height: bottomInset),
         ],
       ),
     );
@@ -362,18 +335,9 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
               );
             },
             child: RepaintBoundary(
-              child: GlassScaffold(
+              child: Scaffold(
                 resizeToAvoidBottomInset: false,
                 backgroundColor: isDark ? Colors.black : Colors.white,
-                bottomBar: isMultiSelection
-                    ? null
-                    : _buildBottomBar(
-                        context: context,
-                        activeIndex: activeIndex,
-                        hasTrack: hasTrack,
-                        isDark: isDark,
-                        theme: theme,
-                      ),
                 body: Material(
                   type: MaterialType.transparency,
                   child: Stack(
@@ -391,6 +355,22 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                         right: 0,
                         child: const DownloadDynamicIsland(),
                       ),
+
+                      // 3. Floating MiniPlayer and Navigation Dock
+                      // Floats directly above the scrollable track list
+                      if (!isMultiSelection)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: _buildBottomBar(
+                            context: context,
+                            activeIndex: activeIndex,
+                            hasTrack: hasTrack,
+                            isDark: isDark,
+                            theme: theme,
+                          ),
+                        ),
                     ],
                   ),
                 ),
