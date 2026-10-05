@@ -82,7 +82,7 @@ void main() {
     );
 
     expect(find.text('Despacito'), findsOneWidget);
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.more_vert_rounded), findsOneWidget);
     expect(find.byIcon(Icons.check_rounded), findsNothing);
 
     await tester.tap(find.text('Despacito'));
@@ -114,8 +114,8 @@ void main() {
     );
 
     expect(find.text('Despacito'), findsOneWidget);
-    // Play button is hidden in selection mode
-    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    // More options button is hidden in selection mode
+    expect(find.byIcon(Icons.more_vert_rounded), findsNothing);
     // Selected checkbox is visible
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
 
@@ -214,8 +214,8 @@ void main() {
     expect(find.textContaining('Download only (no streaming)'), findsNothing);
     expect(find.textContaining('3:33'), findsOneWidget);
 
-    // Play button IS visible
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    // More options menu IS visible
+    expect(find.byIcon(Icons.more_vert_rounded), findsOneWidget);
 
     // Download button is NOT rendered as trailing action
     expect(find.byIcon(Icons.download_rounded), findsNothing);

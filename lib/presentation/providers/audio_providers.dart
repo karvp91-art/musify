@@ -25,10 +25,13 @@ import 'package:musify/domain/models/equalizer_state.dart';
 import 'package:musify/domain/models/search_result_models.dart';
 import 'package:musify/domain/models/artist_details.dart';
 import 'package:musify/domain/models/album_details.dart';
+import 'package:path/path.dart' as p;
+import 'package:musify/domain/models/music_folder.dart';
 export 'package:musify/domain/models/equalizer_state.dart';
 export 'package:musify/domain/models/search_result_models.dart';
 export 'package:musify/domain/models/artist_details.dart';
 export 'package:musify/domain/models/album_details.dart';
+export 'package:musify/domain/models/music_folder.dart';
 export 'package:musify/services/preferences_service.dart';
 
 // Download Manager Provider
@@ -567,6 +570,37 @@ class AudioQualityNotifier extends Notifier<String> {
 final audioQualityProvider = NotifierProvider<AudioQualityNotifier, String>(
   AudioQualityNotifier.new,
 );
+
+// Music Folders Provider
+final musicFoldersProvider = Provider<List<MusicFolder>>((ref) {
+  final tracksAsync = ref.watch(localTracksProvider);
+  final tracks = tracksAsync.value ?? [];
+
+  final Map<String, List<Track>> folderMap = {};
+  for (final track in tracks) {
+    if (track.filePath != null && track.filePath!.isNotEmpty) {
+      final dir = p.dirname(track.filePath!);
+      folderMap.putIfAbsent(dir, () => []).add(track);
+    }
+  }
+
+  final folders = folderMap.entries.map((entry) {
+    final folderPath = entry.key;
+    final folderTracks = entry.value;
+    final name = p.basename(folderPath);
+    final totalSize = folderTracks.fold<int>(0, (sum, t) => sum + (t.fileSizeBytes ?? 0));
+    return MusicFolder(
+      path: folderPath,
+      name: name.isEmpty ? 'Internal Storage' : name,
+      tracks: folderTracks,
+      totalSizeBytes: totalSize,
+    );
+  }).toList();
+
+  folders.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return folders;
+});
+
 
 
 

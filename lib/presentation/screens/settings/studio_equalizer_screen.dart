@@ -5,6 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
+import 'package:musify/presentation/widgets/floating_mini_player.dart';
 
 /// Opens the Studio Equalizer full screen.
 Future<void> openStudioEqualizerScreen(BuildContext context) {
@@ -231,7 +232,10 @@ class StudioEqualizerScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
-        child: Column(
+        bottom: false,
+        child: Stack(
+          children: [
+            Column(
           children: [
             // Top App Bar
             Padding(
@@ -532,14 +536,19 @@ class StudioEqualizerScreen extends ConsumerWidget {
                   ),
 
                   // Bottom padding for mini-player
-                  const SizedBox(height: 80),
+                  const SizedBox(height: 120),
                 ],
               ),
             ),
           ],
         ),
-      ),
-    );
+
+        // Universal Floating Mini Player
+        const FloatingMiniPlayer(),
+      ],
+    ),
+  ),
+);
   }
 }
 

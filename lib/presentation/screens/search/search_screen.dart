@@ -22,7 +22,7 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen> with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
@@ -32,6 +32,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _isSearching = false;
   String _selectedFilter = 'All';
   String _selectedGenre = 'Trending';
+
+  @override
+  bool get wantKeepAlive => true;
 
   // Multi-Selection State
   bool _isSelectionMode = false;
@@ -301,12 +304,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     for (final track in selectedTracks) {
       manager.downloadTrack(track);
     }
-    showSnackBar(
-      context,
-      'Downloading ${selectedTracks.length} ${selectedTracks.length == 1 ? "track" : "tracks"}',
-      type: AppSnackBarType.success,
-    );
     _exitSelectionMode();
+  }
+
+  Future<void> _playSearchedTrack(Track track) async {
+    final repo = ref.read(audioRepositoryProvider);
+    final localTracks = await repo.getLocalTracks();
+    final queue = [
+      track,
+      ...localTracks.where((t) => t.id != track.id && (t.filePath == null || t.filePath != track.filePath)),
+    ];
+    ref.read(audioHandlerProvider).playTrackList(queue, startIndex: 0);
   }
 
   void _handleBatchAddToPlaylist(BuildContext context, List<Track> selectedTracks) {
@@ -1087,6 +1095,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final audioHandler = ref.watch(audioHandlerProvider);
 
@@ -1451,7 +1460,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ),
                   );
                 } else if (songs.isNotEmpty) {
-                  ref.read(audioHandlerProvider).playTrackList(songs, startIndex: 0);
+                  _playSearchedTrack(songs.first);
                 }
               },
               borderRadius: BorderRadius.circular(16),
@@ -1769,6 +1778,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               track: track,
               isCurrent: isCurrent,
               isPlaying: isTilePlaying,
+              enableSwipePlayNext: false,
               isSelectionMode: _isSelectionMode,
               isSelected: _selectedTrackIds.contains(track.id),
               onTap: () {
@@ -1791,7 +1801,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 if (query.isNotEmpty) {
                   ref.read(searchHistoryProvider.notifier).addQuery(query);
                 }
-                ref.read(audioHandlerProvider).playTrackList(songs, startIndex: songs.indexOf(track));
+                _playSearchedTrack(track);
               },
               onLongPress: () {
                 _enterSelectionMode(track);
@@ -2209,6 +2219,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 isCurrent: isCurrent,
                 isPlaying: isTilePlaying,
                 isYouTubeSection: _selectedFilter == 'YouTube',
+                enableSwipePlayNext: false,
                 isSelectionMode: _isSelectionMode,
                 isSelected: _selectedTrackIds.contains(track.id),
                 onTap: () {
@@ -2240,7 +2251,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   } else {
                     ref.read(searchHistoryProvider.notifier).addQuery(track.title);
                   }
-                  audioHandler.playTrackList(filteredResults, startIndex: index);
+                  _playSearchedTrack(track);
                 },
                 onLongPress: () {
                   _enterSelectionMode(track);

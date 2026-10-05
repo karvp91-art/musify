@@ -17,6 +17,34 @@ import 'package:musify/presentation/widgets/seek_bar.dart';
 import 'package:musify/presentation/widgets/track_menu_bottom_sheet.dart';
 import 'package:musify/presentation/screens/settings/studio_equalizer_screen.dart';
 
+/// Global helper to push NowPlayingScreen seamlessly from any screen
+Future<void> openNowPlayingScreen(BuildContext context) {
+  HapticFeedback.selectionClick();
+  return Navigator.of(context, rootNavigator: true).push<void>(
+    PageRouteBuilder(
+      opaque: false,
+      fullscreenDialog: true,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return NowPlayingScreen(
+          onMinimize: () => Navigator.of(context).pop(),
+        );
+      },
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(0.0, 1.0);
+        const end = Offset.zero;
+        const curve = Cubic(0.2, 0.9, 0.22, 1.0);
+        final tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+        return SlideTransition(
+          position: animation.drive(tween),
+          child: child,
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 360),
+      reverseTransitionDuration: const Duration(milliseconds: 280),
+    ),
+  );
+}
+
 class NowPlayingScreen extends ConsumerStatefulWidget {
   final VoidCallback onMinimize;
 
@@ -547,25 +575,11 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                   onTap: () {
                     HapticFeedback.selectionClick();
                     if (isDownloaded) {
-                      AppSnackBar.show(
-                        context,
-                        message: 'Track already downloaded',
-                        type: AppSnackBarType.info,
-                      );
+                      // Already downloaded
                     } else if (isDownloading) {
                       downloadManager.cancelDownload(track.id);
-                      AppSnackBar.show(
-                        context,
-                        message: 'Cancelled download for "${track.title}"',
-                        type: AppSnackBarType.info,
-                      );
                     } else {
                       downloadManager.downloadTrack(track);
-                      AppSnackBar.show(
-                        context,
-                        message: 'Downloading "${track.title}"...',
-                        type: AppSnackBarType.info,
-                      );
                     }
                   },
                   child: SizedBox(

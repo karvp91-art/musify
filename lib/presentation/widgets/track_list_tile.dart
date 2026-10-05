@@ -21,6 +21,7 @@ class TrackListTile extends ConsumerWidget {
   final bool isSelected;
   final VoidCallback? onLongPress;
   final bool isYouTubeSection;
+  final bool enableSwipePlayNext;
 
   const TrackListTile({
     super.key,
@@ -36,6 +37,7 @@ class TrackListTile extends ConsumerWidget {
     this.isSelected = false,
     this.onLongPress,
     this.isYouTubeSection = false,
+    this.enableSwipePlayNext = true,
   });
 
   String _formatDuration(int ms) {
@@ -71,10 +73,6 @@ class TrackListTile extends ConsumerWidget {
           final downloadManager = ref.read(downloadManagerProvider);
           if (!downloadManager.isDownloaded(track.id)) {
             HapticFeedback.lightImpact();
-            AppSnackBar.show(
-              context,
-              message: 'YouTube is for download only. Downloading to Music folder...',
-            );
             downloadManager.downloadTrack(track);
             return;
           }
@@ -274,10 +272,6 @@ class TrackListTile extends ConsumerWidget {
                             return GestureDetector(
                               onTap: () {
                                 downloadManager.cancelDownload(track.id);
-                                AppSnackBar.show(
-                                  context,
-                                  message: 'Cancelled download for "${track.title}"',
-                                );
                               },
                               child: Tooltip(
                                 message: 'Cancel download (${(state.progress * 100).toInt()}%)',
@@ -307,10 +301,6 @@ class TrackListTile extends ConsumerWidget {
                           return GestureDetector(
                             onTap: () {
                               HapticFeedback.lightImpact();
-                              AppSnackBar.show(
-                                context,
-                                message: 'YouTube is for download only. Downloading to Music folder...',
-                              );
                               downloadManager.downloadTrack(track);
                             },
                             child: Tooltip(
@@ -406,155 +396,94 @@ class TrackListTile extends ConsumerWidget {
       ),
     );
 
-    if (isSelectionMode) {
+    if (isSelectionMode || !enableSwipePlayNext) {
       return tileContent;
     }
 
-    final isRemovingFromPlaylist = onRemoveFromPlaylist != null;
-
-    return Dismissible(
-      key: ValueKey('swipe_${key != null ? key.toString() : track.id}'),
-      direction: DismissDirection.horizontal,
-      dismissThresholds: const {
-        DismissDirection.startToEnd: 0.26,
-        DismissDirection.endToStart: 0.26,
+    return _SwipeableTrackTile(
+      isDark: isDark,
+      trackId: track.id,
+      onPlayNext: () {
+        HapticFeedback.mediumImpact();
+        ref.read(audioHandlerProvider).insertNextInQueue(track);
+        AppSnackBar.show(
+          context,
+          message: 'Playing "${track.title}" next',
+          type: AppSnackBarType.info,
+          icon: Icons.playlist_play_rounded,
+        );
       },
-      movementDuration: const Duration(milliseconds: 200),
-      onUpdate: (details) {
-        if (details.reached && !details.previousReached) {
-          HapticFeedback.selectionClick();
-        }
-      },
-      confirmDismiss: (direction) async {
-        if (direction == DismissDirection.startToEnd) {
-          // Swipe Right: Immediately enqueues Play Next with haptic feedback
-          HapticFeedback.mediumImpact();
-          ref.read(audioHandlerProvider).insertNextInQueue(track);
-          AppSnackBar.show(
-            context,
-            message: 'Playing "${track.title}" next',
-            type: AppSnackBarType.info,
-            icon: Icons.playlist_play_rounded,
-          );
-          return false;
-        } else if (direction == DismissDirection.endToStart) {
-          // Swipe Left: Quick toggle Like / Favorite or Remove
-          HapticFeedback.mediumImpact();
-          if (isRemovingFromPlaylist) {
-            onRemoveFromPlaylist!();
-          } else {
-            final wasLiked = isLiked;
-            if (onLikeToggle != null) {
-              onLikeToggle!();
-            } else {
-              ref.read(audioRepositoryProvider).toggleLike(track);
-            }
-            ref.invalidate(likedTracksStreamProvider);
-            AppSnackBar.show(
-              context,
-              message: wasLiked
-                  ? 'Removed "${track.title}" from Liked'
-                  : 'Added "${track.title}" to Liked',
-              type: AppSnackBarType.info,
-              icon: wasLiked ? Icons.favorite_border_rounded : Icons.favorite_rounded,
-            );
-          }
-          return false;
-        }
-        return false;
-      },
-      background: _buildSwipeBackground(
-        alignment: Alignment.centerLeft,
-        iconBackgroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
-        iconColor: isDark ? const Color(0xFF111827) : Colors.white,
-        icon: Icons.playlist_play_rounded,
-        title: 'Play Next',
-        textColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
-      ),
-      secondaryBackground: isRemovingFromPlaylist
-          ? _buildSwipeBackground(
-              alignment: Alignment.centerRight,
-              iconBackgroundColor: Colors.redAccent,
-              iconColor: Colors.white,
-              icon: Icons.playlist_remove_rounded,
-              title: 'Remove',
-              textColor: Colors.redAccent,
-            )
-          : isLiked
-              ? _buildSwipeBackground(
-                  alignment: Alignment.centerRight,
-                  iconBackgroundColor: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
-                  iconColor: isDark ? const Color(0xFFFF6B81) : const Color(0xFFD32F2F),
-                  icon: Icons.favorite_border_rounded,
-                  title: 'Unlike',
-                  textColor: isDark ? const Color(0xFFFF6B81) : const Color(0xFFD32F2F),
-                )
-              : _buildSwipeBackground(
-                  alignment: Alignment.centerRight,
-                  iconBackgroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
-                  iconColor: isDark ? const Color(0xFF111827) : Colors.white,
-                  icon: Icons.favorite_rounded,
-                  title: 'Like',
-                  textColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
-                ),
       child: tileContent,
     );
   }
+}
 
-  Widget _buildSwipeBackground({
-    required Alignment alignment,
-    required Color iconBackgroundColor,
-    required Color iconColor,
-    required IconData icon,
-    required String title,
-    required Color textColor,
-  }) {
-    final isEnd = alignment == Alignment.centerRight;
-    return Container(
-      height: 76,
-      alignment: alignment,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      color: Colors.transparent,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isEnd) ...[
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: textColor,
+/// Smooth swipe-to-play-next wrapper using Flutter Dismissible configured for start-to-end swipe only.
+/// Returning false from confirmDismiss ensures the tile automatically springs back into place after queueing.
+class _SwipeableTrackTile extends StatelessWidget {
+  final Widget child;
+  final VoidCallback onPlayNext;
+  final bool isDark;
+  final String trackId;
+
+  const _SwipeableTrackTile({
+    required this.child,
+    required this.onPlayNext,
+    required this.isDark,
+    required this.trackId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dismissible(
+      key: ValueKey('swipe_play_next_$trackId'),
+      direction: DismissDirection.startToEnd,
+      movementDuration: const Duration(milliseconds: 220),
+      resizeDuration: null,
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
+          onPlayNext();
+        }
+        return false;
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1B2616) : const Color(0xFFE8F8DC),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.playlist_play_rounded,
+                size: 22,
+                color: isDark ? const Color(0xFF111827) : Colors.white,
               ),
             ),
-            const SizedBox(width: 12),
-          ],
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: iconBackgroundColor,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: iconColor,
-            ),
-          ),
-          if (!isEnd) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Text(
-              title,
+              'Play Next',
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: textColor,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                letterSpacing: -0.2,
               ),
             ),
           ],
-        ],
+        ),
       ),
+      child: child,
     );
   }
 }

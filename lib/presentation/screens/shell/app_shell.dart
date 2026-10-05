@@ -26,6 +26,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
   late final AnimationController _playerExpandController;
   late final Animation<double> _expandAnimation;
   late final Animation<Offset> _slideAnimation;
+  late final PageController _pageController;
 
   final List<Widget> _screens = const [
     HomeScreen(),
@@ -35,6 +36,9 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(
+      initialPage: ref.read(currentTabIndexProvider).clamp(0, _screens.length - 1),
+    );
     // 360ms forward duration with fluid Apple Music / Material 3 deceleration curve
     _playerExpandController = AnimationController(
       vsync: this,
@@ -54,6 +58,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
 
   @override
   void dispose() {
+    _pageController.dispose();
     _playerExpandController.dispose();
     super.dispose();
   }
@@ -68,10 +73,9 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
 
   DateTime? _lastBackPressTime;
 
-  Widget _buildBottomBar({
+  Widget _buildDock({
     required BuildContext context,
     required int activeIndex,
-    required bool hasTrack,
     required bool isDark,
     required ThemeData theme,
   }) {
@@ -81,23 +85,16 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
 
     return Material(
       type: MaterialType.transparency,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (hasTrack) ...[
-            MiniPlayer(
-              onExpand: _expandPlayer,
-            ),
-            const SizedBox(height: 10),
-          ],
-          Container(
-            width: dockWidth,
-            height: 64.0,
-            padding: const EdgeInsets.all(5.0),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? const Color(0xE614161C)
-                  : const Color(0xF2FFFFFF),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: Container(
+          width: dockWidth,
+          height: 64.0,
+          padding: const EdgeInsets.all(5.0),
+          decoration: BoxDecoration(
+            color: isDark
+                ? const Color(0xE614161C)
+                : const Color(0xF2FFFFFF),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(
                 color: isDark
@@ -239,9 +236,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                 ],
               ),
             ),
-            SizedBox(height: bottomInset),
-        ],
-      ),
+        ),
     );
   }
 
@@ -255,6 +250,18 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final isMultiSelection = ref.watch(isMultiSelectionModeProvider);
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+
+    // Smoothly animate PageView when currentTabIndex changes programmatically (e.g. via tab taps or back button)
+    ref.listen<int>(currentTabIndexProvider, (prev, next) {
+      if (_pageController.hasClients && _pageController.page?.round() != next) {
+        _pageController.animateToPage(
+          next.clamp(0, _screens.length - 1),
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeInOutCubic,
+        );
+      }
+    });
 
     // Pre-cache ambient blur image (64px) when track changes so NowPlaying opens instantly without decode delay
     ref.listen<Track?>(currentPlayingTrackProvider, (prev, next) {
@@ -342,9 +349,16 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                   type: MaterialType.transparency,
                   child: Stack(
                     children: [
-                      // 1. Main Body Screens with IndexedStack for instant state preservation
-                      IndexedStack(
-                        index: activeIndex,
+                      // 1. Main Body Screens with PageView for smooth horizontal swipe gestures
+                      PageView(
+                        controller: _pageController,
+                        physics: const ClampingScrollPhysics(),
+                        onPageChanged: (index) {
+                          if (ref.read(currentTabIndexProvider) != index) {
+                            HapticFeedback.selectionClick();
+                            ref.read(currentTabIndexProvider.notifier).setIndex(index);
+                          }
+                        },
                         children: _screens,
                       ),
 
@@ -356,19 +370,38 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                         child: const DownloadDynamicIsland(),
                       ),
 
-                      // 3. Floating MiniPlayer and Navigation Dock
-                      // Floats directly above the scrollable track list
+                      // 3. Floating Navigation Dock (Anchored at screen bottom, covered naturally when keyboard opens)
                       if (!isMultiSelection)
                         Positioned(
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          child: _buildBottomBar(
-                            context: context,
-                            activeIndex: activeIndex,
-                            hasTrack: hasTrack,
-                            isDark: isDark,
-                            theme: theme,
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: _buildDock(
+                              context: context,
+                              activeIndex: activeIndex,
+                              isDark: isDark,
+                              theme: theme,
+                            ),
+                          ),
+                        ),
+
+                      // 4. Floating MiniPlayer (Floats above dock when closed, and floats above keyboard when typing)
+                      if (!isMultiSelection && hasTrack)
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          left: 0,
+                          right: 0,
+                          bottom: keyboardHeight > 0
+                              ? keyboardHeight + 8.0
+                              : 64.0 + math.max(MediaQuery.paddingOf(context).bottom, 12.0) + 10.0,
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: MiniPlayer(
+                              onExpand: _expandPlayer,
+                            ),
                           ),
                         ),
                     ],

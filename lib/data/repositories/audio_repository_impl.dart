@@ -123,23 +123,47 @@ class AudioRepositoryImpl implements AudioRepository {
     } catch (_) {}
   }
 
+  String _normalizeFilePath(String path) {
+    var norm = p.normalize(path).replaceAll(r'\', '/');
+    if (norm.startsWith('/sdcard/')) {
+      norm = '/storage/emulated/0/${norm.substring(8)}';
+    }
+    return norm.toLowerCase();
+  }
+
   List<Track> _deduplicateTracks(List<Track> tracks) {
-    final seen = <String, Track>{};
+    final seenPaths = <String, Track>{};
+    final seenSignatures = <String, Track>{};
     final unique = <Track>[];
+
     for (final t in tracks) {
-      final key = t.filePath != null && t.filePath!.isNotEmpty
-          ? t.filePath!.toLowerCase()
-          : t.id;
-      if (!seen.containsKey(key)) {
-        seen[key] = t;
+      final normPath = t.filePath != null && t.filePath!.isNotEmpty
+          ? _normalizeFilePath(t.filePath!)
+          : '';
+      final sig = '${t.title.trim().toLowerCase()}_${(t.durationMs / 1000).round()}';
+
+      Track? existing;
+      if (normPath.isNotEmpty && seenPaths.containsKey(normPath)) {
+        existing = seenPaths[normPath];
+      } else if (sig.isNotEmpty && t.durationMs > 5000 && seenSignatures.containsKey(sig)) {
+        existing = seenSignatures[sig];
+      }
+
+      if (existing == null) {
+        if (normPath.isNotEmpty) seenPaths[normPath] = t;
+        if (sig.isNotEmpty) seenSignatures[sig] = t;
         unique.add(t);
       } else {
-        final existing = seen[key]!;
         // If an entry is already present, prefer the richer online track (e.g. YouTube/JioSaavn with artwork & artist)
+        final idx = unique.indexOf(existing);
         if (existing.source == AudioSourceType.local && t.source != AudioSourceType.local) {
-          final idx = unique.indexOf(existing);
           if (idx != -1) unique[idx] = t;
-          seen[key] = t;
+          if (normPath.isNotEmpty) seenPaths[normPath] = t;
+          if (sig.isNotEmpty) seenSignatures[sig] = t;
+        } else if (existing.artistName == 'Unknown Artist' && t.artistName != 'Unknown Artist') {
+          if (idx != -1) unique[idx] = t;
+          if (normPath.isNotEmpty) seenPaths[normPath] = t;
+          if (sig.isNotEmpty) seenSignatures[sig] = t;
         }
       }
     }

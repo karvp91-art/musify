@@ -6,6 +6,7 @@ import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/settings/studio_equalizer_screen.dart';
+import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/theme_selection_bottom_sheet.dart';
 
 /// Opens the Audio & Playback Settings screen.
@@ -87,7 +88,10 @@ class AudioSettingsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
-        child: Column(
+        bottom: false,
+        child: Stack(
+          children: [
+            Column(
           children: [
             // Top App Bar Header
             Padding(
@@ -675,14 +679,19 @@ class AudioSettingsScreen extends ConsumerWidget {
                   ),
 
                   // Bottom padding for mini player
-                  const SizedBox(height: 80),
+                  const SizedBox(height: 120),
                 ],
               ),
             ),
           ],
         ),
-      ),
-    );
+
+        // Universal Floating Mini Player
+        const FloatingMiniPlayer(),
+      ],
+    ),
+  ),
+);
   }
 }
 

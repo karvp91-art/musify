@@ -52,6 +52,15 @@ dependencies:
   shared_preferences: ^2.5.5
   awesome_notifications: ^0.12.1
   liquid_glass_widgets: 1.8.1
+  palette_generator: ^0.3.3+4
+  flutter_animate: ^4.5.2
+  metadata_god: ^1.1.0
+  audio_waveforms: ^1.1.1
+  home_widget: ^0.7.0
+  receive_sharing_intent: ^1.8.1
+  android_alarm_manager_plus: ^4.0.7
+  flutter_lyric: ^2.0.4+6
+  on_audio_query: ^2.9.0
 
 dev_dependencies:
   flutter_test:

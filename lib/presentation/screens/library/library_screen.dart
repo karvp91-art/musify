@@ -5,9 +5,10 @@ import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
-import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/widgets/create_playlist_modal.dart';
+import 'package:musify/presentation/widgets/floating_mini_player.dart';
+import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import '../playlist/playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
@@ -78,7 +79,9 @@ class LibraryScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: ListView(
+      body: Stack(
+        children: [
+          ListView(
         padding: const EdgeInsets.only(bottom: 140),
         children: [
           // Liked Songs Item with dynamic mosaic/preset
@@ -207,7 +210,12 @@ class LibraryScreen extends ConsumerWidget {
           ),
         ],
       ),
-    );
+
+      // Universal Floating Mini Player
+      const FloatingMiniPlayer(),
+    ],
+  ),
+);
   }
 }
 

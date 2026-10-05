@@ -184,10 +184,11 @@ class YouTubeSourceAdapter implements SourceAdapter {
         ytClients: [YoutubeApiClient.androidSdkless],
       );
 
-      // Prefer muxed stream (tag 18, 360p mp4) which YouTube doesn't throttle
-      StreamInfo? stream = manifest.muxed.where((s) => s.tag == 18).firstOrNull ??
+      final stream = manifest.muxed.where((s) => s.tag == 18).firstOrNull ??
           manifest.muxed.firstOrNull ??
           manifest.audioOnly.withHighestBitrate();
+
+      if (stream == null) return null;
 
       final totalBytes = stream.size.totalBytes;
       final url = stream.url.toString();

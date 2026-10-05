@@ -10,6 +10,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
+import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
@@ -343,7 +344,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     // Check Android shared external storage permission
     final hasExternalStorageTrack = selectedTracks.any((t) {
       final p = t.filePath;
-      return p != null && !p.contains('musify_downloads') && p.isNotEmpty;
+      return p != null && !p.toLowerCase().contains('musify') && p.isNotEmpty;
     });
 
     if (Platform.isAndroid && hasExternalStorageTrack) {
@@ -398,12 +399,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     for (final track in selectedTracks) {
       downloadManager.downloadTrack(track);
     }
-    AppSnackBar.show(
-      context,
-      message:
-          'Starting download for ${selectedTracks.length} ${selectedTracks.length == 1 ? "song" : "songs"}',
-      type: AppSnackBarType.info,
-    );
     _exitSelectionMode();
   }
 
@@ -1071,7 +1066,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
             : null,
         body: SafeArea(
           bottom: false,
-          child: tracksAsync.when(
+          child: Stack(
+            children: [
+              tracksAsync.when(
             loading: () => const Center(
               child: CircularProgressIndicator(color: AppColors.neonLime),
             ),
@@ -1102,7 +1099,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               if (_selectedFilter == 'Downloaded') {
                 filteredTracks = filteredTracks.where((t) {
                   final isFromApp = t.source != AudioSourceType.local ||
-                      (t.filePath != null && t.filePath!.contains('musify_downloads'));
+                      (t.filePath != null && t.filePath!.toLowerCase().contains('musify'));
                   return t.isDownloaded && isFromApp;
                 }).toList();
               }
@@ -1729,9 +1726,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               );
             },
           ),
-        ),
+
+          // Universal Floating Mini Player
+          if (!_isSelectionMode)
+            const FloatingMiniPlayer(),
+        ],
       ),
-    );
+    ),
+  ));
   }
 }
 

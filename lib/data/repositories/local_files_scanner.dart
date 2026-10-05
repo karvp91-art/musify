@@ -8,6 +8,7 @@ import 'package:musify/core/utils/audio_metadata_reader.dart';
 import 'package:musify/core/utils/audio_name_sanitizer.dart';
 import 'package:musify/core/utils/mediastore_bridge.dart';
 import 'package:musify/domain/models/track.dart';
+import '../../services/download_manager.dart';
 import '../database/app_database.dart';
 import 'sample_audio_generator.dart';
 
@@ -217,7 +218,7 @@ class LocalFilesScanner {
         if (row.source != AudioSourceType.local.name ||
             row.id.startsWith('youtube:') ||
             row.id.startsWith('saavn:')) {
-          existingOnlinePaths.add(p.normalize(row.filePath!));
+          existingOnlinePaths.add(normalizeFilePath(row.filePath!));
         }
       }
       if (row.artworkUrl != null && row.artworkUrl!.isNotEmpty) {
@@ -231,7 +232,7 @@ class LocalFilesScanner {
       try {
         final mediaStoreFiles = await MediaStoreBridge.getAllAudio();
         for (final msFile in mediaStoreFiles) {
-          final normPath = p.normalize(msFile.filePath);
+          final normPath = normalizeFilePath(msFile.filePath);
           if (visitedFilePaths.contains(normPath) || existingOnlinePaths.contains(normPath)) {
             continue;
           }
@@ -300,7 +301,13 @@ class LocalFilesScanner {
 
     // Second pass: Scan Musify download directories to re-index previously downloaded files
     // This ensures files survive app reinstalls (DB is wiped but files remain on disk)
-    for (final dlPath in _musifyDownloadPaths) {
+    final Set<String> targetDlDirs = Set.from(_musifyDownloadPaths);
+    try {
+      final defaultMusifyDir = await AudioDownloadManager.getMusifyDownloadsDirectory();
+      targetDlDirs.add(defaultMusifyDir.path);
+    } catch (_) {}
+
+    for (final dlPath in targetDlDirs) {
       final dlDir = Directory(dlPath);
       if (await dlDir.exists()) {
         await _crawlDirectorySafe(
@@ -380,15 +387,26 @@ class LocalFilesScanner {
   static const List<String> _musifyDownloadPaths = [
     '/storage/emulated/0/Music/Musify',
     '/storage/emulated/0/Download/Musify',
+    '/sdcard/Music/Musify',
+    '/sdcard/Download/Musify',
   ];
+
+  static String normalizeFilePath(String path) {
+    var norm = p.normalize(path).replaceAll(r'\', '/');
+    if (norm.startsWith('/sdcard/')) {
+      norm = '/storage/emulated/0/${norm.substring(8)}';
+    }
+    return norm.toLowerCase();
+  }
 
   /// Check if a path belongs to a Musify-managed download directory
   static bool _isMusifyDownloadPath(String path) {
-    final lower = path.toLowerCase();
+    final lower = normalizeFilePath(path);
     for (final dlPath in _musifyDownloadPaths) {
-      if (lower.startsWith(dlPath.toLowerCase())) return true;
+      if (lower.startsWith(normalizeFilePath(dlPath))) return true;
     }
-    return lower.contains('musify_downloads') || lower.contains('.musify_downloads');
+    return lower.contains('musify_downloads') ||
+        lower.contains('.musify_downloads');
   }
 
   /// Safe BFS crawler that inspects folder by folder so a single restricted folder does not halt traversal
@@ -435,7 +453,7 @@ class LocalFilesScanner {
             // During the general scan pass, skip files inside Musify download dirs
             if (!markAsDownloaded && _isMusifyDownloadPath(currentPath)) continue;
 
-            final normPath = p.normalize(entity.path);
+            final normPath = normalizeFilePath(entity.path);
             if (visitedFilePaths != null && visitedFilePaths.contains(normPath)) {
               continue;
             }
@@ -446,7 +464,9 @@ class LocalFilesScanner {
 
             onFileScanned?.call(1, currentPath);
             final ext = p.extension(entity.path).toLowerCase();
-            if (supportedExtensions.contains(ext)) {
+            final isSupported = supportedExtensions.contains(ext) ||
+                (markAsDownloaded && (ext == '.mp4' || ext == '.m4v'));
+            if (isSupported) {
               final track = await _parseFileToTrack(entity);
               if (track != null) {
                 final effectiveArtwork = (track.artworkUrl != null && track.artworkUrl!.isNotEmpty)
@@ -488,6 +508,21 @@ class LocalFilesScanner {
       final fileName = p.basenameWithoutExtension(file.path);
       final parentFolder = p.basename(file.parent.path);
       final stat = await file.stat();
+      final ext = p.extension(file.path).replaceAll('.', '').toLowerCase();
+
+      // Check if this file is in a Musify directory or was downloaded by Musify
+      final inMusifyFolder = _isMusifyDownloadPath(file.path);
+
+      // Check for YouTube pattern in filename: ..._youtube_<11 chars videoId>
+      final ytMatch = RegExp(r'^(.*)_youtube_([a-zA-Z0-9_\-]{11})$', caseSensitive: false).firstMatch(fileName);
+      // Check for Saavn pattern in filename: ..._saavn_<id>
+      final saavnMatch = RegExp(r'^(.*)_saavn_([a-zA-Z0-9_\-]+)$', caseSensitive: false).firstMatch(fileName);
+
+      String? defaultArtwork;
+      if (ytMatch != null) {
+        final ytId = ytMatch.group(2)!;
+        defaultArtwork = 'https://img.youtube.com/vi/$ytId/hqdefault.jpg';
+      }
 
       // ── Source 1: Embedded ID3 tags ──
       final id3 = await AudioMetadataReader.readMetadata(file);
@@ -648,8 +683,6 @@ class LocalFilesScanner {
 
       artworkPath ??= await AudioMetadataReader.findFolderArtwork(file);
 
-      final ext = p.extension(file.path).replaceAll('.', '').toLowerCase();
-
       // ── Resolve duration: prefer MediaStore > ID3 > WAV estimate ──
       int durationMs = mediaStore?.durationMs ?? id3?.durationMs ?? 0;
       if (durationMs <= 0 && ext == 'wav' && stat.size > 44) {
@@ -670,11 +703,11 @@ class LocalFilesScanner {
         id: 'local:${file.path}',
         title: title,
         artistName: artist,
-        albumTitle: album ?? 'Local Audio',
+        albumTitle: album ?? (inMusifyFolder ? 'Musify' : 'Local Audio'),
         source: AudioSourceType.local,
         sourceId: file.path,
         durationMs: durationMs,
-        artworkUrl: artworkPath,
+        artworkUrl: artworkPath ?? defaultArtwork,
         audioUrl: file.path,
         filePath: file.path,
         fileSizeBytes: stat.size,

@@ -697,7 +697,28 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _cancelCrossfade();
     await _activePlayer.stop();
     await _inactivePlayer.stop();
+    playbackState.add(playbackState.value.copyWith(
+      playing: false,
+      processingState: AudioProcessingState.idle,
+    ));
+    _emitState();
     await super.stop();
+  }
+
+  @override
+  Future<void> onTaskRemoved() async {
+    final isPlaying = _activePlayer.playing || (_isCrossfading && _inactivePlayer.playing);
+    // When app is swiped away from Recents while paused or stopped, kill the background service immediately
+    if (!isPlaying) {
+      await stop();
+    }
+    await super.onTaskRemoved();
+  }
+
+  @override
+  Future<void> onNotificationDeleted() async {
+    await stop();
+    await super.onNotificationDeleted();
   }
 
   @override

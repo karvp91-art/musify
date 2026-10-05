@@ -21,6 +21,7 @@ import 'package:musify/presentation/widgets/create_playlist_modal.dart';
 import 'package:musify/presentation/screens/settings/audio_settings_screen.dart';
 import 'package:musify/services/online_artwork_enricher.dart';
 import '../playlist/playlist_detail_screen.dart';
+import '../folder/folder_detail_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -29,7 +30,7 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedFilter = 'All';
@@ -38,7 +39,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isSelectionMode = false;
   final Set<String> _selectedTrackIds = {};
 
-  final List<String> _filters = const ['All', 'Audio', 'Playlists', 'Liked Songs', 'Downloaded'];
+  final List<String> _filters = const ['All', 'Audio', 'Folders', 'Playlists', 'Liked Songs', 'Downloaded'];
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -179,7 +183,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Check Android shared external storage permission
     final hasExternalStorageTrack = selectedTracks.any((t) {
       final p = t.filePath;
-      return p != null && !p.contains('musify_downloads') && p.isNotEmpty;
+      return p != null && !p.toLowerCase().contains('musify') && p.isNotEmpty;
     });
 
     if (Platform.isAndroid && hasExternalStorageTrack) {
@@ -616,12 +620,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     for (final track in selectedTracks) {
       downloadManager.downloadTrack(track);
     }
-    AppSnackBar.show(
-      context,
-      message:
-          'Starting download for ${selectedTracks.length} ${selectedTracks.length == 1 ? "song" : "songs"}',
-      type: AppSnackBarType.info,
-    );
     _exitSelectionMode();
   }
 
@@ -966,7 +964,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final audioHandler = ref.watch(audioHandlerProvider);
     final downloadedTracks = allLocalTracks.where((t) {
       final isFromApp = t.source != AudioSourceType.local ||
-          (t.filePath != null && t.filePath!.contains('musify_downloads'));
+          (t.filePath != null && t.filePath!.toLowerCase().contains('musify'));
       return t.isDownloaded && isFromApp;
     }).toList();
 
@@ -1076,8 +1074,221 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildFoldersView(ThemeData theme) {
+    final folders = ref.watch(musicFoldersProvider);
+    final isDark = theme.brightness == Brightness.dark;
+    final audioHandler = ref.watch(audioHandlerProvider);
+
+    final query = _searchQuery.trim().toLowerCase();
+    final displayedFolders = query.isEmpty
+        ? folders
+        : folders.where((f) {
+            return f.name.toLowerCase().contains(query) ||
+                f.path.toLowerCase().contains(query);
+          }).toList();
+
+    if (displayedFolders.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.folder_off_rounded,
+                  size: 52,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  _searchQuery.isNotEmpty
+                      ? 'No folders matching "$_searchQuery"'
+                      : 'No audio folders found',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Scan your device storage to detect audio folders automatically.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SliverList(
+      delegate: SliverChildListDelegate([
+        // Shuffle playback header matching reference design
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                final allTracks = displayedFolders.expand((f) => f.tracks).toList();
+                if (allTracks.isNotEmpty) {
+                  final shuffled = List<Track>.from(allTracks)..shuffle();
+                  audioHandler.playTrackList(shuffled, startIndex: 0);
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1B2616) : const Color(0xFFE8F8DC),
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.shuffle_rounded,
+                        color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Shuffle playback',
+                            style: AppTypography.headlineSmall.copyWith(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          Text(
+                            '${displayedFolders.length} ${displayedFolders.length == 1 ? "folder" : "folders"} • ${displayedFolders.fold<int>(0, (sum, f) => sum + f.trackCount)} songs',
+                            style: AppTypography.caption.copyWith(
+                              color: isDark ? Colors.white54 : const Color(0xFF8E92A0),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // List of Folder items (Borderless direct on canvas matching AudioSettingsScreen)
+        ...displayedFolders.map((folder) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => FolderDetailScreen(folder: folder),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+                  child: Row(
+                    children: [
+                      // Folder Icon container matching AudioSettingsScreen / AppColors
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.folder_rounded,
+                          color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              folder.name,
+                              style: AppTypography.headlineSmall.copyWith(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w700,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${folder.trackCount} ${folder.trackCount == 1 ? "song" : "songs"} • ${folder.path}',
+                              style: AppTypography.caption.copyWith(
+                                fontSize: 12,
+                                color: isDark ? Colors.white54 : const Color(0xFF8E92A0),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (folder.formattedSize.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1B2616) : const Color(0xFFE8F8DC),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            folder.formattedSize,
+                            style: AppTypography.caption.copyWith(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 20,
+                        color: isDark ? Colors.white30 : const Color(0xFFB0B4C0),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final sortedTracksAsync = ref.watch(sortedLocalTracksProvider);
@@ -1096,7 +1307,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else if (_selectedFilter == 'Downloaded') {
       baseFilterTracks = localTracks.where((t) {
         final isFromApp = t.source != AudioSourceType.local ||
-            (t.filePath != null && t.filePath!.contains('musify_downloads'));
+            (t.filePath != null && t.filePath!.toLowerCase().contains('musify'));
         return t.isDownloaded && isFromApp;
       }).toList();
     } else if (_selectedFilter == 'Liked Songs') {
@@ -1167,6 +1378,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           // View Switcher based on Selected Filter
                           if (_selectedFilter == 'Playlists')
                             _buildPlaylistsView(theme)
+                          else if (_selectedFilter == 'Folders')
+                            _buildFoldersView(theme)
                           else if (_selectedFilter == 'Liked Songs')
                             _buildLikedSongsView(theme, currentPlayingTrackId, isPlaybackPlaying)
                           else if (_selectedFilter == 'Downloaded')
