@@ -186,7 +186,7 @@ class YouTubeSourceAdapter implements SourceAdapter {
 
       final stream = manifest.muxed.where((s) => s.tag == 18).firstOrNull ??
           manifest.muxed.firstOrNull ??
-          manifest.audioOnly.sortByBitrate().lastOrNull;
+          manifest.audioOnly.withHighestBitrate();
 
       if (stream == null) return null;
 

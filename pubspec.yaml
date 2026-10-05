@@ -53,6 +53,7 @@ dependencies:
   awesome_notifications: ^0.12.1
   liquid_glass_widgets: 1.8.1
   palette_generator: ^0.3.3+7
+  receive_sharing_intent: 1.8.1
 
 
 dev_dependencies:

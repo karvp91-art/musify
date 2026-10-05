@@ -11,6 +11,7 @@ import 'presentation/providers/audio_providers.dart';
 import 'presentation/screens/shell/app_shell.dart';
 import 'services/audio_player_handler.dart';
 import 'services/home_widget_service.dart';
+import 'services/intent_handler_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +44,9 @@ Future<void> main() async {
 
   // Initialize Home Screen Widget synchronization
   HomeWidgetService.initialize(audioHandler);
+
+  // Initialize "Open With" audio files and shared link handling
+  IntentHandlerService.initialize(audioHandler);
 
   runApp(
     ProviderScope(
