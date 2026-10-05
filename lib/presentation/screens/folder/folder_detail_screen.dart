@@ -1,11 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
-import 'package:musify/core/utils/app_snack_bar.dart';
-import 'package:musify/domain/models/music_folder.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';

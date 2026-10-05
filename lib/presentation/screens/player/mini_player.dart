@@ -2,11 +2,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
+import 'package:musify/services/audio_player_handler.dart';
+
+/// Minimal, compact, animation-rich floating MiniPlayer capsule with
+/// an enlarged protruding vinyl disc and refined high-contrast buttons.
 class MiniPlayer extends ConsumerStatefulWidget {
   final VoidCallback onExpand;
   final Track? fallbackTrack;
@@ -27,26 +30,52 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     with TickerProviderStateMixin {
   late final AnimationController _vinylController;
   late final AnimationController _equalizerController;
+  late final AnimationController _playPressScaleController;
+  late final AnimationController _skipPressScaleController;
+
+  MiniPlayerPalette? _cachedPalette;
 
   @override
   void initState() {
     super.initState();
-    // 14 seconds per clockwise revolution for smooth vinyl record rotation
+    // Smooth 14-second rotation per revolution for physical turntable vinyl
     _vinylController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 14),
     );
 
-    // 1.0 second loop for rhythmic equalizer dancing
+    // 1.0-second repeating loop for sinusoidal dancing equalizer
     _equalizerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
+    );
+
+    // Micro-scale spring bounce controller on Play button press
+    _playPressScaleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+      lowerBound: 0.88,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+
+    // Micro-scale spring bounce controller on Skip button press
+    _skipPressScaleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+      lowerBound: 0.88,
+      upperBound: 1.0,
+      value: 1.0,
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final isPlaying = ref.read(isPlaybackPlayingProvider);
         _syncAnimations(isPlaying);
+        final current = ref.read(currentPlayingTrackProvider) ?? widget.fallbackTrack;
+        if (current?.artworkUrl != null) {
+          TrackArtwork.precacheArtwork(context, current!.artworkUrl);
+        }
       }
     });
   }
@@ -55,6 +84,8 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
   void dispose() {
     _vinylController.dispose();
     _equalizerController.dispose();
+    _playPressScaleController.dispose();
+    _skipPressScaleController.dispose();
     super.dispose();
   }
 
@@ -86,14 +117,36 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
 
     if (track == null) return const SizedBox.shrink();
 
-    const titleColor = Colors.black;
-    final artistColor = Colors.black.withValues(alpha: 0.85);
-    const accentColor = Colors.black;
-
-    // Reactively sync animation state with playback state
+    // Listen to playback state changes to sync vinyl & equalizer animations
     ref.listen<bool>(isPlaybackPlayingProvider, (_, playing) {
       _syncAnimations(playing);
     });
+
+    // Pre-cache high-res player artwork (480px) for instant NowPlaying expansion
+    ref.listen<Track?>(currentPlayingTrackProvider, (prev, next) {
+      if (next?.artworkUrl != null && next!.artworkUrl!.trim().isNotEmpty) {
+        TrackArtwork.precacheArtwork(context, next.artworkUrl);
+      }
+    });
+
+    // Dynamic Artwork Palette extraction via Riverpod & PaletteService
+    final paletteAsync = ref.watch(
+      trackPaletteProvider((track: track, isDark: isDark)),
+    );
+
+    final palette = paletteAsync.value ??
+        PaletteService.instance.getCachedPalette(track, isDark: isDark) ??
+        _cachedPalette ??
+        MiniPlayerPalette.fallback(
+          isDark: isDark,
+          seed: track.id.isNotEmpty ? track.id : track.title,
+        );
+
+    _cachedPalette = palette;
+
+    const double containerHeight = 48.0;
+    const double vinylSize = 58.0;
+    const double totalHeight = 60.0;
 
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.15,
@@ -102,14 +155,16 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
         direction: DismissDirection.horizontal,
         confirmDismiss: (direction) async {
           if (direction == DismissDirection.endToStart) {
+            // Swipe Left to Skip
             HapticFeedback.lightImpact();
             await audioHandler.skipToNext();
           } else if (direction == DismissDirection.startToEnd) {
+            // Swipe Right to Like
             HapticFeedback.mediumImpact();
             final repo = ref.read(audioRepositoryProvider);
             await repo.toggleLike(track);
           }
-          return false;
+          return false; // Always bounce back
         },
         child: GestureDetector(
           onTap: () {
@@ -117,7 +172,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
             widget.onExpand();
           },
           onVerticalDragEnd: (details) {
-            // Swiping UP on mini player expands smoothly into full player (Spotify/Apple Music style)
+            // Upward flick gesture expands smoothly to NowPlayingScreen
             if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
               HapticFeedback.selectionClick();
               widget.onExpand();
@@ -125,178 +180,259 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
           },
           child: Material(
             type: MaterialType.transparency,
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 78),
-              margin: const EdgeInsets.symmetric(horizontal: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.neonLime,
-                borderRadius: BorderRadius.circular(32),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.neonLime.withValues(alpha: isDark ? 0.35 : 0.45),
-                    blurRadius: 16,
-                    spreadRadius: 1,
-                    offset: const Offset(0, 4),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.12),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // 1. Spinning Circular Vinyl Artwork matching NowPlaying turntable
-                    _buildVinylArtwork(track, isDark),
-
-                    const SizedBox(width: 12),
-
-                    // 2. Track Title, Equalizer + Artist, Progress Bar & Timestamps
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Title
-                          _TrainMarqueeText(
-                            text: track.title,
-                            style: AppTypography.bodySmall.copyWith(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13.5,
-                              height: 1.15,
-                              letterSpacing: -0.3,
-                              color: titleColor,
-                              decoration: TextDecoration.none,
-                            ),
-                            isPlaying: isPlaying,
+            child: SizedBox(
+              height: totalHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.centerLeft,
+                children: [
+                  // 1. Main Capsule Body Container (Height 48px, rounded pill)
+                  Positioned(
+                    left: 14.0,
+                    right: 14.0,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeInOutCubic,
+                      height: containerHeight,
+                      padding: const EdgeInsets.only(left: 56.0, right: 14.0),
+                      decoration: BoxDecoration(
+                        color: palette.backgroundColor,
+                        borderRadius: BorderRadius.circular(24.0),
+                        boxShadow: [
+                          BoxShadow(
+                            color: palette.shadowColor,
+                            blurRadius: 16,
+                            spreadRadius: 0,
+                            offset: const Offset(0, 5),
                           ),
-                          const SizedBox(height: 2),
-
-                          // Live 3-Bar Equalizer + Artist Name
-                          Row(
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(right: 5),
-                                child: _MiniEqualizerBars(
-                                  animation: _equalizerController,
-                                  isPlaying: isPlaying,
-                                  color: accentColor,
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  track.artistName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTypography.caption.copyWith(
-                                    fontSize: 11.5,
-                                    height: 1.15,
-                                    fontWeight: FontWeight.w600,
-                                    color: artistColor,
-                                    letterSpacing: -0.1,
-                                    decoration: TextDecoration.none,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2.5),
-
-                          // Progress bar & Elapsed/Duration timestamps
-                          _MiniPlayerProgressSection(
-                            accentColor: accentColor,
-                            textColor: artistColor,
-                            inactiveColor: Colors.black.withValues(alpha: 0.18),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: isDark ? 0.30 : 0.10),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
                           ),
                         ],
                       ),
-                    ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Track Title & Artist Subtitle with Live Marquee & Equalizer
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Marquee Title Text
+                                _TrainMarqueeText(
+                                  text: track.title,
+                                  style: AppTypography.bodySmall.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13.5,
+                                    height: 1.15,
+                                    letterSpacing: -0.2,
+                                    color: palette.titleColor,
+                                    decoration: TextDecoration.none,
+                                  ),
+                                  isPlaying: isPlaying,
+                                ),
+                                const SizedBox(height: 1.5),
 
-                    const SizedBox(width: 10),
-
-                    // 3. Play / Pause Button (42x42 vibrant neon circle with black icon)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        if (isPlaying) {
-                          audioHandler.pause();
-                        } else {
-                          audioHandler.play();
-                        }
-                      },
-                      child: Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.25),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+                                // 3-Bar Sinusoidal Dancing Equalizer + Artist Name
+                                Row(
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 5),
+                                      child: _MiniEqualizerBars(
+                                        animation: _equalizerController,
+                                        isPlaying: isPlaying,
+                                        color: palette.titleColor.withValues(alpha: 0.90),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        track.artistName.toUpperCase(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTypography.caption.copyWith(
+                                          fontSize: 10.5,
+                                          height: 1.15,
+                                          fontWeight: FontWeight.w600,
+                                          color: palette.artistColor,
+                                          letterSpacing: 0.3,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                          size: 24,
-                          color: Colors.white,
-                        ),
+                          ),
+
+                          const SizedBox(width: 10),
+
+                          // 2. Circular Outlined Play / Pause Button
+                          _buildPlayPauseButton(isPlaying, audioHandler, palette),
+
+                          const SizedBox(width: 8),
+
+                          // 3. Compact Skip Next Action Button
+                          _buildSkipButton(audioHandler, palette),
+                        ],
                       ),
                     ),
+                  ),
 
-                    const SizedBox(width: 8),
+                  // 2. Enlarged Protruding Spinning Vinyl Record (Overlapping the capsule)
+                  Positioned(
+                    left: 8.0,
+                    top: (totalHeight - vinylSize) / 2,
+                    child: _buildVinylArtwork(track, isDark, palette, size: vinylSize),
+                  ),
 
-                    // 4. Skip Next Button (38x38 tinted translucent circle with icon)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        audioHandler.skipToNext();
-                      },
-                      child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black.withValues(alpha: 0.10),
-                        ),
-                        child: const Icon(
-                          Icons.skip_next_rounded,
-                          size: 20,
-                          color: Colors.black,
-                        ),
-                      ),
+                  // 3. Ultra-Thin Micro Progress Indicator at bottom of capsule
+                  Positioned(
+                    left: 70.0,
+                    right: 36.0,
+                    bottom: (totalHeight - containerHeight) / 2 + 0.5,
+                    child: _MiniPlayerMicroProgress(
+                      activeColor: palette.progressBarColor,
+                      inactiveColor: palette.progressInactiveColor,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildVinylArtwork(Track track, bool isDark) {
-    final themePrimary = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
-    const double size = 48.0;
+  /// Circular outlined Play/Pause hero button matching the reference UI
+  Widget _buildPlayPauseButton(
+    bool isPlaying,
+    MusifyAudioHandler audioHandler,
+    MiniPlayerPalette palette,
+  ) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _playPressScaleController.reverse(),
+      onTapUp: (_) => _playPressScaleController.forward(),
+      onTapCancel: () => _playPressScaleController.forward(),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        if (isPlaying) {
+          audioHandler.pause();
+        } else {
+          audioHandler.play();
+        }
+      },
+      child: AnimatedBuilder(
+        animation: _playPressScaleController,
+        builder: (context, child) => Transform.scale(
+          scale: _playPressScaleController.value,
+          child: child,
+        ),
+        child: Container(
+          width: 35,
+          height: 35,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: palette.buttonFill,
+            border: Border.all(
+              color: palette.buttonOutline,
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (child, animation) => ScaleTransition(
+                scale: animation,
+                child: child,
+              ),
+              child: Icon(
+                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                key: ValueKey(isPlaying),
+                size: 21,
+                color: palette.iconColor,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Compact Skip Next icon button with interactive spring tap feedback
+  Widget _buildSkipButton(
+    MusifyAudioHandler audioHandler,
+    MiniPlayerPalette palette,
+  ) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _skipPressScaleController.reverse(),
+      onTapUp: (_) => _skipPressScaleController.forward(),
+      onTapCancel: () => _skipPressScaleController.forward(),
+      onTap: () {
+        HapticFeedback.lightImpact();
+        audioHandler.skipToNext();
+      },
+      child: AnimatedBuilder(
+        animation: _skipPressScaleController,
+        builder: (context, child) => Transform.scale(
+          scale: _skipPressScaleController.value,
+          child: child,
+        ),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.transparent,
+          ),
+          child: Center(
+            child: Icon(
+              Icons.skip_next_rounded,
+              size: 23,
+              color: palette.iconColor.withValues(alpha: 0.95),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Spinning turntable vinyl record with authentic grooves and center artwork
+  Widget _buildVinylArtwork(
+    Track track,
+    bool isDark,
+    MiniPlayerPalette palette, {
+    required double size,
+  }) {
+    // Increased proportion from 0.62 to 0.78 to significantly reduce the dark outer vinyl ring thickness
+    final artworkSize = size * 0.78;
 
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
+        color: const Color(0xFF14161C), // Deep physical vinyl record base
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.20),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.30),
+            blurRadius: 10,
+            spreadRadius: 1,
+            offset: const Offset(1, 3),
           ),
         ],
       ),
@@ -306,58 +442,56 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // 1. Base Album Artwork / Theme-harmonized seeded gradient with olive record label icon
-              TrackArtwork(
-                artworkUrl: track.artworkUrl,
-                seedKey: track.id.isNotEmpty ? track.id : track.title,
-                size: size,
-                isCircle: true,
-                ambientGlow: false,
-                fallbackIcon: Icons.music_note_rounded,
-              ),
-
-              // 2. Outer vinyl groove rim
-              Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.15),
-                    width: 1.0,
+              // 1. Concentric Micro Vinyl Grooves on outer vinyl ring
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _MiniVinylGroovesPainter(
+                    artworkRadius: artworkSize / 2,
                   ),
                 ),
               ),
 
-              // 3. Inner vinyl groove ring (70% proportion)
+              // 2. Base Album Artwork in center circle
+              ClipOval(
+                child: TrackArtwork(
+                  artworkUrl: track.artworkUrl,
+                  seedKey: track.id.isNotEmpty ? track.id : track.title,
+                  size: artworkSize,
+                  isCircle: true,
+                  ambientGlow: false,
+                  fallbackIcon: Icons.music_note_rounded,
+                ),
+              ),
+
+              // 3. Inner Vinyl Groove Ring dividing record and label (refined thin hairline)
               Container(
-                width: size * 0.70,
-                height: size * 0.70,
+                width: artworkSize,
+                height: artworkSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.black.withValues(alpha: isDark ? 0.22 : 0.08),
-                    width: 0.8,
+                    color: Colors.black.withValues(alpha: 0.25),
+                    width: 0.35,
                   ),
                 ),
               ),
 
-              // 4. Center spindle hole punch (16% proportion with inner 4.5% hole)
+              // 4. Center Spindle Hole Punch (refined proportion with thinner dark ring)
               Container(
-                width: size * 0.16,
-                height: size * 0.16,
+                width: size * 0.12,
+                height: size * 0.12,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.black,
                   border: Border.all(
                     color: const Color(0xFFD4AF37),
-                    width: 1.2,
+                    width: 0.45,
                   ),
                 ),
                 child: Center(
                   child: Container(
-                    width: size * 0.045,
-                    height: size * 0.045,
+                    width: size * 0.035,
+                    height: size * 0.035,
                     decoration: const BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.black,
@@ -366,30 +500,28 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 ),
               ),
 
-              // 5. Orbiting spinning indicator dot marker for non-image songs
-              if (track.artworkUrl == null || track.artworkUrl!.trim().isEmpty)
-                Align(
-                  alignment: const Alignment(0.55, -0.55),
-                  child: Container(
-                    width: 4.5,
-                    height: 4.5,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: themePrimary,
-                      border: Border.all(
-                        color: isDark ? Colors.black : Colors.white,
-                        width: 0.8,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: themePrimary.withValues(alpha: 0.5),
-                          blurRadius: 2.5,
-                          spreadRadius: 0.5,
+              // 5. Diagonal Subtle Vinyl Holographic Specular Sheen
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ClipOval(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: const Alignment(-1.0, -1.0),
+                          end: const Alignment(1.0, 1.0),
+                          stops: const [0.0, 0.45, 0.55, 1.0],
+                          colors: [
+                            Colors.white.withValues(alpha: 0.12),
+                            Colors.white.withValues(alpha: 0.0),
+                            Colors.white.withValues(alpha: 0.0),
+                            Colors.black.withValues(alpha: 0.18),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
+              ),
             ],
           ),
         ),
@@ -398,7 +530,76 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
   }
 }
 
-/// Renders 3 dancing equalizer bars indicating active music playback.
+/// Custom painter for fine turntable vinyl micro-groove rings
+class _MiniVinylGroovesPainter extends CustomPainter {
+  final double? artworkRadius;
+
+  _MiniVinylGroovesPainter({this.artworkRadius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = size.width / 2 - 1.2;
+    final effectiveArtRadius = artworkRadius ?? (size.width * 0.39);
+    final minRadius = effectiveArtRadius + 0.6;
+
+    if (maxRadius <= minRadius) return;
+
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.07)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.25;
+
+    const steps = 2;
+    final step = (maxRadius - minRadius) / (steps + 1);
+    for (int i = 1; i <= steps; i++) {
+      canvas.drawCircle(center, minRadius + i * step, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniVinylGroovesPainter oldDelegate) =>
+      oldDelegate.artworkRadius != artworkRadius;
+}
+
+/// Ultra-thin 1.5px micro-progress bar rendered at the bottom of the capsule
+class _MiniPlayerMicroProgress extends ConsumerWidget {
+  final Color activeColor;
+  final Color inactiveColor;
+
+  const _MiniPlayerMicroProgress({
+    required this.activeColor,
+    required this.inactiveColor,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final playerState = ref.watch(playerStateStreamProvider).value;
+    final position = playerState?.position ?? Duration.zero;
+    final duration = playerState?.duration ?? Duration.zero;
+
+    final double progress = duration.inMilliseconds > 0
+        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(1),
+      child: Container(
+        height: 1.5,
+        color: inactiveColor,
+        child: FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: progress,
+          child: Container(
+            color: activeColor,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 3 dancing equalizer bars indicating active music playback
 class _MiniEqualizerBars extends StatelessWidget {
   final Animation<double> animation;
   final bool isPlaying;
@@ -417,11 +618,11 @@ class _MiniEqualizerBars extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _buildBar(4.0),
-          const SizedBox(width: 2.0),
-          _buildBar(4.0),
-          const SizedBox(width: 2.0),
-          _buildBar(4.0),
+          _buildBar(3.5),
+          const SizedBox(width: 1.5),
+          _buildBar(3.5),
+          const SizedBox(width: 1.5),
+          _buildBar(3.5),
         ],
       );
     }
@@ -430,18 +631,18 @@ class _MiniEqualizerBars extends StatelessWidget {
       animation: animation,
       builder: (context, _) {
         final t = animation.value;
-        final h1 = 3.5 + 7.5 * ((math.sin(t * 2 * math.pi) + 1) / 2);
-        final h2 = 4.0 + 8.5 * ((math.sin((t + 0.35) * 2 * math.pi) + 1) / 2);
-        final h3 = 3.0 + 6.5 * ((math.sin((t + 0.70) * 2 * math.pi) + 1) / 2);
+        final h1 = 3.0 + 6.0 * ((math.sin(t * 2 * math.pi) + 1) / 2);
+        final h2 = 3.5 + 7.5 * ((math.sin((t + 0.35) * 2 * math.pi) + 1) / 2);
+        final h3 = 2.5 + 5.5 * ((math.sin((t + 0.70) * 2 * math.pi) + 1) / 2);
 
         return Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             _buildBar(h1),
-            const SizedBox(width: 2.0),
+            const SizedBox(width: 1.5),
             _buildBar(h2),
-            const SizedBox(width: 2.0),
+            const SizedBox(width: 1.5),
             _buildBar(h3),
           ],
         );
@@ -451,118 +652,17 @@ class _MiniEqualizerBars extends StatelessWidget {
 
   Widget _buildBar(double height) {
     return Container(
-      width: 2.2,
+      width: 1.8,
       height: height,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(1.5),
+        borderRadius: BorderRadius.circular(1.0),
       ),
     );
   }
 }
 
-/// Isolated widget that selectively rebuilds the progress line and timestamps
-/// on playback position updates without triggering rebuilds of the entire MiniPlayer.
-class _MiniPlayerProgressSection extends ConsumerWidget {
-  final Color accentColor;
-  final Color textColor;
-  final Color inactiveColor;
-
-  const _MiniPlayerProgressSection({
-    required this.accentColor,
-    required this.textColor,
-    required this.inactiveColor,
-  });
-
-  String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes.remainder(60).toString();
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final playerState = ref.watch(playerStateStreamProvider).value;
-    final position = playerState?.position ?? Duration.zero;
-    final duration = playerState?.duration ?? Duration.zero;
-
-    final double progress = duration.inMilliseconds > 0
-        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-        : 0.0;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Horizontal progress line
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final barWidth = constraints.maxWidth;
-            return Stack(
-              children: [
-                // Inactive Track
-                Container(
-                  height: 2.5,
-                  width: barWidth,
-                  decoration: BoxDecoration(
-                    color: inactiveColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                // Active Track
-                Container(
-                  height: 2.5,
-                  width: (barWidth * progress).clamp(0.0, barWidth),
-                  decoration: BoxDecoration(
-                    color: accentColor,
-                    borderRadius: BorderRadius.circular(2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accentColor.withValues(alpha: 0.35),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 2),
-        // Timestamps
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              _formatDuration(position),
-              style: AppTypography.caption.copyWith(
-                fontSize: 9.5,
-                height: 1.1,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-                letterSpacing: -0.1,
-                decoration: TextDecoration.none,
-              ),
-            ),
-            Text(
-              _formatDuration(duration),
-              style: AppTypography.caption.copyWith(
-                fontSize: 9.5,
-                height: 1.1,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-                letterSpacing: -0.1,
-                decoration: TextDecoration.none,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// Seamless continuous train marquee text animation that moves right-to-left.
+/// Seamless continuous train marquee text animation for overflowing song titles
 class _TrainMarqueeText extends StatefulWidget {
   final String text;
   final TextStyle style;

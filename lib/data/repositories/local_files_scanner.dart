@@ -522,6 +522,8 @@ class LocalFilesScanner {
       if (ytMatch != null) {
         final ytId = ytMatch.group(2)!;
         defaultArtwork = 'https://img.youtube.com/vi/$ytId/hqdefault.jpg';
+      } else if (saavnMatch != null) {
+        defaultArtwork = null; // Enricher will fetch official 500x500 Saavn artwork
       }
 
       // ── Source 1: Embedded ID3 tags ──

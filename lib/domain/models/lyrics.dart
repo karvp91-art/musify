@@ -31,14 +31,25 @@ class Lyrics {
   bool get isEmpty => plainLyrics.trim().isEmpty && lines.isEmpty;
   bool get isNotEmpty => !isEmpty;
 
-  /// Finds the index of the line that corresponds to [position]
+  /// Finds the index of the line that corresponds to [position] using O(log n) binary search
   int findCurrentLineIndex(Duration position) {
     if (!isSynced || lines.isEmpty) return -1;
-    for (int i = lines.length - 1; i >= 0; i--) {
-      if (position >= lines[i].timestamp) {
-        return i;
+    if (position < lines.first.timestamp) return 0;
+    if (position >= lines.last.timestamp) return lines.length - 1;
+
+    int low = 0;
+    int high = lines.length - 1;
+    int result = 0;
+
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (lines[mid].timestamp <= position) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
       }
     }
-    return 0;
+    return result;
   }
 }

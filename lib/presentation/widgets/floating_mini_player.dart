@@ -22,8 +22,8 @@ class FloatingMiniPlayer extends ConsumerWidget {
 
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final defaultBottom = keyboardHeight > 0
-        ? keyboardHeight + 10.0
-        : (bottomOffset ?? math.max(MediaQuery.paddingOf(context).bottom + 8.0, 14.0));
+        ? keyboardHeight + 8.0
+        : (bottomOffset ?? math.max(MediaQuery.paddingOf(context).bottom + 6.0, 10.0));
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 180),

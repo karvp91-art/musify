@@ -27,12 +27,14 @@ import 'package:musify/domain/models/artist_details.dart';
 import 'package:musify/domain/models/album_details.dart';
 import 'package:path/path.dart' as p;
 import 'package:musify/domain/models/music_folder.dart';
+import 'package:musify/services/palette_service.dart';
 export 'package:musify/domain/models/equalizer_state.dart';
 export 'package:musify/domain/models/search_result_models.dart';
 export 'package:musify/domain/models/artist_details.dart';
 export 'package:musify/domain/models/album_details.dart';
 export 'package:musify/domain/models/music_folder.dart';
 export 'package:musify/services/preferences_service.dart';
+export 'package:musify/services/palette_service.dart';
 
 // Download Manager Provider
 final downloadManagerProvider = Provider<AudioDownloadManager>((ref) {
@@ -588,7 +590,7 @@ final musicFoldersProvider = Provider<List<MusicFolder>>((ref) {
     final folderPath = entry.key;
     final folderTracks = entry.value;
     final name = p.basename(folderPath);
-    final totalSize = folderTracks.fold<int>(0, (sum, t) => sum + (t.fileSizeBytes ?? 0));
+    final totalSize = folderTracks.fold<int>(0, (sum, t) => sum + t.fileSizeBytes);
     return MusicFolder(
       path: folderPath,
       name: name.isEmpty ? 'Internal Storage' : name,
@@ -600,6 +602,17 @@ final musicFoldersProvider = Provider<List<MusicFolder>>((ref) {
   folders.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return folders;
 });
+
+// Palette Provider for Dynamic Artwork Coloring
+final paletteServiceProvider = Provider<PaletteService>((ref) {
+  return PaletteService.instance;
+});
+
+final trackPaletteProvider = FutureProvider.family<MiniPlayerPalette, ({Track track, bool isDark})>((ref, args) async {
+  final service = ref.watch(paletteServiceProvider);
+  return service.getPaletteForTrack(args.track, isDark: args.isDark);
+});
+
 
 
 

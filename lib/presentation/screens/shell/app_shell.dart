@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'dart:math' as math;
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +11,7 @@ import 'package:musify/presentation/screens/player/mini_player.dart';
 import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/screens/search/search_screen.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
+import 'package:musify/presentation/widgets/track_artwork.dart';
 import '../home/home_screen.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -39,11 +38,11 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     _pageController = PageController(
       initialPage: ref.read(currentTabIndexProvider).clamp(0, _screens.length - 1),
     );
-    // 360ms forward duration with fluid Apple Music / Material 3 deceleration curve
+    // 320ms forward duration with fluid Apple Music / Material 3 deceleration curve
     _playerExpandController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 360),
-      reverseDuration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 320),
+      reverseDuration: const Duration(milliseconds: 260),
     );
     _expandAnimation = CurvedAnimation(
       parent: _playerExpandController,
@@ -54,6 +53,15 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
       begin: const Offset(0.0, 1.0),
       end: Offset.zero,
     ).animate(_expandAnimation);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final current = ref.read(currentPlayingTrackProvider);
+        if (current?.artworkUrl != null) {
+          TrackArtwork.precacheArtwork(context, current!.artworkUrl);
+        }
+      }
+    });
   }
 
   @override
@@ -80,7 +88,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     required ThemeData theme,
   }) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final bottomInset = math.max(MediaQuery.paddingOf(context).bottom, 12.0);
+    final bottomInset = math.max(MediaQuery.paddingOf(context).bottom, 10.0);
     final dockWidth = math.min(screenWidth - 32, 335.0);
 
     return Material(
@@ -263,23 +271,10 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
       }
     });
 
-    // Pre-cache ambient blur image (64px) when track changes so NowPlaying opens instantly without decode delay
+    // Pre-cache high-res player artwork (480px) when track changes so NowPlaying opens with 0ms decode latency
     ref.listen<Track?>(currentPlayingTrackProvider, (prev, next) {
       if (next?.artworkUrl != null && next!.artworkUrl!.trim().isNotEmpty) {
-        final url = next.artworkUrl!;
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          precacheImage(
-            CachedNetworkImageProvider(url, maxWidth: 64, maxHeight: 64),
-            context,
-            onError: (_, _) {},
-          );
-        } else {
-          precacheImage(
-            FileImage(File(url)),
-            context,
-            onError: (_, _) {},
-          );
-        }
+        TrackArtwork.precacheArtwork(context, next.artworkUrl);
       }
     });
 
@@ -395,8 +390,8 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                           left: 0,
                           right: 0,
                           bottom: keyboardHeight > 0
-                              ? keyboardHeight + 8.0
-                              : 64.0 + math.max(MediaQuery.paddingOf(context).bottom, 12.0) + 10.0,
+                              ? keyboardHeight + 6.0
+                              : 64.0 + math.max(MediaQuery.paddingOf(context).bottom, 10.0) + 3.0,
                           child: Material(
                             type: MaterialType.transparency,
                             child: MiniPlayer(
@@ -438,6 +433,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
             child: RepaintBoundary(
               child: NowPlayingScreen(
                 onMinimize: _minimizePlayer,
+                expandAnimation: _expandAnimation,
               ),
             ),
           ),

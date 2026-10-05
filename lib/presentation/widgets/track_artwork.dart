@@ -90,6 +90,34 @@ class TrackArtwork extends StatelessWidget {
         lower.contains('c.saavncdn.com/_artists/');
   }
 
+  final int? cacheDimension;
+
+  /// Standardized decode dimension for hero/now-playing artwork (480x480)
+  /// Provides retina sharpness on all screen densities while consuming 1/4 the memory of 1080px.
+  static const int heroArtworkDimension = 480;
+
+  /// Pre-caches the player artwork into memory ahead of time so opening NowPlayingScreen has 0ms latency
+  static void precacheArtwork(BuildContext context, String? artworkUrl) {
+    if (artworkUrl == null || artworkUrl.trim().isEmpty || isPlaceholderUrl(artworkUrl)) return;
+    try {
+      final ImageProvider provider;
+      if (artworkUrl.startsWith('http://') || artworkUrl.startsWith('https://')) {
+        provider = CachedNetworkImageProvider(
+          artworkUrl,
+          maxWidth: heroArtworkDimension,
+          maxHeight: heroArtworkDimension,
+        );
+      } else {
+        provider = ResizeImage(
+          FileImage(File(artworkUrl)),
+          width: heroArtworkDimension,
+          height: heroArtworkDimension,
+        );
+      }
+      precacheImage(provider, context).catchError((_) {});
+    } catch (_) {}
+  }
+
   const TrackArtwork({
     super.key,
     required this.artworkUrl,
@@ -100,6 +128,7 @@ class TrackArtwork extends StatelessWidget {
     this.isCircle = false,
     this.ambientGlow = false,
     this.fallbackIcon = Icons.music_note_rounded,
+    this.cacheDimension,
   });
 
   @override
@@ -115,8 +144,8 @@ class TrackArtwork extends StatelessWidget {
 
     // Calculate optimal decoded bitmap cache dimension to eliminate memory bloat and scroll jank
     final pixelRatio = MediaQuery.of(context).devicePixelRatio;
-    final targetCacheWidth = (w * pixelRatio).round().clamp(80, 1080);
-    final targetCacheHeight = (h * pixelRatio).round().clamp(80, 1080);
+    final int targetCacheWidth = cacheDimension ?? (w * pixelRatio).round().clamp(80, 1080);
+    final int targetCacheHeight = cacheDimension ?? (h * pixelRatio).round().clamp(80, 1080);
 
     final effectiveSeed = seedKey ?? artworkUrl;
     final gradientColors = getGradientForSeed(effectiveSeed, isDark: isDark);

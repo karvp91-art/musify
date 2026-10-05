@@ -79,7 +79,9 @@ class _CustomSeekBarState extends State<CustomSeekBar> {
             thumbColor: activeColor,
             inactiveColor: inactiveTrack,
             glowColor: activeColor.withValues(alpha: isDark ? 0.60 : 0.35),
-            glowRadius: 2.5,
+            glowRadius: 1.5,
+            trackHeight: 3.5,
+            thumbRadius: 7.0,
             useOwnLayer: true,
             onChangeStart: (val) {
               HapticFeedback.selectionClick();

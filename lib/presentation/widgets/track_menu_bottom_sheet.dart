@@ -32,41 +32,49 @@ void showTrackDropdownMenu({
   final isDownloaded = downloadManager.isDownloaded(track.id) || track.isDownloaded;
   final isDownloading = downloadManager.isDownloading(track.id);
 
+  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
   final screenSize = MediaQuery.of(context).size;
-  double dx = screenSize.width - 24;
-  double dy = screenSize.height * 0.4;
+  final statusBarHeight = MediaQuery.of(context).padding.top;
 
-  final targetCtx = buttonContext ?? context;
-  try {
-    final box = targetCtx.findRenderObject() as RenderBox?;
+  RelativeRect position;
+
+  if (buttonContext != null && overlay != null) {
+    final box = buttonContext.findRenderObject() as RenderBox?;
     if (box != null && box.hasSize) {
-      final pos = box.localToGlobal(Offset.zero);
-      final size = box.size;
-      if (size.height < screenSize.height * 0.7) {
-        dx = pos.dx + size.width;
-        dy = pos.dy + size.height;
-      }
+      final buttonRect = Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+      );
+      // Position directly underneath the button, right-aligned
+      position = RelativeRect.fromRect(
+        buttonRect,
+        Offset.zero & overlay.size,
+      );
+    } else {
+      position = RelativeRect.fromLTRB(
+        screenSize.width - 240,
+        statusBarHeight + 52,
+        16,
+        screenSize.height - statusBarHeight - 52,
+      );
     }
-  } catch (_) {}
-
-  if (tapPosition != null) {
-    dx = tapPosition.dx;
-    dy = tapPosition.dy;
+  } else if (tapPosition != null && overlay != null) {
+    position = RelativeRect.fromRect(
+      Rect.fromLTWH(tapPosition.dx, tapPosition.dy, 0, 0),
+      Offset.zero & overlay.size,
+    );
+  } else {
+    position = RelativeRect.fromLTRB(
+      screenSize.width - 240,
+      statusBarHeight + 52,
+      16,
+      screenSize.height - statusBarHeight - 52,
+    );
   }
-
-  // Clamp menu positioning so it stays elegantly on-screen
-  final double menuWidth = 220;
-  final double left = (dx - menuWidth).clamp(12.0, screenSize.width - menuWidth - 12);
-  final double top = (dy).clamp(60.0, screenSize.height - 260);
 
   final selected = await showMenu<String>(
     context: context,
-    position: RelativeRect.fromLTRB(
-      left,
-      top,
-      screenSize.width - left - menuWidth,
-      screenSize.height - top,
-    ),
+    position: position,
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(18),
       side: BorderSide(

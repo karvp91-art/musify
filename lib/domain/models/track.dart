@@ -187,4 +187,27 @@ class Track {
       addedAt: DateTime.tryParse(map['addedAt'] as String? ?? '') ?? DateTime.now(),
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Track &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          artistName == other.artistName &&
+          artworkUrl == other.artworkUrl &&
+          audioUrl == other.audioUrl &&
+          isLiked == other.isLiked &&
+          isDownloaded == other.isDownloaded;
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      title.hashCode ^
+      artistName.hashCode ^
+      artworkUrl.hashCode ^
+      audioUrl.hashCode ^
+      isLiked.hashCode ^
+      isDownloaded.hashCode;
 }
