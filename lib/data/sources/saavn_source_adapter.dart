@@ -5,6 +5,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/domain/models/search_result_models.dart';
 import 'package:musify/domain/models/artist_details.dart';
 import 'package:musify/domain/models/album_details.dart';
+import 'package:musify/domain/models/stream_home_models.dart';
 import 'package:musify/domain/sources/source_adapter.dart';
 import 'package:musify/services/preferences_service.dart';
 
@@ -43,6 +44,25 @@ class SaavnSourceAdapter implements SourceAdapter {
         .replaceAll('&gt;', '>')
         .replaceAll('&nbsp;', ' ')
         .trim();
+  }
+
+  /// Normalizes song titles to prevent duplicate compilation/version entries
+  static String normalizeSongTitle(String title) {
+    var clean = unescapeHtml(title).toLowerCase().trim();
+    // Strip (From "Movie"), [From Movie], - From Movie
+    clean = clean.replaceAll(RegExp(r'\s*[\(\[]from\s+["\u201c\u201d\x27]?[^()\]]+["\u201c\u201d\x27]?[\)\]]', caseSensitive: false), '');
+    clean = clean.replaceAll(RegExp(r'\s*-\s*from\s+.*$', caseSensitive: false), '');
+    // Strip (Feat. ...), (With ...), [Feat. ...]
+    clean = clean.replaceAll(RegExp(r'\s*[\(\[](feat\.|featuring|with)[^()\]]+[\)\]]', caseSensitive: false), '');
+    // Strip (Title Track), - Title Track
+    clean = clean.replaceAll(RegExp(r'\s*[\(\[]title\s+track[\)\]]', caseSensitive: false), '');
+    clean = clean.replaceAll(RegExp(r'\s*-\s*title\s+track', caseSensitive: false), '');
+    // Strip version tags like (Lofi), (Reprise), (Acoustic), (Male), (Female), (Audio), (Eclipsa Audio)
+    clean = clean.replaceAll(RegExp(r'\s*[\(\[](lofi|slowed|reverb|reprise|acoustic|remix|version|audio|male|female|eclipsa)[^()\]]*[\)\]]', caseSensitive: false), '');
+    clean = clean.replaceAll(RegExp(r'\s*(eclipsa\s+audio|audio\s+song)$', caseSensitive: false), '');
+    // Strip punctuation & extra whitespace
+    clean = clean.replaceAll(RegExp(r'[^\w\s]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    return clean;
   }
 
   @override
@@ -152,14 +172,7 @@ class SaavnSourceAdapter implements SourceAdapter {
     final quality = preferencesService?.getAudioQuality() ?? '320k';
     final encryptedUrl = item['encrypted_media_url'] as String? ??
         moreInfo?['encrypted_media_url'] as String?;
-    var streamUrl = DesCipher.decryptJioSaavnDirectUrl(encryptedUrl, quality: quality);
-
-    // Fallback to media_preview_url or vlink if direct decryption failed
-    if (streamUrl == null || streamUrl.isEmpty) {
-      streamUrl = item['media_preview_url'] as String? ??
-          moreInfo?['vlink'] as String? ??
-          '';
-    }
+    final streamUrl = DesCipher.decryptJioSaavnDirectUrl(encryptedUrl, quality: quality) ?? '';
 
     final bitrateVal = switch (quality) {
       '96k' => 96,
@@ -190,19 +203,27 @@ class SaavnSourceAdapter implements SourceAdapter {
 
   @override
   Future<String> getStreamUrl(Track track) async {
-    if (track.audioUrl.isNotEmpty && track.audioUrl.startsWith('http')) {
-      return track.audioUrl;
+    final currentUrl = track.audioUrl;
+    final isPreviewUrl = currentUrl.contains('jiotunepreview') ||
+        currentUrl.contains('preview.saavncdn.com') ||
+        currentUrl.contains('_p.mp4');
+
+    if (currentUrl.isNotEmpty && currentUrl.startsWith('http') && !isPreviewUrl) {
+      return currentUrl;
     }
 
-    // Try fetching details if audioUrl wasn't resolved
+    // Try fetching full details if audioUrl wasn't resolved or is only a preview
     try {
       final metadata = await getMetadata(track.sourceId);
-      if (metadata != null && metadata.audioUrl.isNotEmpty) {
+      if (metadata != null &&
+          metadata.audioUrl.isNotEmpty &&
+          !metadata.audioUrl.contains('jiotunepreview') &&
+          !metadata.audioUrl.contains('preview.saavncdn.com')) {
         return metadata.audioUrl;
       }
     } catch (_) {}
 
-    return track.audioUrl;
+    return currentUrl;
   }
 
   @override
@@ -490,8 +511,8 @@ class SaavnSourceAdapter implements SourceAdapter {
           '_marker': '0',
           'cc': 'in',
           'artistId': artistId,
-          'n_song': 30,
-          'n_album': 20,
+          'n_song': 100,
+          'n_album': 50,
         },
       );
 
@@ -523,15 +544,19 @@ class SaavnSourceAdapter implements SourceAdapter {
 
       final isVerified = data['isVerified'] == true || data['isVerified'] == 'true';
 
-      // Parse Top Songs
+      // Parse Top Songs with smart title deduplication (filters out duplicate re-releases across compilation albums)
       final List<Track> topSongs = [];
+      final seenSongKeys = <String>{};
       final songsList = data['topSongs']?['songs'] as List<dynamic>?;
       if (songsList != null) {
         for (final song in songsList) {
           if (song is Map<String, dynamic>) {
             final parsed = _parseSingleSong(song);
             if (parsed != null) {
-              topSongs.add(parsed);
+              final normKey = normalizeSongTitle(parsed.title);
+              if (normKey.isNotEmpty && seenSongKeys.add(normKey)) {
+                topSongs.add(parsed);
+              }
             }
           }
         }
@@ -575,6 +600,88 @@ class SaavnSourceAdapter implements SourceAdapter {
       );
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Parses a raw song map from JioSaavn API directly into a Track model
+  Track? parseSongDirect(Map<String, dynamic> item) => _parseSingleSong(item);
+
+  /// Fetches paginated catalog songs for an artist beyond the initial top songs.
+  Future<List<Track>> getArtistMoreSongs({
+    String? artistId,
+    required String artistName,
+    int page = 1,
+    int limit = 50,
+  }) async {
+    // 1. Try artist.getArtistMoreSong endpoint first if artistId is available
+    if (artistId != null && artistId.isNotEmpty) {
+      try {
+        final response = await _dio.get(
+          '',
+          queryParameters: {
+            '__call': 'artist.getArtistMoreSong',
+            '_format': 'json',
+            '_marker': '0',
+            'cc': 'in',
+            'artistId': artistId,
+            'p': page,
+            'n': limit,
+          },
+        );
+        dynamic data = response.data;
+        if (data is String) {
+          try {
+            data = jsonDecode(data);
+          } catch (_) {}
+        }
+        if (data is Map<String, dynamic>) {
+          final songsList = data['topSongs']?['songs'] as List<dynamic>? ??
+              data['songs'] as List<dynamic>? ??
+              data['results'] as List<dynamic>?;
+          if (songsList != null && songsList.isNotEmpty) {
+            final List<Track> tracks = [];
+            for (final s in songsList) {
+              if (s is Map<String, dynamic>) {
+                final parsed = _parseSingleSong(s);
+                if (parsed != null) tracks.add(parsed);
+              }
+            }
+            if (tracks.isNotEmpty) return tracks;
+          }
+        } else if (data is List<dynamic>) {
+          final List<Track> tracks = [];
+          for (final s in data) {
+            if (s is Map<String, dynamic>) {
+              final parsed = _parseSingleSong(s);
+              if (parsed != null) tracks.add(parsed);
+            }
+          }
+          if (tracks.isNotEmpty) return tracks;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback to search.getResults endpoint for artist query
+    final trimmed = artistName.trim();
+    if (trimmed.isEmpty) return [];
+
+    try {
+      final response = await _dio.get(
+        '',
+        queryParameters: {
+          '__call': 'search.getResults',
+          '_format': 'json',
+          '_marker': '0',
+          'cc': 'in',
+          'n': limit,
+          'p': page,
+          'q': trimmed,
+        },
+      );
+
+      return _parseSearchResults(response.data);
+    } catch (_) {
+      return [];
     }
   }
 
@@ -649,5 +756,393 @@ class SaavnSourceAdapter implements SourceAdapter {
       return null;
     }
   }
+
+  /// Fetches complete playlist details and track stream list for JioSaavn playlist / chart.
+  Future<StreamPlaylistDetails?> getPlaylistDetails(String playlistId) async {
+    try {
+      final response = await _dio.get(
+        '',
+        queryParameters: {
+          '__call': 'playlist.getDetails',
+          '_format': 'json',
+          '_marker': '0',
+          'cc': 'in',
+          'listid': playlistId,
+        },
+      );
+
+      dynamic data = response.data;
+      if (data is String) {
+        try {
+          data = jsonDecode(data);
+        } catch (_) {
+          return null;
+        }
+      }
+      if (data is! Map<String, dynamic>) return null;
+
+      final title = unescapeHtml(data['title'] as String? ?? data['listname'] as String? ?? 'Playlist');
+      final subtitle = unescapeHtml(data['subtitle'] as String? ?? data['header_desc'] as String? ?? '');
+      final description = unescapeHtml(data['description'] as String? ?? '');
+      final image = upgradeArtwork(data['image'] as String?);
+      final rawFollowers = data['fan_count'] ?? data['follower_count'] ?? data['count'];
+      String? followerStr;
+      if (rawFollowers != null) {
+        final formatted = formatWithCommas(rawFollowers);
+        if (formatted.isNotEmpty) {
+          followerStr = '$formatted Followers';
+        }
+      }
+
+      final List<Track> songs = [];
+      final songsList = data['songs'] as List<dynamic>? ?? data['list'] as List<dynamic>?;
+      if (songsList != null) {
+        for (final song in songsList) {
+          if (song is Map<String, dynamic>) {
+            final parsed = _parseSingleSong(song);
+            if (parsed != null) {
+              songs.add(parsed);
+            }
+          }
+        }
+      }
+
+      return StreamPlaylistDetails(
+        id: playlistId,
+        title: title,
+        subtitle: subtitle.isNotEmpty ? subtitle : null,
+        description: description.isNotEmpty ? description : null,
+        imageUrl: image,
+        followerCount: followerStr,
+        songCount: songs.length,
+        songs: songs,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetches new releases (albums & singles)
+  Future<List<SearchAlbumItem>> getNewReleases({int limit = 20}) async {
+    try {
+      final multiRes = await searchMulti('New Releases Latest Albums 2025 2026');
+      if (multiRes.albums.isNotEmpty) {
+        return multiRes.albums.take(limit).toList();
+      }
+    } catch (_) {}
+
+    try {
+      final fallbackMulti = await searchMulti('Top Bollywood Punjabi Pop Albums');
+      if (fallbackMulti.albums.isNotEmpty) {
+        return fallbackMulti.albums.take(limit).toList();
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
+  /// Returns curated and dynamic Top Charts with rich metadata and artwork
+  Future<List<TopChartItem>> getTopCharts() async {
+    const chartConfigs = [
+      (
+        query: 'Trending Today',
+        badge: '🔥 TRENDING',
+        defaultId: '110858205',
+        defaultTitle: 'Trending Today',
+        defaultSubtitle: 'Hottest viral tracks right now',
+        fallbackImage: 'https://c.saavncdn.com/editorial/TrendingToday_20231122115124.jpg',
+      ),
+      (
+        query: 'Weekly Top 50 Hindi',
+        badge: '👑 #1 HINDI',
+        defaultId: '104845512',
+        defaultTitle: 'Weekly Top 50 Hindi',
+        defaultSubtitle: 'Most streamed songs this week',
+        fallbackImage: 'https://c.saavncdn.com/editorial/WeeklyTop50Hindi_20231122115203.jpg',
+      ),
+      (
+        query: 'Global Top Hits',
+        badge: '🌍 GLOBAL',
+        defaultId: '107450700',
+        defaultTitle: 'Global Top Hits',
+        defaultSubtitle: 'International chart toppers',
+        fallbackImage: 'https://c.saavncdn.com/editorial/GlobalTopHits_20231122115220.jpg',
+      ),
+      (
+        query: 'Punjabi 100',
+        badge: '⚡ PUNJABI',
+        defaultId: '113454321',
+        defaultTitle: 'Punjabi 100',
+        defaultSubtitle: 'Biggest Punjabi bangers',
+        fallbackImage: 'https://c.saavncdn.com/editorial/Punjabi100_20231122115245.jpg',
+      ),
+      (
+        query: 'Romantic Hits',
+        badge: '💖 ROMANCE',
+        defaultId: '108923412',
+        defaultTitle: 'Romantic Hits',
+        defaultSubtitle: 'Soulful love songs & melodies',
+        fallbackImage: 'https://c.saavncdn.com/editorial/RomanticHits_20231122115310.jpg',
+      ),
+    ];
+
+    try {
+      final futures = chartConfigs.map((cfg) => searchMulti(cfg.query));
+      final results = await Future.wait(futures);
+
+      final List<TopChartItem> charts = [];
+      for (int i = 0; i < chartConfigs.length; i++) {
+        final cfg = chartConfigs[i];
+        final multi = results[i];
+
+        SearchPlaylistItem? found;
+        if (multi.playlists.isNotEmpty) {
+          found = multi.playlists.first;
+        }
+
+        charts.add(TopChartItem(
+          id: found?.id ?? cfg.defaultId,
+          title: cfg.defaultTitle,
+          subtitle: cfg.defaultSubtitle,
+          imageUrl: found?.imageUrl ?? cfg.fallbackImage,
+          count: 'Top 50',
+          badge: cfg.badge,
+        ));
+      }
+      return charts;
+    } catch (_) {
+      return chartConfigs.map((cfg) => TopChartItem(
+        id: cfg.defaultId,
+        title: cfg.defaultTitle,
+        subtitle: cfg.defaultSubtitle,
+        imageUrl: cfg.fallbackImage,
+        count: 'Top 50',
+        badge: cfg.badge,
+      )).toList();
+    }
+  }
+
+  /// Fetches popular superstar artists with real JioSaavn IDs and verified artwork
+  Future<List<SearchArtistItem>> getPopularArtists() async {
+    const artistQueries = [
+      'Arijit Singh',
+      'Diljit Dosanjh',
+      'Shreya Ghoshal',
+      'The Weeknd',
+      'Taylor Swift',
+      'Karan Aujla',
+      'Billie Eilish',
+      'Anirudh Ravichander',
+      'Atif Aslam',
+      'AP Dhillon',
+      'Pritam',
+      'Sidhu Moose Wala',
+    ];
+
+    final List<SearchArtistItem> artists = [];
+    final seenIds = <String>{};
+
+    try {
+      final futures = artistQueries.map((name) => searchMulti(name));
+      final results = await Future.wait(futures);
+
+      for (int i = 0; i < results.length; i++) {
+        final multi = results[i];
+        final queryName = artistQueries[i].toLowerCase();
+
+        SearchArtistItem? matchedArtist;
+
+        // 1. First priority: Check topResults for verified artist
+        for (final top in multi.topResults) {
+          if (top.isArtist) {
+            matchedArtist = SearchArtistItem(
+              id: top.id,
+              title: top.title,
+              imageUrl: top.imageUrl,
+              description: 'Artist',
+            );
+            break;
+          }
+        }
+
+        // 2. Second priority: Find exact/best match in artists list
+        if (matchedArtist == null && multi.artists.isNotEmpty) {
+          for (final a in multi.artists) {
+            if (a.title.toLowerCase() == queryName ||
+                a.title.toLowerCase().contains(queryName)) {
+              matchedArtist = a;
+              break;
+            }
+          }
+          matchedArtist ??= multi.artists.first;
+        }
+
+        if (matchedArtist != null && seenIds.add(matchedArtist.id)) {
+          artists.add(matchedArtist);
+        }
+      }
+    } catch (_) {}
+
+    return artists;
+  }
+
+  /// Curated pool of iconic & blockbuster Indian movie soundtrack albums
+  static const _movieSoundtrackPool = [
+    'OK Jaanu',
+    'Raabta',
+    'Dunki',
+    'Jab Harry Met Sejal',
+    'Dhurandhar',
+    'Animal',
+    'Kabir Singh',
+    'Brahmastra',
+    'Jawan',
+    'Pathaan',
+    'Aashiqui 2',
+    'Rockstar',
+    'Yeh Jawaani Hai Deewani',
+    'Gully Boy',
+    'Shershaah',
+    'Sita Ramam',
+    'Pushpa',
+    'Kantara',
+    'Stree 2',
+    'Fighter',
+    'Laila Majnu',
+    'Ae Dil Hai Mushkil',
+    'Kalank',
+    'Tamasha',
+    'Kedarnath',
+    'War',
+    'Zara Hatke Zara Bachke',
+    'Tu Jhoothi Main Makkaar',
+    'Bhediya',
+    'Vikram Vedha',
+    'Gangubai Kathiawadi',
+    'Satyaprem Ki Katha',
+    'Chhichhore',
+    'Sanju',
+    'Bajirao Mastani',
+    'Dilwale',
+    'Cocktail',
+  ];
+
+  /// Fetches randomized movie soundtrack albums from JioSaavn
+  Future<List<SearchAlbumItem>> getPopularMovieAlbums({int count = 12}) async {
+    final shuffled = List<String>.from(_movieSoundtrackPool)..shuffle();
+    final selectedQueries = shuffled.take(count).toList();
+
+    final List<SearchAlbumItem> movieAlbums = [];
+    final seenIds = <String>{};
+
+    try {
+      final futures = selectedQueries.map((name) => searchMulti(name));
+      final results = await Future.wait(futures);
+
+      for (int i = 0; i < results.length; i++) {
+        final multi = results[i];
+        final query = selectedQueries[i].toLowerCase();
+
+        SearchAlbumItem? matchedAlbum;
+
+        // 1. First check topResults if it is an album
+        for (final top in multi.topResults) {
+          if (top.isAlbum) {
+            matchedAlbum = SearchAlbumItem(
+              id: top.id,
+              title: top.title,
+              imageUrl: top.imageUrl,
+              music: top.description ?? 'Movie Album',
+              description: 'Movie Album',
+            );
+            break;
+          }
+        }
+
+        // 2. Otherwise check albums list
+        if (matchedAlbum == null && multi.albums.isNotEmpty) {
+          for (final a in multi.albums) {
+            if (a.title.toLowerCase().contains(query) || query.contains(a.title.toLowerCase())) {
+              matchedAlbum = a;
+              break;
+            }
+          }
+          matchedAlbum ??= multi.albums.first;
+        }
+
+        if (matchedAlbum != null && seenIds.add(matchedAlbum.id)) {
+          movieAlbums.add(matchedAlbum);
+        }
+      }
+    } catch (_) {}
+
+    return movieAlbums;
+  }
+
+  /// Fetches editorial playlists
+  Future<List<SearchPlaylistItem>> getEditorialPlaylists() async {
+    try {
+      final multi = await searchMulti('Best Chill Workout Party Vibes Playlist');
+      if (multi.playlists.isNotEmpty) {
+        return multi.playlists.take(15).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Returns standard mood and activity categories
+  static List<MoodCategory> getMoodCategories() {
+    return const [
+      MoodCategory(
+        id: 'lofi_chill',
+        title: 'Lo-Fi Chill',
+        subtitle: 'Relaxing beats & ambient vibes',
+        query: 'Lo-Fi Chill Beats relax study',
+        gradientColors: [0xFF6A11CB, 0xFF2575FC],
+        iconName: 'spa',
+      ),
+      MoodCategory(
+        id: 'workout_energy',
+        title: 'Workout & Gym',
+        subtitle: 'High BPM beast mode tracks',
+        query: 'Gym Workout Energy motivation edm',
+        gradientColors: [0xFFFF416C, 0xFFFF4B2B],
+        iconName: 'fitness_center',
+      ),
+      MoodCategory(
+        id: 'deep_focus',
+        title: 'Deep Focus',
+        subtitle: 'Concentration & coding flow',
+        query: 'Focus Instrumental study ambient piano',
+        gradientColors: [0xFF11998E, 0xFF38EF7D],
+        iconName: 'psychology',
+      ),
+      MoodCategory(
+        id: 'night_drive',
+        title: 'Night Drive',
+        subtitle: 'Synthwave & late night cruising',
+        query: 'Night Drive Synthwave phonk car music',
+        gradientColors: [0xFF8E2DE2, 0xFF4A00E0],
+        iconName: 'directions_car',
+      ),
+      MoodCategory(
+        id: 'party_bangers',
+        title: 'Party & Dance',
+        subtitle: 'Club hits & non-stop energy',
+        query: 'Party Club Dance EDM bangers',
+        gradientColors: [0xFFF857A6, 0xFFFF5858],
+        iconName: 'celebration',
+      ),
+      MoodCategory(
+        id: 'acoustic_peace',
+        title: 'Acoustic Peace',
+        subtitle: 'Unplugged guitar & coffee vibe',
+        query: 'Acoustic Unplugged Indie Coffee',
+        gradientColors: [0xFFE65C00, 0xFFF9D423],
+        iconName: 'music_note',
+      ),
+    ];
+  }
 }
+
 

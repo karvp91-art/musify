@@ -54,6 +54,7 @@ dependencies:
   liquid_glass_widgets: 1.8.1
   palette_generator: ^0.3.3+7
   receive_sharing_intent: 1.8.1
+  connectivity_plus: ^7.3.2
 
 
 dev_dependencies:

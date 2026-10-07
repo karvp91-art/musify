@@ -337,7 +337,7 @@ class _AddToPlaylistBottomSheetState extends ConsumerState<AddToPlaylistBottomSh
 
                   return ListView.builder(
                     shrinkWrap: true,
-                    physics: const BouncingScrollPhysics(),
+                    physics: const ClampingScrollPhysics(),
                     itemCount: totalItems,
                     padding: const EdgeInsets.only(bottom: 6),
                     itemBuilder: (ctx, index) {

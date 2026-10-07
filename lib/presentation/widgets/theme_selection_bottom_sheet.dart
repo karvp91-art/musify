@@ -131,7 +131,7 @@ class _ThemeSelectionBottomSheetState extends ConsumerState<ThemeSelectionBottom
       child: Material(
         color: Colors.transparent,
         child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
+          physics: const ClampingScrollPhysics(),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

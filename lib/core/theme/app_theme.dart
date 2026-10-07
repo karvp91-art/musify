@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_colors.dart';
@@ -107,6 +108,7 @@ class AppTheme {
         backgroundColor: AppColors.surfacePillLight,
         surfaceTintColor: Colors.transparent,
       ),
+      pageTransitionsTheme: _iosPageTransitionsTheme,
       textTheme: _buildTextTheme(
         primaryColor: AppColors.onSurfaceLight,
         mutedColor: AppColors.onSurfaceMutedLight,
@@ -212,12 +214,23 @@ class AppTheme {
         elevation: 0,
         pressElevation: 0,
       ),
+      pageTransitionsTheme: _iosPageTransitionsTheme,
       textTheme: _buildTextTheme(
         primaryColor: AppColors.onSurfaceDark,
         mutedColor: AppColors.onSurfaceMutedDark,
       ),
     );
   }
+
+  static const PageTransitionsTheme _iosPageTransitionsTheme = PageTransitionsTheme(
+    builders: {
+      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+    },
+  );
 
   static TextTheme _buildTextTheme({
     required Color primaryColor,

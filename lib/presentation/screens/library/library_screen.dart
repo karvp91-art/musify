@@ -130,7 +130,7 @@ class LibraryScreen extends ConsumerWidget {
             ),
             trailing: const Icon(Icons.chevron_right_rounded, size: 22),
             onTap: () {
-              ref.read(currentTabIndexProvider.notifier).setIndex(0); // Navigate to Home
+              ref.read(currentTabIndexProvider.notifier).setIndex(1); // Navigate to My music
             },
           ),
 

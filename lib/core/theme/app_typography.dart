@@ -23,6 +23,13 @@ class AppTypography {
         letterSpacing: -0.2,
       );
 
+  static final TextStyle bodyMedium = GoogleFonts.plusJakartaSans(
+        fontSize: 14.5,
+        height: 20 / 14.5,
+        fontWeight: FontWeight.w500,
+        letterSpacing: -0.15,
+      );
+
   static final TextStyle bodySmall = GoogleFonts.plusJakartaSans(
         fontSize: 13.5,
         height: 18 / 13.5,

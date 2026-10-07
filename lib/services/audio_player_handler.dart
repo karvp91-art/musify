@@ -57,6 +57,13 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   Future<String> Function(Track track)? _trackUrlResolver;
 
+  bool _isNeedsUrlResolution(String? url) {
+    if (url == null || url.isEmpty || !url.startsWith('http')) return true;
+    return url.contains('jiotunepreview') ||
+        url.contains('preview.saavncdn.com') ||
+        url.contains('_p.mp4');
+  }
+
   void setTrackUrlResolver(Future<String> Function(Track track) resolver) {
     _trackUrlResolver = resolver;
   }
@@ -334,7 +341,7 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         await _inactivePlayer.setFilePath(track.filePath!);
       } else {
         var url = track.audioUrl;
-        if ((url.isEmpty || !url.startsWith('http')) && _trackUrlResolver != null) {
+        if (_isNeedsUrlResolution(url) && _trackUrlResolver != null) {
           url = await _trackUrlResolver!(track);
           if (url.isNotEmpty && nextIndex >= 0 && nextIndex < _playlist.length) {
             _playlist[nextIndex] = track.copyWith(audioUrl: url);
@@ -372,7 +379,7 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
           await _inactivePlayer.setFilePath(nextTrack.filePath!);
         } else {
           var url = nextTrack.audioUrl;
-          if ((url.isEmpty || !url.startsWith('http')) && _trackUrlResolver != null) {
+          if (_isNeedsUrlResolution(url) && _trackUrlResolver != null) {
             url = await _trackUrlResolver!(nextTrack);
             if (url.isNotEmpty && nextIndex >= 0 && nextIndex < _playlist.length) {
               final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
@@ -624,7 +631,7 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         await _activePlayer.setFilePath(track.filePath!);
       } else {
         var url = track.audioUrl;
-        if ((url.isEmpty || !url.startsWith('http')) && _trackUrlResolver != null) {
+        if (_isNeedsUrlResolution(url) && _trackUrlResolver != null) {
           playbackState.add(playbackState.value.copyWith(
             processingState: AudioProcessingState.buffering,
           ));

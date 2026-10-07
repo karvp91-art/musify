@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,11 +8,11 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 
-/// Opens the Studio Equalizer full screen.
+/// Opens the Studio Equalizer full screen with native iOS slide navigation.
 Future<void> openStudioEqualizerScreen(BuildContext context) {
   HapticFeedback.selectionClick();
   return Navigator.of(context).push<void>(
-    MaterialPageRoute(
+    CupertinoPageRoute(
       builder: (_) => const StudioEqualizerScreen(),
     ),
   );

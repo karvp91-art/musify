@@ -115,6 +115,17 @@ void showTrackDropdownMenu({
           ],
         ),
       ),
+      if (track.source == AudioSourceType.youtube)
+        PopupMenuItem(
+          value: 'copy_yt_link',
+          child: Row(
+            children: [
+              Icon(Icons.link_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+              const SizedBox(width: 12),
+              const Text('Copy YouTube Link', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
       // Download or Delete from Device
       if (!isDownloaded && !isDownloading) ...[
         PopupMenuItem(
@@ -224,6 +235,17 @@ void showTrackDropdownMenu({
         message: 'Added to queue',
         type: AppSnackBarType.info,
         icon: Icons.queue_music_rounded,
+      );
+    }
+  } else if (selected == 'copy_yt_link') {
+    final ytId = track.sourceId.isNotEmpty ? track.sourceId : track.id.replaceFirst('youtube:', '');
+    Clipboard.setData(ClipboardData(text: 'https://youtube.com/watch?v=$ytId'));
+    if (context.mounted) {
+      AppSnackBar.show(
+        context,
+        message: 'YouTube link copied to clipboard',
+        type: AppSnackBarType.success,
+        icon: Icons.link_rounded,
       );
     }
   } else if (selected == 'playlist') {

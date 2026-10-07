@@ -9,8 +9,9 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/player/mini_player.dart';
 import 'package:musify/presentation/screens/player/now_playing_screen.dart';
-import 'package:musify/presentation/screens/search/search_screen.dart';
+import 'package:musify/presentation/screens/stream/stream_home_screen.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
+import 'package:musify/presentation/widgets/offline_banner.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import '../home/home_screen.dart';
 
@@ -28,8 +29,8 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
   late final PageController _pageController;
 
   final List<Widget> _screens = const [
+    StreamHomeScreen(),
     HomeScreen(),
-    SearchScreen(),
   ];
 
   @override
@@ -72,6 +73,8 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
   }
 
   void _expandPlayer() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
     _playerExpandController.forward();
   }
 
@@ -148,7 +151,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                   // Tab Buttons Row
                   Row(
                     children: [
-                      // Tab 0: My Music
+                      // Tab 0: Stream
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -162,8 +165,8 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                               children: [
                                 Icon(
                                   activeIndex == 0
-                                      ? Icons.headphones_rounded
-                                      : Icons.headphones_outlined,
+                                      ? Icons.play_circle_fill_rounded
+                                      : Icons.play_circle_outline_rounded,
                                   size: 20,
                                   color: activeIndex == 0
                                       ? const Color(0xFF111827)
@@ -173,7 +176,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'My music',
+                                  'Stream',
                                   style: AppTypography.caption.copyWith(
                                     fontSize: 12.5,
                                     fontWeight: activeIndex == 0
@@ -194,7 +197,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                         ),
                       ),
 
-                      // Tab 1: Stream
+                      // Tab 1: My Music
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -208,8 +211,8 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                               children: [
                                 Icon(
                                   activeIndex == 1
-                                      ? Icons.play_circle_fill_rounded
-                                      : Icons.play_circle_outline_rounded,
+                                      ? Icons.headphones_rounded
+                                      : Icons.headphones_outlined,
                                   size: 20,
                                   color: activeIndex == 1
                                       ? const Color(0xFF111827)
@@ -219,7 +222,7 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Stream',
+                                  'My music',
                                   style: AppTypography.caption.copyWith(
                                     fontSize: 12.5,
                                     fontWeight: activeIndex == 1
@@ -357,13 +360,16 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                         children: _screens,
                       ),
 
-                      // 2. Dynamic Island Download Status Capsule
+                      // 2. Dynamic Island Download Status Capsule & Offline Status Banner
                       Positioned(
                         top: MediaQuery.of(context).padding.top + 8,
                         left: 0,
                         right: 0,
                         child: const DownloadDynamicIsland(),
                       ),
+
+                      // Offline / Back Online Dynamic Glass Banner
+                      const OfflineDynamicBanner(),
 
                       // 3. Floating Navigation Dock (Anchored at screen bottom, covered naturally when keyboard opens)
                       if (!isMultiSelection)

@@ -21,6 +21,8 @@ import 'package:musify/services/audio_player_handler.dart';
 import 'package:musify/services/download_manager.dart';
 import 'package:musify/services/preferences_service.dart';
 
+import 'package:musify/data/repositories/stream_content_repository.dart';
+import 'package:musify/domain/models/stream_home_models.dart';
 import 'package:musify/domain/models/equalizer_state.dart';
 import 'package:musify/domain/models/search_result_models.dart';
 import 'package:musify/domain/models/artist_details.dart';
@@ -33,6 +35,7 @@ export 'package:musify/domain/models/search_result_models.dart';
 export 'package:musify/domain/models/artist_details.dart';
 export 'package:musify/domain/models/album_details.dart';
 export 'package:musify/domain/models/music_folder.dart';
+export 'package:musify/domain/models/stream_home_models.dart';
 export 'package:musify/services/preferences_service.dart';
 export 'package:musify/services/palette_service.dart';
 
@@ -61,7 +64,13 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 
 final audioRepositoryProvider = Provider<AudioRepository>((ref) {
   final db = ref.watch(databaseProvider);
-  return AudioRepositoryImpl(db);
+  final repo = AudioRepositoryImpl(db);
+  final handler = ref.watch(audioHandlerProvider);
+  final sub = handler.trackPlayedStream.listen((track) {
+    repo.recordTrackPlay(track);
+  });
+  ref.onDispose(() => sub.cancel());
+  return repo;
 });
 
 final localScannerProvider = Provider<LocalFilesScanner>((ref) {
@@ -121,6 +130,33 @@ final saavnArtistDetailsProvider = FutureProvider.family<ArtistDetails?, String>
 final saavnAlbumDetailsProvider = FutureProvider.family<AlbumDetails?, String>((ref, albumId) async {
   final saavn = ref.watch(saavnAdapterProvider);
   return saavn.getAlbumDetails(albumId);
+});
+
+// Streaming Content Repository & Stream Home Providers
+final streamContentRepositoryProvider = Provider<StreamContentRepository>((ref) {
+  final saavn = ref.watch(saavnAdapterProvider);
+  final repo = ref.watch(audioRepositoryProvider);
+  return StreamContentRepository(saavnAdapter: saavn, audioRepository: repo);
+});
+
+final streamHomepageDataProvider = FutureProvider<StreamHomepageData>((ref) async {
+  final streamRepo = ref.watch(streamContentRepositoryProvider);
+  return streamRepo.getHomepageData();
+});
+
+final streamPlaylistDetailsProvider = FutureProvider.family<StreamPlaylistDetails?, String>((ref, playlistId) async {
+  final streamRepo = ref.watch(streamContentRepositoryProvider);
+  return streamRepo.getPlaylistDetails(playlistId);
+});
+
+final streamMoodTracksProvider = FutureProvider.family<List<Track>, String>((ref, query) async {
+  final streamRepo = ref.watch(streamContentRepositoryProvider);
+  return streamRepo.getTracksForMood(query);
+});
+
+final recentlyPlayedTracksStreamProvider = StreamProvider<List<Track>>((ref) {
+  final repo = ref.watch(audioRepositoryProvider);
+  return repo.watchRecentlyPlayedTracks(limit: 15);
 });
 
 // Audio Handler (Global Audio Service singleton injected at startup)
@@ -482,6 +518,13 @@ class EqualizerNotifier extends Notifier<EqualizerState> {
     _applyToHandler(state.copyWith(
       preset: 'Custom',
       bandGains: updated,
+    ));
+  }
+
+  void setAllBands(List<double> gains, {String preset = 'Custom'}) {
+    _applyToHandler(state.copyWith(
+      preset: preset,
+      bandGains: List.from(gains),
     ));
   }
 

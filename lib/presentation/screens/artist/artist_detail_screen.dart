@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
+import 'package:musify/data/sources/saavn_source_adapter.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/album/album_detail_screen.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
+import 'package:musify/presentation/widgets/offline_state_view.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
 
@@ -70,6 +72,47 @@ class ArtistDetailScreen extends ConsumerStatefulWidget {
 
 class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
   bool _showAllSongs = false;
+  final List<Track> _additionalSongs = [];
+  int _nextPage = 2;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+
+  Future<void> _loadMoreSongs(String artistName) async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final saavn = ref.read(saavnAdapterProvider);
+      final newTracks = await saavn.getArtistMoreSongs(
+        artistId: widget.artistId,
+        artistName: artistName,
+        page: _nextPage,
+        limit: 50,
+      );
+
+      if (!mounted) return;
+
+      if (newTracks.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+      } else {
+        setState(() {
+          _nextPage++;
+          _additionalSongs.addAll(newTracks);
+          _isLoadingMore = false;
+          if (newTracks.length < 15) {
+            _hasMore = false;
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +124,19 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
     final isPlaybackPlaying = ref.watch(isPlaybackPlayingProvider);
 
     final artistAsync = ref.watch(saavnArtistDetailsProvider(widget.artistId));
+    final artistData = artistAsync.asData?.value;
+    final baseTopSongs = artistData?.topSongs ?? [];
+
+    // Combine top songs with additional fetched discography songs (deduplicating by normalized title)
+    final combinedSongs = <Track>[...baseTopSongs];
+    final seenKeys = baseTopSongs.map((t) => SaavnSourceAdapter.normalizeSongTitle(t.title)).toSet();
+
+    for (final track in _additionalSongs) {
+      final normKey = SaavnSourceAdapter.normalizeSongTitle(track.title);
+      if (normKey.isNotEmpty && seenKeys.add(normKey)) {
+        combinedSongs.add(track);
+      }
+    }
 
     return Scaffold(
       backgroundColor: isDark ? theme.scaffoldBackgroundColor : Colors.white,
@@ -129,21 +185,15 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                       ),
 
                       // Right: Shuffle Top Songs
-                      artistAsync.maybeWhen(
-                        data: (artist) {
-                          final topSongs = artist?.topSongs ?? [];
-                          if (topSongs.isEmpty) return const SizedBox.shrink();
-                          return _CircleHeaderButton(
-                            icon: Icons.shuffle_rounded,
-                            iconSize: 20,
-                            onTap: () {
-                              final shuffled = List<Track>.from(topSongs)..shuffle();
-                              audioHandler.playTrackList(shuffled, startIndex: 0);
-                            },
-                          );
-                        },
-                        orElse: () => const SizedBox.shrink(),
-                      ),
+                      if (combinedSongs.isNotEmpty)
+                        _CircleHeaderButton(
+                          icon: Icons.shuffle_rounded,
+                          iconSize: 20,
+                          onTap: () {
+                            final shuffled = List<Track>.from(combinedSongs)..shuffle();
+                            audioHandler.playTrackList(shuffled, startIndex: 0);
+                          },
+                        ),
                     ],
                   ),
                 ),
@@ -158,10 +208,9 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                       final artwork = artist?.imageUrl ?? widget.initialImageUrl;
                       final fanCountText = artist?.fanCount ?? 'Artist';
                       final isVerified = artist?.isVerified ?? true;
-                      final topSongs = artist?.topSongs ?? [];
                       final topAlbums = artist?.topAlbums ?? [];
 
-                      final displayedSongs = _showAllSongs ? topSongs : topSongs.take(5).toList();
+                      final displayedSongs = _showAllSongs ? combinedSongs : combinedSongs.take(5).toList();
 
                       return ListView(
                         physics: const ClampingScrollPhysics(),
@@ -287,31 +336,51 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                                     letterSpacing: -0.2,
                                   ),
                                 ),
-                                onPressed: topSongs.isEmpty
+                                onPressed: combinedSongs.isEmpty
                                     ? null
                                     : () {
                                         HapticFeedback.mediumImpact();
-                                        audioHandler.playTrackList(topSongs, startIndex: 0);
+                                        audioHandler.playTrackList(combinedSongs, startIndex: 0);
                                       },
                               ),
                             ),
                           ),
                           const SizedBox(height: 24),
 
-                          // --- Top Songs Header ---
+                          // --- Songs Header ---
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Text(
-                              'Top Songs',
-                              style: AppTypography.style(
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                                color: theme.colorScheme.onSurface,
-                              ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  _showAllSongs ? 'All Songs (${combinedSongs.length})' : 'Top Songs',
+                                  style: AppTypography.style(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w800,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                if (combinedSongs.length > 5)
+                                  GestureDetector(
+                                    onTap: () {
+                                      HapticFeedback.lightImpact();
+                                      setState(() => _showAllSongs = !_showAllSongs);
+                                    },
+                                    child: Text(
+                                      _showAllSongs ? 'Show Top 5' : 'Show All (${combinedSongs.length})',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
 
-                          if (topSongs.isEmpty)
+                          if (combinedSongs.isEmpty)
                             Padding(
                               padding: const EdgeInsets.all(16),
                               child: Text(
@@ -333,7 +402,19 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                                 isPlaying: isTilePlaying,
                                 onTap: () {
                                   HapticFeedback.selectionClick();
-                                  audioHandler.playTrackList(topSongs, startIndex: topSongs.indexOf(track));
+                                  if (isCurrent) {
+                                    if (isPlaybackPlaying) {
+                                      audioHandler.pause();
+                                    } else {
+                                      audioHandler.play();
+                                    }
+                                  } else {
+                                    final playIdx = combinedSongs.indexWhere((t) => t.id == track.id);
+                                    audioHandler.playTrackList(
+                                      combinedSongs,
+                                      startIndex: playIdx != -1 ? playIdx : 0,
+                                    );
+                                  }
                                 },
                                 onLikeToggle: () {
                                   ref.read(audioRepositoryProvider).toggleLike(track);
@@ -341,8 +422,54 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                               );
                             }),
 
+                            // "Load More Songs" action button (when expanded)
+                            if (_showAllSongs && _hasMore)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: _isLoadingMore ? null : () => _loadMoreSongs(name),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 13),
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: _isLoadingMore
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: AppColors.neonLime,
+                                            ),
+                                          )
+                                        : Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.add_circle_outline_rounded,
+                                                size: 18,
+                                                color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                'Load More Songs',
+                                                style: TextStyle(
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                  ),
+                                ),
+                              ),
+
                             // "Show More / Show Less" toggle button
-                            if (topSongs.length > 5)
+                            if (combinedSongs.length > 5)
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 child: InkWell(
@@ -359,7 +486,7 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                     child: Text(
-                                      _showAllSongs ? 'Show Less' : 'Show All ${topSongs.length} Songs',
+                                      _showAllSongs ? 'Show Top 5' : 'Show All ${combinedSongs.length} Songs',
                                       style: TextStyle(
                                         fontSize: 13.5,
                                         fontWeight: FontWeight.w700,
@@ -467,27 +594,10 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                     loading: () => const Center(
                       child: CircularProgressIndicator(color: AppColors.neonLime),
                     ),
-                    error: (err, _) => Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.error_outline_rounded,
-                            size: 40,
-                            color: theme.colorScheme.error,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Failed to load artist details',
-                            style: AppTypography.bodyLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          ElevatedButton(
-                            onPressed: () => ref.invalidate(saavnArtistDetailsProvider(widget.artistId)),
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
+                    error: (err, _) => OfflineStateView(
+                      title: 'Failed to Load Artist',
+                      message: 'Connect to the internet to load artist songs, top albums, and full discography.',
+                      onRetry: () => ref.invalidate(saavnArtistDetailsProvider(widget.artistId)),
                     ),
                   ),
                 ),

@@ -588,4 +588,48 @@ class AudioRepositoryImpl implements AudioRepository {
       return counts;
     });
   }
+
+  @override
+  Future<List<Track>> getRecentlyPlayedTracks({int limit = 20}) async {
+    final query = _db.select(_db.listeningHistory).join([
+      innerJoin(_db.localTracks, _db.localTracks.id.equalsExp(_db.listeningHistory.trackId)),
+    ])
+      ..orderBy([OrderingTerm.desc(_db.listeningHistory.playedAt)])
+      ..limit(limit * 2);
+
+    final rows = await query.get();
+    final seen = <String>{};
+    final tracks = <Track>[];
+    for (final row in rows) {
+      final trackData = row.readTable(_db.localTracks);
+      if (seen.add(trackData.id)) {
+        tracks.add(_toDomainTrack(trackData));
+        if (tracks.length >= limit) break;
+      }
+    }
+    return tracks;
+  }
+
+  @override
+  Stream<List<Track>> watchRecentlyPlayedTracks({int limit = 20}) {
+    final query = _db.select(_db.listeningHistory).join([
+      innerJoin(_db.localTracks, _db.localTracks.id.equalsExp(_db.listeningHistory.trackId)),
+    ])
+      ..orderBy([OrderingTerm.desc(_db.listeningHistory.playedAt)])
+      ..limit(limit * 2);
+
+    return query.watch().map((rows) {
+      final seen = <String>{};
+      final tracks = <Track>[];
+      for (final row in rows) {
+        final trackData = row.readTable(_db.localTracks);
+        if (seen.add(trackData.id)) {
+          tracks.add(_toDomainTrack(trackData));
+          if (tracks.length >= limit) break;
+        }
+      }
+      return tracks;
+    });
+  }
 }
+

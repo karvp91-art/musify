@@ -32,6 +32,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
   String _selectedFilter = 'All';
   bool _isSearchExpanded = false;
@@ -85,6 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -646,13 +648,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
         activeGlowColor: _isSearchExpanded ? theme.colorScheme.primary : null,
         iconSize: 21,
         onTap: () {
-          setState(() {
-            _isSearchExpanded = !_isSearchExpanded;
-            if (!_isSearchExpanded) {
+          if (_isSearchExpanded) {
+            // Dismiss keyboard and remove focus when closing search
+            _searchFocusNode.unfocus();
+            FocusScope.of(context).unfocus();
+            FocusManager.instance.primaryFocus?.unfocus();
+            SystemChannels.textInput.invokeMethod('TextInput.hide');
+            setState(() {
+              _isSearchExpanded = false;
               _searchController.clear();
               _searchQuery = '';
-            }
-          });
+            });
+          } else {
+            // Opening search bar
+            setState(() {
+              _isSearchExpanded = true;
+            });
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _isSearchExpanded) {
+                _searchFocusNode.requestFocus();
+              }
+            });
+          }
         },
       ),
       title: Text(
@@ -706,7 +723,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                 ),
                 child: TextField(
                   controller: _searchController,
-                  autofocus: true,
+                  focusNode: _searchFocusNode,
+                  autofocus: false,
                   style: AppTypography.style(color: theme.colorScheme.onSurface, fontSize: 14, fontWeight: FontWeight.w500),
                   onChanged: (val) {
                     setState(() {
@@ -1012,10 +1030,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                 if (_searchQuery.isEmpty) ...[
                   const SizedBox(height: 18),
                   FilledButton.tonalIcon(
-                    icon: const Icon(Icons.search_rounded, size: 18),
-                    label: Text('Search & Download', style: theme.textTheme.labelLarge),
+                    icon: const Icon(Icons.stream_rounded, size: 18),
+                    label: Text('Explore Stream', style: theme.textTheme.labelLarge),
                     onPressed: () {
-                      ref.read(currentTabIndexProvider.notifier).setIndex(1);
+                      ref.read(currentTabIndexProvider.notifier).setIndex(0);
                     },
                   ),
                 ],

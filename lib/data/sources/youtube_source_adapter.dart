@@ -184,17 +184,24 @@ class YouTubeSourceAdapter implements SourceAdapter {
         ytClients: [YoutubeApiClient.androidSdkless],
       );
 
-      final stream = manifest.muxed.where((s) => s.tag == 18).firstOrNull ??
-          manifest.muxed.firstOrNull ??
-          manifest.audioOnly.withHighestBitrate();
+      // Prioritize pure audio-only streams (M4A/AAC or WebM/Opus) over video streams
+      final audioStreams = manifest.audioOnly.toList();
+      audioStreams.sort((a, b) => b.bitrate.compareTo(a.bitrate));
 
+      // Prefer highest bitrate AAC/M4A for widest metadata & hardware player compatibility,
+      // then highest bitrate audio overall, and fall back to muxed stream only if no audio-only exists.
+      final bestAudio = audioStreams.where((s) => s.container.name == 'mp4').firstOrNull ??
+          audioStreams.firstOrNull;
+
+      final stream = bestAudio ?? manifest.muxed.firstOrNull;
       if (stream == null) return null;
 
       final totalBytes = stream.size.totalBytes;
       final url = stream.url.toString();
       const ua = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip';
 
-      final ext = stream.container.name == 'webm' ? '.opus' : '.mp4';
+      // Use .m4a for MP4 audio containers, .webm for WebM containers, or .m4a by default
+      final ext = stream.container.name == 'webm' ? '.webm' : '.m4a';
       final savePath = p.join(downloadDir.path, getSafeFilename(track, ext));
       final tempPath = '$savePath.tmp';
       final tempFile = File(tempPath);
@@ -311,39 +318,14 @@ class YouTubeSourceAdapter implements SourceAdapter {
   }
 
   static ({String artist, String title}) parseTitleAndArtist(String rawTitle, String channelAuthor) {
-    // Strip trailing pipe delimiters e.g. "| Warner Records"
-    String clean = rawTitle.replaceAll(RegExp(r'\s*\|.*$'), '');
-
-    // Strip common YouTube bracketed tags/badges (Official 4K Video, Lyric Video, etc.)
-    clean = clean
-        .replaceAll(
-          RegExp(
-            r'\s*[\(\[][^\)\]]*(?:official|video|audio|lyric|visualizer|4k|hd|hq|mv|remastered)[^\)\]]*[\)\]]',
-            caseSensitive: false,
-          ),
-          '',
-        )
-        .trim();
-
-    if (clean.contains(' - ')) {
-      final parts = clean.split(' - ');
-      if (parts.length >= 2) {
-        final artist = parts[0].trim();
-        final title = parts.sublist(1).join(' - ').trim();
-        if (artist.isNotEmpty && title.isNotEmpty) {
-          return (artist: artist, title: title);
-        }
-      }
-    }
-
     final cleanAuthor = channelAuthor
         .replaceAll(' - Topic', '')
         .replaceAll(RegExp(r'\s*VEVO$', caseSensitive: false), '')
         .trim();
 
     return (
-      artist: cleanAuthor.isNotEmpty ? cleanAuthor : 'Unknown Artist',
-      title: clean.isNotEmpty ? clean : rawTitle,
+      artist: cleanAuthor.isNotEmpty ? cleanAuthor : 'YouTube',
+      title: rawTitle.trim(),
     );
   }
 

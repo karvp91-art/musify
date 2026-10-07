@@ -30,4 +30,7 @@ abstract class AudioRepository {
   Future<void> recordTrackPlay(Track track, {int durationListenedMs = 0, bool completed = false});
   Future<Map<String, int>> getTrackPlayCounts();
   Stream<Map<String, int>> watchTrackPlayCounts();
+  Future<List<Track>> getRecentlyPlayedTracks({int limit = 20});
+  Stream<List<Track>> watchRecentlyPlayedTracks({int limit = 20});
 }
+

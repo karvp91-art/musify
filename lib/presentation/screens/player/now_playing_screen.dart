@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -21,6 +20,8 @@ import 'package:musify/presentation/screens/settings/studio_equalizer_screen.dar
 /// Global helper to push NowPlayingScreen seamlessly from any screen
 Future<void> openNowPlayingScreen(BuildContext context) {
   HapticFeedback.selectionClick();
+  FocusManager.instance.primaryFocus?.unfocus();
+  SystemChannels.textInput.invokeMethod('TextInput.hide');
   return Navigator.of(context, rootNavigator: true).push<void>(
     PageRouteBuilder(
       // Fully opaque so underlying screens (home, lists, mini player) stop painting once open
@@ -48,6 +49,13 @@ Future<void> openNowPlayingScreen(BuildContext context) {
   );
 }
 
+/// Quantizes 35s vinyl rotation to ~30 fps (1050 steps) so unchanged frames don't dirty the render tree
+class _SteppedCurve extends Curve {
+  const _SteppedCurve();
+  @override
+  double transformInternal(double t) => (t * 1050).floorToDouble() / 1050; // 35s * 30fps
+}
+
 class NowPlayingScreen extends ConsumerStatefulWidget {
   final VoidCallback onMinimize;
   final Animation<double>? expandAnimation;
@@ -67,15 +75,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
   bool _showQueue = false;
   bool _showFullLyrics = false;
   late final AnimationController _recordSpinController;
+  late final Animation<double> _spinTurns;
   Animation<double>? _effectiveAnimation;
 
   @override
   void initState() {
     super.initState();
-    // 360-degree rotation animation: 35 seconds per revolution
+    // 360-degree rotation animation: 35 seconds per revolution, throttled to ~30 fps
     _recordSpinController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 35),
+    );
+    _spinTurns = CurvedAnimation(
+      parent: _recordSpinController,
+      curve: const _SteppedCurve(),
     );
   }
 
@@ -119,7 +132,11 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
   }
 
   void _handleRouteStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed) {
+    if (status == AnimationStatus.forward) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
+    } else if (status == AnimationStatus.completed) {
+      FocusManager.instance.primaryFocus?.unfocus();
       if (mounted) {
         final isPlaying = ref.read(isPlaybackPlayingProvider);
         _syncSpinAnimation(isPlaying: isPlaying);
@@ -156,7 +173,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
   @override
   Widget build(BuildContext context) {
     final track = ref.watch(currentPlayingTrackProvider);
-    final audioHandler = ref.watch(audioHandlerProvider);
+    final audioHandler = ref.read(audioHandlerProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final primaryColor = theme.colorScheme.primary;
@@ -202,19 +219,18 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
         backgroundColor: isDark ? const Color(0xFF0C0D12) : const Color(0xFFF7F8FA),
         body: Stack(
           children: [
-            // Atmospheric blurred artwork background (0% CPU, GPU hardware texture upscaled)
+            // Atmospheric blurred artwork background (0% CPU, tiny decode hardware upscaled)
             Positioned.fill(
               child: _AmbientArtworkBackground(
                 key: ValueKey(track.artworkUrl),
                 artworkUrl: track.artworkUrl,
-                expandAnimation: widget.expandAnimation ?? ModalRoute.of(context)?.animation,
               ),
             ),
 
             // Main Screen Content with open canvas layout (borderless & unclosed)
             SafeArea(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 280),
+                duration: const Duration(milliseconds: 180),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
                 child: _showQueue
@@ -245,7 +261,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     ThemeData theme,
     Color primaryColor,
   ) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final isDark = theme.brightness == Brightness.dark;
 
     return GestureDetector(
@@ -300,13 +316,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
 
                   return Column(
                     children: [
-                      const Spacer(flex: 3),
+                      const Spacer(flex: 1),
 
                       // 3. Pristine Circular Artwork Hero (borderless, GPU-cached rotation)
                       _CircularArtworkHero(
                         track: track,
                         artSize: artSize,
-                        spinController: _recordSpinController,
+                        spinTurns: _spinTurns,
                         audioHandler: audioHandler,
                         primaryColor: primaryColor,
                       ),
@@ -386,7 +402,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                         ),
                       ),
 
-                      const Spacer(flex: 1),
+                      const Spacer(flex: 2),
 
                       // Bottom clearance
                       SizedBox(height: bottomLift),
@@ -893,14 +909,14 @@ class _LikeButton extends ConsumerWidget {
 class _CircularArtworkHero extends StatelessWidget {
   final Track track;
   final double artSize;
-  final AnimationController spinController;
+  final Animation<double> spinTurns;
   final dynamic audioHandler;
   final Color primaryColor;
 
   const _CircularArtworkHero({
     required this.track,
     required this.artSize,
-    required this.spinController,
+    required this.spinTurns,
     required this.audioHandler,
     required this.primaryColor,
   });
@@ -908,6 +924,8 @@ class _CircularArtworkHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final heroCacheDimension = (artSize * pixelRatio).round().clamp(100, 720);
 
     return GestureDetector(
       onHorizontalDragEnd: (details) {
@@ -951,17 +969,19 @@ class _CircularArtworkHero extends StatelessWidget {
               ),
             ),
 
-            // 2. Rotating Vinyl Disk: Isolated in its own RepaintBoundary so only the GPU texture transform updates
+            // 2. Rotating Vinyl Disk: Quantized ~30fps step turns on open canvas with static outer ClipOval
             RepaintBoundary(
-              child: RotationTransition(
-                turns: spinController,
-                child: TrackArtwork(
-                  artworkUrl: track.artworkUrl,
-                  seedKey: track.id.isNotEmpty ? track.id : track.title,
-                  size: artSize,
-                  isCircle: true,
-                  ambientGlow: false,
-                  cacheDimension: TrackArtwork.heroArtworkDimension,
+              child: ClipOval(
+                child: RotationTransition(
+                  turns: spinTurns,
+                  child: TrackArtwork(
+                    artworkUrl: track.artworkUrl,
+                    seedKey: track.id.isNotEmpty ? track.id : track.title,
+                    size: artSize,
+                    isCircle: true,
+                    ambientGlow: false,
+                    cacheDimension: heroCacheDimension,
+                  ),
                 ),
               ),
             ),
@@ -1290,26 +1310,26 @@ class _SlidingLyricsWidgetState extends ConsumerState<_SlidingLyricsWidget> {
                 return Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 280),
+                    child: AnimatedScale(
+                      scale: isActive ? 1.12 : 0.94,
+                      duration: const Duration(milliseconds: 240),
                       curve: Curves.easeOutCubic,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.style(
-                        fontSize: isActive ? 16.5 : 13.5,
-                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                        color: isActive
-                            ? (isDark ? Colors.white : Colors.black87)
-                            : (isDark
-                                ? Colors.white.withValues(alpha: 0.35)
-                                : Colors.black.withValues(alpha: 0.35)),
-                        letterSpacing: isActive ? -0.2 : -0.1,
-                        height: 1.3,
-                      ),
                       child: Text(
                         line.text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
+                        style: AppTypography.style(
+                          fontSize: 14.5,
+                          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                          color: isActive
+                              ? (isDark ? Colors.white : Colors.black87)
+                              : (isDark
+                                  ? Colors.white.withValues(alpha: 0.35)
+                                  : Colors.black.withValues(alpha: 0.35)),
+                          letterSpacing: -0.15,
+                          height: 1.3,
+                        ),
                       ),
                     ),
                   ),
@@ -1437,7 +1457,7 @@ class _FullLyricsScrollViewState extends ConsumerState<_FullLyricsScrollView> {
           },
           child: ListView.builder(
             controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
+            physics: const ClampingScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 60),
             itemCount: widget.lyrics.lines.length,
             itemBuilder: (context, index) {
@@ -1457,9 +1477,9 @@ class _FullLyricsScrollViewState extends ConsumerState<_FullLyricsScrollView> {
                   _scrollToIndex(index);
                 },
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
+                  duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
-                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  margin: const EdgeInsets.symmetric(vertical: 4),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
@@ -1467,19 +1487,25 @@ class _FullLyricsScrollViewState extends ConsumerState<_FullLyricsScrollView> {
                         ? AppColors.neonLime.withValues(alpha: isDark ? 0.14 : 0.10)
                         : Colors.transparent,
                   ),
-                  child: Text(
-                    line.text,
-                    textAlign: TextAlign.left,
-                    style: AppTypography.style(
-                      fontSize: isActive ? 20.0 : 16.5,
-                      fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-                      color: isActive
-                          ? (isDark ? Colors.white : Colors.black)
-                          : (isDark
-                              ? Colors.white.withValues(alpha: 0.35)
-                              : Colors.black.withValues(alpha: 0.38)),
-                      height: 1.4,
-                      letterSpacing: -0.2,
+                  child: AnimatedScale(
+                    scale: isActive ? 1.06 : 1.0,
+                    alignment: Alignment.centerLeft,
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    child: Text(
+                      line.text,
+                      textAlign: TextAlign.left,
+                      style: AppTypography.style(
+                        fontSize: 17.5,
+                        fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+                        color: isActive
+                            ? (isDark ? Colors.white : Colors.black)
+                            : (isDark
+                                ? Colors.white.withValues(alpha: 0.35)
+                                : Colors.black.withValues(alpha: 0.38)),
+                        height: 1.4,
+                        letterSpacing: -0.2,
+                      ),
                     ),
                   ),
                 ),
@@ -1547,7 +1573,7 @@ class _IsolatedPlayerSeekBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final position = ref.watch(playerStateStreamProvider.select((s) => s.value?.position ?? Duration.zero));
     final duration = ref.watch(playerStateStreamProvider.select((s) => s.value?.duration ?? Duration.zero));
-    final audioHandler = ref.watch(audioHandlerProvider);
+    final audioHandler = ref.read(audioHandlerProvider);
 
     return CustomSeekBar(
       position: position,
@@ -1558,204 +1584,92 @@ class _IsolatedPlayerSeekBar extends ConsumerWidget {
 }
 
 /// Atmospheric artwork background
-/// Open canvas approach: decodes at tiny 32x32 size and lets the GPU upscale it with bilinear
-/// interpolation directly into the base scaffold background, with zero CPU cost and zero harsh container edges.
-/// Atmospheric artwork background
-/// Open canvas approach: uses the pre-cached hero image to avoid duplicate decodes and disk I/O.
-/// Heavy optical blur filter is deferred while sliding to guarantee 120fps entrance and exit.
-class _AmbientArtworkBackground extends StatefulWidget {
+/// Open canvas approach: decodes at tiny 48x48 size and lets the GPU upscale it with bilinear
+/// interpolation directly into the base scaffold background, with zero CPU cost, zero ImageFilter blur passes,
+/// and instant 120fps animations.
+class _AmbientArtworkBackground extends StatelessWidget {
   final String? artworkUrl;
-  final Animation<double>? expandAnimation;
 
   const _AmbientArtworkBackground({
     super.key,
     required this.artworkUrl,
-    this.expandAnimation,
   });
 
-  @override
-  State<_AmbientArtworkBackground> createState() => _AmbientArtworkBackgroundState();
-}
-
-class _AmbientArtworkBackgroundState extends State<_AmbientArtworkBackground> {
-  bool _ready = false;
-  Animation<double>? _activeAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _hookAnimation(widget.expandAnimation);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_activeAnimation == null) {
-      final routeAnim = ModalRoute.of(context)?.animation;
-      _hookAnimation(widget.expandAnimation ?? routeAnim);
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _AmbientArtworkBackground oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.expandAnimation != oldWidget.expandAnimation) {
-      _unhookAnimation();
-      _hookAnimation(widget.expandAnimation);
-    }
-    // If artwork changed while already settled and open, keep showing background
-    if (_activeAnimation != null && _activeAnimation!.isCompleted) {
-      _ready = true;
-    }
-  }
-
-  void _hookAnimation(Animation<double>? anim) {
-    if (anim == null) {
-      _ready = true;
-      return;
-    }
-    _activeAnimation = anim;
-    if (anim.isCompleted) {
-      _ready = true;
-    } else {
-      _ready = false;
-      anim.addStatusListener(_onAnimStatus);
-    }
-  }
-
-  void _unhookAnimation() {
-    _activeAnimation?.removeStatusListener(_onAnimStatus);
-    _activeAnimation = null;
-  }
-
-  void _onAnimStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed) {
-      if (mounted && !_ready) {
-        setState(() => _ready = true);
-      }
-    } else if (status == AnimationStatus.reverse || status == AnimationStatus.dismissed) {
-      // Immediately drop blur when minimizing so reverse slide is butter-smooth 120fps
-      if (mounted && _ready) {
-        setState(() => _ready = false);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _unhookAnimation();
-    super.dispose();
-  }
+  static const int _tiny = 48; // bilinear upscale = free "blur"
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseColor = isDark ? const Color(0xFF0C0D12) : const Color(0xFFF7F8FA);
+    final url = artworkUrl;
 
-    if (widget.artworkUrl == null || widget.artworkUrl!.trim().isEmpty || TrackArtwork.isPlaceholderUrl(widget.artworkUrl)) {
+    if (url == null || url.trim().isEmpty || TrackArtwork.isPlaceholderUrl(url)) {
       return ColoredBox(color: baseColor);
     }
 
-    final Widget? imageLayer;
-    if (_ready) {
-      final Widget imageWidget;
-      if (widget.artworkUrl!.startsWith('http://') || widget.artworkUrl!.startsWith('https://')) {
-        imageWidget = CachedNetworkImage(
-          imageUrl: widget.artworkUrl!,
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          memCacheWidth: TrackArtwork.heroArtworkDimension,
-          memCacheHeight: TrackArtwork.heroArtworkDimension,
-          filterQuality: FilterQuality.low,
-          errorWidget: (context, url, error) => const SizedBox.shrink(),
-        );
-      } else {
-        imageWidget = Image.file(
-          File(widget.artworkUrl!),
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          cacheWidth: TrackArtwork.heroArtworkDimension,
-          cacheHeight: TrackArtwork.heroArtworkDimension,
-          filterQuality: FilterQuality.low,
-          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-        );
-      }
-
-      imageLayer = Positioned.fill(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0.0, end: 1.0),
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          builder: (context, opacity, child) => Opacity(
-            opacity: opacity,
-            child: child,
-          ),
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(
-              sigmaX: 18.0,
-              sigmaY: 18.0,
-              tileMode: TileMode.clamp,
-            ),
-            child: SizedBox.expand(
-              child: imageWidget,
-            ),
-          ),
-        ),
-      );
-    } else {
-      imageLayer = null;
-    }
+    final Widget image = (url.startsWith('http://') || url.startsWith('https://'))
+        ? CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            memCacheWidth: _tiny,
+            memCacheHeight: _tiny,
+            filterQuality: FilterQuality.medium,
+            fadeInDuration: const Duration(milliseconds: 200),
+            errorWidget: (context, url, error) => const SizedBox.shrink(),
+          )
+        : Image.file(
+            File(url),
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            cacheWidth: _tiny,
+            cacheHeight: _tiny,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+          );
 
     return RepaintBoundary(
-      child: SizedBox(
-        width: screenWidth,
-        height: screenHeight,
-        child: Stack(
-          children: [
-            // Solid base matching Studio Equalizer & Audio Settings scaffold background
-            Positioned.fill(
-              child: ColoredBox(color: baseColor),
-            ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1. Solid base matching Studio Equalizer & Audio Settings scaffold background
+          ColoredBox(color: baseColor),
 
-            // Ambient artwork with silky optical blur - blooms in after slide transition finishes (120fps entrance)
-            ?imageLayer,
+          // 2. Tiny decode image with hardware bilinear upscale
+          image,
 
-            // Vertical gradient smoothly fading image out into solid baseColor (zero hard lines)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: isDark
-                        ? const [0.0, 0.35, 0.55, 0.68, 0.80, 1.0]
-                        : const [0.0, 0.28, 0.50, 0.68, 0.84, 1.0],
-                    colors: isDark
-                        ? [
-                            Colors.black.withValues(alpha: 0.15),
-                            Colors.black.withValues(alpha: 0.22),
-                            Colors.black.withValues(alpha: 0.48),
-                            Colors.black.withValues(alpha: 0.88),
-                            baseColor,
-                            baseColor,
-                          ]
-                        : [
-                            Colors.white.withValues(alpha: 0.16),
-                            Colors.white.withValues(alpha: 0.08),
-                            Colors.white.withValues(alpha: 0.20),
-                            Colors.white.withValues(alpha: 0.55),
-                            baseColor.withValues(alpha: 0.90),
-                            baseColor,
-                          ],
-                  ),
+          // 3. Vertical gradient smoothly fading image out into solid baseColor (zero hard lines)
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: isDark
+                      ? const [0.0, 0.35, 0.55, 0.68, 0.80, 1.0]
+                      : const [0.0, 0.28, 0.50, 0.68, 0.84, 1.0],
+                  colors: isDark
+                      ? [
+                          Colors.black.withValues(alpha: 0.15),
+                          Colors.black.withValues(alpha: 0.22),
+                          Colors.black.withValues(alpha: 0.48),
+                          Colors.black.withValues(alpha: 0.88),
+                          baseColor,
+                          baseColor,
+                        ]
+                      : [
+                          Colors.white.withValues(alpha: 0.16),
+                          Colors.white.withValues(alpha: 0.08),
+                          Colors.white.withValues(alpha: 0.20),
+                          Colors.white.withValues(alpha: 0.55),
+                          baseColor.withValues(alpha: 0.90),
+                          baseColor,
+                        ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

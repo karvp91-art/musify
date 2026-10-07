@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/track.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_typography.dart';
 import '../providers/audio_providers.dart';
 import 'track_artwork.dart';
 import 'track_menu_bottom_sheet.dart';
@@ -84,8 +85,8 @@ class TrackListTile extends ConsumerWidget {
       splashColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
       highlightColor: theme.colorScheme.onSurface.withValues(alpha: 0.03),
       child: Container(
-        height: 76,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        height: isYt ? 88 : 76,
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: isYt ? 8 : 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: isSelected
@@ -125,130 +126,216 @@ class TrackListTile extends ConsumerWidget {
               ),
             ],
 
-            // Rounded Square Artwork (matching reference — 14px radius)
-            TrackArtwork(
-              artworkUrl: track.artworkUrl,
-              seedKey: track.id.isNotEmpty ? track.id : track.title,
-              size: 56,
-              borderRadius: BorderRadius.circular(14),
-              fallbackIcon: track.isAudioClip
-                  ? (track.title.toLowerCase().contains('ringtone') ||
-                          (track.filePath?.toLowerCase().contains('ringtone') ?? false)
-                      ? Icons.ring_volume_rounded
-                      : Icons.graphic_eq_rounded)
-                  : Icons.music_note_rounded,
-            ),
-            const SizedBox(width: 14),
-
-            // Title & "By Artist • Duration"
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    track.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: isCurrent ? primaryColor : theme.colorScheme.onSurface,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15.5,
+            // Artwork: 16:9 Cinema Card for YouTube, 1:1 Square for Standard tracks
+            if (isYt) ...[
+              SizedBox(
+                width: 96,
+                height: 54,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned.fill(
+                      child: TrackArtwork(
+                        artworkUrl: track.artworkUrl,
+                        seedKey: track.id.isNotEmpty ? track.id : track.title,
+                        size: 96,
+                        height: 54,
+                        borderRadius: BorderRadius.circular(12),
+                        fallbackIcon: Icons.smart_display_rounded,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (track.isAudioClip) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          margin: const EdgeInsets.only(right: 6),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? AppColors.neonLime.withValues(alpha: 0.15)
-                                : const Color(0xFF70A314).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            (track.title.toLowerCase().contains('ringtone') ||
-                                    (track.filePath?.toLowerCase().contains('ringtone') ?? false))
-                                ? 'RINGTONE'
-                                : 'AUDIO',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: isDark ? AppColors.neonLime : const Color(0xFF70A314),
+                    // Top-Left: Glowing Red ▶ YT mini badge
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFCC0000).withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFFF0000).withValues(alpha: 0.40),
+                              blurRadius: 4,
                             ),
-                          ),
+                          ],
                         ),
-                      ] else if (track.source == AudioSourceType.saavn) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          margin: const EdgeInsets.only(right: 6),
-                          decoration: BoxDecoration(
-                            color: primaryColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '320K',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: primaryColor,
-                            ),
-                          ),
-                        ),
-                      ] else if (track.source == AudioSourceType.youtube) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          margin: const EdgeInsets.only(right: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF0000).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(
-                                'YT',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFFFF3333),
-                                ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.play_arrow_rounded, size: 8, color: Colors.white),
+                            const SizedBox(width: 1.5),
+                            Text(
+                              'YT',
+                              style: AppTypography.style(
+                                color: Colors.white,
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.2,
                               ),
-                              if (track.isDownloaded) ...[
-                                const SizedBox(width: 3),
-                                const Icon(
-                                  Icons.check_rounded,
-                                  size: 10,
-                                  color: Color(0xFF22C55E),
-                                ),
-                              ],
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                      Expanded(
-                        child: Text(
-                          isYt && !track.isDownloaded
-                              ? 'By ${track.artistName} • Download only (no streaming)'
-                              : 'By ${track.artistName}${durationStr.isNotEmpty ? ' • $durationStr' : ''}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: isYt && !track.isDownloaded
-                                ? (isDark ? const Color(0xFFFF6666) : const Color(0xFFCC0000))
-                                : theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                            fontSize: 12.5,
-                            fontWeight: isYt && !track.isDownloaded ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                    // Bottom-Right: Semi-transparent duration pill
+                    if (durationStr.isNotEmpty)
+                      Positioned(
+                        bottom: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.80),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            durationStr,
+                            style: AppTypography.style(
+                              color: Colors.white,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
+                            ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
+            ] else ...[
+              TrackArtwork(
+                artworkUrl: track.artworkUrl,
+                seedKey: track.id.isNotEmpty ? track.id : track.title,
+                size: 56,
+                borderRadius: BorderRadius.circular(14),
+                fallbackIcon: track.isAudioClip
+                    ? (track.title.toLowerCase().contains('ringtone') ||
+                            (track.filePath?.toLowerCase().contains('ringtone') ?? false)
+                        ? Icons.ring_volume_rounded
+                        : Icons.graphic_eq_rounded)
+                    : Icons.music_note_rounded,
+              ),
+            ],
+            const SizedBox(width: 13),
+
+            // Metadata Area
+            Expanded(
+              child: isYt
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          track.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.style(
+                            color: isCurrent ? primaryColor : theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14.5,
+                            height: 1.25,
+                            letterSpacing: -0.15,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                track.artistName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.caption.copyWith(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 12,
+                              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A),
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.bodyLarge.copyWith(
+                            color: isCurrent ? primaryColor : theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            if (track.isAudioClip) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? AppColors.neonLime.withValues(alpha: 0.15)
+                                      : const Color(0xFF70A314).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  (track.title.toLowerCase().contains('ringtone') ||
+                                          (track.filePath?.toLowerCase().contains('ringtone') ?? false))
+                                      ? 'RINGTONE'
+                                      : 'AUDIO',
+                                  style: AppTypography.style(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: isDark ? AppColors.neonLime : const Color(0xFF70A314),
+                                  ),
+                                ),
+                              ),
+                            ] else if (track.source == AudioSourceType.saavn) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: primaryColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  '320K',
+                                  style: AppTypography.style(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: primaryColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            Expanded(
+                              child: Text(
+                                'By ${track.artistName}${durationStr.isNotEmpty ? ' • $durationStr' : ''}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.caption.copyWith(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
             ),
 
             if (!isSelectionMode) ...[
@@ -265,9 +352,8 @@ class TrackListTile extends ConsumerWidget {
                         final isDownloaded = state.isDownloaded || track.isDownloaded;
                         final isDownloading = state.isDownloading;
 
-                        // When in YouTube section (or undownloaded YouTube track):
-                        // Only show Download button — no streaming play button!
-                        if (isYt && !isDownloaded) {
+                        // When in YouTube section (or YouTube track):
+                        if (isYt) {
                           if (isDownloading) {
                             return GestureDetector(
                               onTap: () {
@@ -298,6 +384,28 @@ class TrackListTile extends ConsumerWidget {
                             );
                           }
 
+                          if (isDownloaded) {
+                            return Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isDark
+                                    ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+                                    : const Color(0xFFDCFCE7),
+                                border: Border.all(
+                                  color: const Color(0xFF22C55E).withValues(alpha: 0.35),
+                                  width: 1,
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.check_rounded,
+                                size: 18,
+                                color: Color(0xFF22C55E),
+                              ),
+                            );
+                          }
+
                           return GestureDetector(
                             onTap: () {
                               HapticFeedback.lightImpact();
@@ -311,8 +419,18 @@ class TrackListTile extends ConsumerWidget {
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: isDark
-                                      ? const Color(0xFFFF0000).withValues(alpha: 0.18)
+                                      ? const Color(0xFFFF0000).withValues(alpha: 0.16)
                                       : const Color(0xFFFFEEEE),
+                                  border: Border.all(
+                                    color: const Color(0xFFFF0000).withValues(alpha: 0.35),
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFFF0000).withValues(alpha: 0.15),
+                                      blurRadius: 6,
+                                    ),
+                                  ],
                                 ),
                                 child: const Icon(
                                   Icons.download_rounded,
@@ -324,8 +442,8 @@ class TrackListTile extends ConsumerWidget {
                           );
                         }
 
-                        // Standard Track (or already-downloaded YouTube track):
-                        if (!isDownloaded && !isYt) {
+                        // Standard Track:
+                        if (!isDownloaded) {
                           if (isDownloading) {
                             return GestureDetector(
                               onTap: () => downloadManager.cancelDownload(track.id),
@@ -473,7 +591,7 @@ class _SwipeableTrackTile extends StatelessWidget {
             const SizedBox(width: 10),
             Text(
               'Play Next',
-              style: TextStyle(
+              style: AppTypography.style(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w800,
                 color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
@@ -558,6 +676,15 @@ class _TrackTilePopupMenu extends ConsumerWidget {
             );
           } else if (value == 'playlist') {
             showAddToPlaylistDropdownDialog(context, ref, track);
+          } else if (value == 'copy_yt_link') {
+            final ytId = track.sourceId.isNotEmpty ? track.sourceId : track.id.replaceFirst('youtube:', '');
+            Clipboard.setData(ClipboardData(text: 'https://youtube.com/watch?v=$ytId'));
+            AppSnackBar.show(
+              context,
+              message: 'YouTube link copied to clipboard',
+              type: AppSnackBarType.success,
+              icon: Icons.link_rounded,
+            );
           } else if (value == 'remove_playlist') {
             onRemoveFromPlaylist?.call();
           } else if (value == 'download') {
@@ -589,6 +716,8 @@ class _TrackTilePopupMenu extends ConsumerWidget {
           final downloadManager = ref.read(downloadManagerProvider);
           final isDownloaded = downloadManager.isDownloaded(track.id) || track.isDownloaded;
           final isDownloading = downloadManager.isDownloading(track.id);
+          final isYtTrack = track.source == AudioSourceType.youtube;
+          final menuItemStyle = AppTypography.bodyMedium.copyWith(fontSize: 14, fontWeight: FontWeight.w500);
 
           return [
             PopupMenuItem(
@@ -597,7 +726,7 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                 children: [
                   Icon(Icons.playlist_play_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
                   const SizedBox(width: 12),
-                  const Text('Play Next', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Text('Play Next', style: menuItemStyle),
                 ],
               ),
             ),
@@ -607,20 +736,33 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                 children: [
                   Icon(Icons.queue_music_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
                   const SizedBox(width: 12),
-                  const Text('Add to Queue', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Text('Add to Queue', style: menuItemStyle),
                 ],
               ),
             ),
+            if (isYtTrack) ...[
+              PopupMenuItem(
+                value: 'copy_yt_link',
+                child: Row(
+                  children: [
+                    Icon(Icons.link_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
+                    const SizedBox(width: 12),
+                    Text('Copy YouTube Link', style: menuItemStyle),
+                  ],
+                ),
+              ),
+            ],
             if (onRemoveFromPlaylist != null) ...[
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'remove_playlist',
                 child: Row(
                   children: [
-                    Icon(Icons.remove_circle_outline_rounded, size: 20, color: Colors.redAccent),
-                    SizedBox(width: 12),
-                    Text('Remove from Playlist',
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w500, color: Colors.redAccent)),
+                    const Icon(Icons.remove_circle_outline_rounded, size: 20, color: Colors.redAccent),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Remove from Playlist',
+                      style: menuItemStyle.copyWith(color: Colors.redAccent),
+                    ),
                   ],
                 ),
               ),
@@ -631,7 +773,7 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                 children: [
                   Icon(Icons.playlist_add_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
                   const SizedBox(width: 12),
-                  const Text('Add to Playlist', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Text('Add to Playlist', style: menuItemStyle),
                 ],
               ),
             ),
@@ -642,7 +784,7 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                   children: [
                     Icon(Icons.download_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
                     const SizedBox(width: 12),
-                    const Text('Download Song', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    Text('Download Song', style: menuItemStyle),
                   ],
                 ),
               ),
@@ -653,18 +795,21 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                   children: [
                     Icon(Icons.close_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
                     const SizedBox(width: 12),
-                    const Text('Cancel Download', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    Text('Cancel Download', style: menuItemStyle),
                   ],
                 ),
               ),
             ] else if (isDownloaded || track.source == AudioSourceType.local) ...[
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'delete_device',
                 child: Row(
                   children: [
-                    Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
-                    SizedBox(width: 12),
-                    Text('Delete from Device', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.redAccent)),
+                    const Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Delete from Device',
+                      style: menuItemStyle.copyWith(color: Colors.redAccent),
+                    ),
                   ],
                 ),
               ),
@@ -682,9 +827,7 @@ class _TrackTilePopupMenu extends ConsumerWidget {
                   const SizedBox(width: 12),
                   Text(
                     isLiked ? 'Remove from Liked' : 'Save to Liked',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                    style: menuItemStyle.copyWith(
                       color: isLiked ? (isDark ? AppColors.neonLime : AppColors.limeAccentDark) : null,
                     ),
                   ),

@@ -46,4 +46,35 @@ class Playlist {
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'coverUrl': coverUrl,
+      'isCollaborative': isCollaborative,
+      'isDownloaded': isDownloaded,
+      'tracks': tracks.map((t) => t.toMap()).toList(),
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+    };
+  }
+
+  factory Playlist.fromMap(Map<String, dynamic> map) {
+    return Playlist(
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? 'Untitled Playlist',
+      description: map['description'] as String?,
+      coverUrl: map['coverUrl'] as String?,
+      isCollaborative: map['isCollaborative'] as bool? ?? false,
+      isDownloaded: map['isDownloaded'] as bool? ?? false,
+      tracks: (map['tracks'] as List<dynamic>?)
+              ?.map((e) => Track.fromMap(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(map['updatedAt'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
 }

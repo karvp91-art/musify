@@ -7,6 +7,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/artist/artist_detail_screen.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
+import 'package:musify/presentation/widgets/offline_state_view.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
 
@@ -420,27 +421,10 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                   loading: () => const Center(
                     child: CircularProgressIndicator(color: AppColors.neonLime),
                   ),
-                  error: (err, _) => Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.error_outline_rounded,
-                          size: 40,
-                          color: theme.colorScheme.error,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Failed to load album details',
-                          style: AppTypography.bodyLarge,
-                        ),
-                        const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: () => ref.invalidate(saavnAlbumDetailsProvider(widget.albumId)),
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
+                  error: (err, _) => OfflineStateView(
+                    title: 'Failed to Load Album',
+                    message: 'Connect to the internet to load album artwork and full track list.',
+                    onRetry: () => ref.invalidate(saavnAlbumDetailsProvider(widget.albumId)),
                   ),
                 ),
               ),
