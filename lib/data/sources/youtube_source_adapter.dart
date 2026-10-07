@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../domain/models/track.dart';
@@ -207,26 +206,23 @@ class YouTubeSourceAdapter implements SourceAdapter {
 
     try {
       StreamManifest manifest;
-      bool isAndroidClient = true;
       try {
         manifest = await _yt.videos.streamsClient.getManifest(
           videoId,
           ytClients: [YoutubeApiClient.androidSdkless],
         );
-      } catch (manifestError) {
-        debugPrint('androidSdkless manifest failed for $videoId ($manifestError), falling back to default manifest');
+      } catch (_) {
         manifest = await _yt.videos.streamsClient.getManifest(videoId);
-        isAndroidClient = false;
       }
 
       final audioOnly = manifest.audioOnly.toList()
         ..sort((a, b) => b.bitrate.compareTo(a.bitrate));
 
       final StreamInfo? stream =
-          audioOnly.where((s) => s.container.name == 'mp4').firstOrNull ??
-          audioOnly.firstOrNull ??
           manifest.muxed.where((s) => s.tag == 18).firstOrNull ??
-          manifest.muxed.firstOrNull;
+          manifest.muxed.firstOrNull ??
+          audioOnly.where((s) => s.container.name == 'mp4').firstOrNull ??
+          audioOnly.firstOrNull;
       if (stream == null) return null;
 
       final ext = stream is MuxedStreamInfo
@@ -237,44 +233,20 @@ class YouTubeSourceAdapter implements SourceAdapter {
       final tempFile = File(tempPath);
       if (tempFile.existsSync()) tempFile.deleteSync();
 
+      final streamData = _yt.videos.streamsClient.get(stream);
       final totalBytes = stream.size.totalBytes;
-      final url = stream.url.toString();
-      const ua = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip';
-
       final sink = tempFile.openWrite();
-      int start = 0;
-      const chunkSize = 500 * 1024;
+      int downloadedBytes = 0;
 
       try {
-        while (start < totalBytes) {
+        await for (final chunk in streamData) {
           if (cancelToken?.isCancelled == true) {
             throw Exception('Download cancelled');
           }
-
-          final end = (start + chunkSize - 1).clamp(0, totalBytes - 1);
-          final res = await _dio.get<ResponseBody>(
-            url,
-            cancelToken: cancelToken,
-            options: Options(
-              responseType: ResponseType.stream,
-              headers: {
-                if (isAndroidClient) 'User-Agent': ua,
-                'Range': 'bytes=$start-$end',
-              },
-            ),
-          );
-
-          if (res.statusCode != 200 && res.statusCode != 206) {
-            throw Exception('HTTP ${res.statusCode}');
-          }
-
-          await for (final chunk in res.data!.stream) {
-            sink.add(chunk);
-          }
-
-          start = end + 1;
+          sink.add(chunk);
+          downloadedBytes += chunk.length;
           if (totalBytes > 0 && onProgress != null) {
-            onProgress((start / totalBytes).clamp(0.0, 1.0));
+            onProgress((downloadedBytes / totalBytes).clamp(0.0, 1.0));
           }
         }
 
@@ -302,8 +274,8 @@ class YouTubeSourceAdapter implements SourceAdapter {
         onProgress?.call(1.0);
         return finalFile;
       }
-    } catch (e, st) {
-      debugPrint('YouTube download failed for $videoId: $e\n$st');
+    } catch (_) {
+      // Download failed
     }
 
     return null;
