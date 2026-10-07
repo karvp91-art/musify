@@ -182,7 +182,7 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
                               fontSize: 23,
                               fontWeight: FontWeight.w900,
                               letterSpacing: -0.2,
-                              color: theme.colorScheme.onSurface,
+                              color: isDark ? AppColors.neonLime : AppColors.neonLimeDim,
                             ),
                           ),
                           TextSpan(
@@ -190,7 +190,7 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
                             style: AppTypography.headlineLarge.copyWith(
                               fontSize: 26,
                               fontWeight: FontWeight.w900,
-                              color: isDark ? AppColors.neonLime : const Color(0xFF3B7D14),
+                              color: isDark ? AppColors.neonLime : const Color(0xFF000000),
                             ),
                           ),
                         ],
@@ -222,7 +222,7 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
                   _CircleHeaderButton(
                     icon: isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
                     iconSize: 20,
-                    iconColor: isDark ? const Color(0xFFD2F843) : const Color(0xFF3B7D14),
+                    iconColor:  isDark ? AppColors.neonLime : AppColors.neonLimeDim,
                     onTap: () {
                       ref.read(themeModeProvider.notifier).toggleTheme();
                     },
