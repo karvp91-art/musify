@@ -121,9 +121,7 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
     HapticFeedback.selectionClick();
     Navigator.of(context).push(
       CupertinoPageRoute(
-        builder: (_) => const Scaffold(
-          body: SearchScreen(),
-        ),
+        builder: (_) => const SearchScreen(),
       ),
     );
   }

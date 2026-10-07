@@ -6,6 +6,7 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
+import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
@@ -389,6 +390,14 @@ class _StreamPlaylistDetailScreenState extends ConsumerState<StreamPlaylistDetai
               right: 0,
               bottom: 0,
               child: FloatingMiniPlayer(),
+            ),
+
+            // Floating Dynamic Island Download Status Capsule
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 0,
+              right: 0,
+              child: const DownloadDynamicIsland(),
             ),
           ],
         ),

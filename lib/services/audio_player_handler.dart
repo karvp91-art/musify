@@ -10,21 +10,26 @@ import 'preferences_service.dart';
 class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final PreferencesService? preferencesService;
 
-  // Hardware Audio Effects & Dual Player Decks
+  // ---------------------------------------------------------------------------
+  // Decks / effects
+  // ---------------------------------------------------------------------------
   late final AndroidEqualizer _equalizerA;
   late final AndroidEqualizer _equalizerB;
   late final AndroidLoudnessEnhancer _loudnessA;
   late final AndroidLoudnessEnhancer _loudnessB;
-
   late final AudioPipeline _pipelineA;
   late final AudioPipeline _pipelineB;
-
   late final AudioPlayer _playerA;
   late final AudioPlayer _playerB;
 
   late AudioPlayer _activePlayer;
   late AudioPlayer _inactivePlayer;
 
+  final List<StreamSubscription<dynamic>> _subs = [];
+
+  // ---------------------------------------------------------------------------
+  // Queue / shuffle state
+  // ---------------------------------------------------------------------------
   List<Track> _playlist = [];
   int _currentIndex = -1;
 
@@ -44,49 +49,42 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   int _shufflePointer = -1;
   final List<int> _historyIndices = [];
 
-  // Gapless & Crossfade State
-  int _crossfadeDuration = 0; // 0 to 10 seconds
+  // ---------------------------------------------------------------------------
+  // Gapless & crossfade state
+  // ---------------------------------------------------------------------------
+  static const int _minFadeMs = 150;
+  static const Duration _gaplessLead = Duration(milliseconds: 150);
+
+  int _crossfadeDuration = 0; // seconds, 0..10
   bool _gaplessPlayback = true;
-  bool _isCrossfading = false;
-  Timer? _crossfadeTimer;
-  int? _prebufferedTrackIndex;
-  int? _crossfadeTargetIndex; // Target track index during an active crossfade
 
   int get crossfadeDuration => _crossfadeDuration;
   bool get isGaplessPlayback => _gaplessPlayback;
 
-  Future<String> Function(Track track)? _trackUrlResolver;
+  bool _isCrossfading = false; // true from decision until fade completes/cancels
+  int? _crossfadeTargetIndex;
+  Timer? _crossfadeTimer;
+  Stopwatch? _fadeWatch; // non-null only while the fade itself is running
 
-  bool _isNeedsUrlResolution(String? url) {
-    if (url == null || url.isEmpty || !url.startsWith('http')) return true;
-    return url.contains('jiotunepreview') ||
-        url.contains('preview.saavncdn.com') ||
-        url.contains('_p.mp4');
-  }
+  /// Bumped whenever whatever is loading/playing on the INACTIVE deck becomes
+  /// stale (cancel, queue edit, deck swap, new prebuffer...).
+  int _deckGen = 0;
+
+  /// Bumped whenever a new load on the ACTIVE deck starts (or is aborted).
+  int _activeGen = 0;
+  bool _activeLoading = false;
+
+  int? _prebufferReadyIndex; // inactive deck has this track loaded and ready
+  int? _prebufferingIndex; // load in flight
+  int? _prebufferFailedIndex; // do not retry until invalidated
+  Future<void>? _prebufferFuture;
+
+  final Stopwatch _emitThrottle = Stopwatch()..start();
+
+  Future<String> Function(Track track)? _trackUrlResolver;
 
   void setTrackUrlResolver(Future<String> Function(Track track) resolver) {
     _trackUrlResolver = resolver;
-  }
-
-  void _setupShuffleIndices() {
-    _shuffleIndices.clear();
-    _historyIndices.clear();
-    if (_playlist.isEmpty) {
-      _shufflePointer = -1;
-      return;
-    }
-    final allIndices = List.generate(_playlist.length, (i) => i);
-    if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
-      allIndices.remove(_currentIndex);
-      allIndices.shuffle(math.Random());
-      _shuffleIndices.add(_currentIndex);
-      _shuffleIndices.addAll(allIndices);
-      _shufflePointer = 0;
-    } else {
-      allIndices.shuffle(math.Random());
-      _shuffleIndices.addAll(allIndices);
-      _shufflePointer = 0;
-    }
   }
 
   MusifyAudioHandler({this.preferencesService}) {
@@ -100,6 +98,10 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _initSavedEqualizer();
     _emitState();
   }
+
+  // ===========================================================================
+  // Setup
+  // ===========================================================================
 
   void _initHardwareEffectsAndPlayers() {
     try {
@@ -125,29 +127,26 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   void _initSavedEqualizer() {
-    if (preferencesService != null) {
-      final isEnabled = preferencesService!.getEqualizerEnabled();
-      final gains = preferencesService!.getEqualizerBandGains();
-      final bass = preferencesService!.getEqualizerBassBoost();
-      final loudness = preferencesService!.getEqualizerLoudness();
-      // Apply asynchronously without blocking player startup
-      applyEqualizerSettings(
-        enabled: isEnabled,
-        bandGains: gains,
-        bassBoost: bass,
-        loudness: loudness,
-      ).catchError((_) {});
-    }
+    final prefs = preferencesService;
+    if (prefs == null) return;
+    applyEqualizerSettings(
+      enabled: prefs.getEqualizerEnabled(),
+      bandGains: prefs.getEqualizerBandGains(),
+      bassBoost: prefs.getEqualizerBassBoost(),
+      loudness: prefs.getEqualizerLoudness(),
+    ).catchError((_) {});
   }
 
   void setCrossfadeDuration(int seconds) {
     _crossfadeDuration = seconds.clamp(0, 10);
     preferencesService?.setCrossfadeDuration(_crossfadeDuration);
+    _invalidateUpcoming(keepFade: true);
   }
 
   void setGaplessPlayback(bool enabled) {
     _gaplessPlayback = enabled;
     preferencesService?.setGaplessPlayback(enabled);
+    _invalidateUpcoming(keepFade: true);
   }
 
   Future<void> applyEqualizerSettings({
@@ -156,58 +155,44 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     required double bassBoost,
     double loudness = 0.0,
   }) async {
-    // Equalizer bands on Android Hardware for Deck A
+    // Arguments are evaluated inside try so a failed late-init of a deck's
+    // effects (unsupported hardware) degrades gracefully.
     try {
-      await _equalizerA.setEnabled(enabled);
-      final paramsA = await _equalizerA.parameters;
-      for (int i = 0; i < bandGains.length; i++) {
-        final gain = bandGains[i];
-        if (i < paramsA.bands.length) {
-          await paramsA.bands[i].setGain(gain);
-        }
-      }
-    } catch (_) {
-      // Platform audio effects degrade gracefully on unsupported hardware/sessions
-    }
-
-    // Equalizer bands on Android Hardware for Deck B
+      await _applyEffectsToDeck(_equalizerA, _loudnessA, enabled, bandGains, bassBoost, loudness);
+    } catch (_) {}
     try {
-      await _equalizerB.setEnabled(enabled);
-      final paramsB = await _equalizerB.parameters;
-      for (int i = 0; i < bandGains.length; i++) {
-        final gain = bandGains[i];
-        if (i < paramsB.bands.length) {
-          await paramsB.bands[i].setGain(gain);
-        }
-      }
-    } catch (_) {
-      // Platform audio effects degrade gracefully
-    }
-
-    // Loudness enhancer / Bass boost for Deck A
-    try {
-      final boostEnabled = enabled && (bassBoost > 0.01 || loudness > 0.01);
-      await _loudnessA.setEnabled(boostEnabled);
-      if (boostEnabled) {
-        final gainDb = (bassBoost * 4.0) + (loudness * 4.0);
-        await _loudnessA.setTargetGain(gainDb);
-      }
-    } catch (_) {
-      // Platform effects degrade gracefully
-    }
-
-    // Loudness enhancer / Bass boost for Deck B
-    try {
-      final boostEnabled = enabled && (bassBoost > 0.01 || loudness > 0.01);
-      await _loudnessB.setEnabled(boostEnabled);
-      if (boostEnabled) {
-        final gainDb = (bassBoost * 4.0) + (loudness * 4.0);
-        await _loudnessB.setTargetGain(gainDb);
-      }
-    } catch (_) {
-      // Platform effects degrade gracefully
-    }
+      await _applyEffectsToDeck(_equalizerB, _loudnessB, enabled, bandGains, bassBoost, loudness);
+    } catch (_) {}
   }
+
+  Future<void> _applyEffectsToDeck(
+    AndroidEqualizer eq,
+    AndroidLoudnessEnhancer loud,
+    bool enabled,
+    List<double> bandGains,
+    double bassBoost,
+    double loudness,
+  ) async {
+    try {
+      await eq.setEnabled(enabled);
+      final params = await eq.parameters;
+      for (int i = 0; i < bandGains.length && i < params.bands.length; i++) {
+        await params.bands[i].setGain(bandGains[i]);
+      }
+    } catch (_) {}
+
+    try {
+      final boostEnabled = enabled && (bassBoost > 0.01 || loudness > 0.01);
+      await loud.setEnabled(boostEnabled);
+      if (boostEnabled) {
+        await loud.setTargetGain((bassBoost * 4.0) + (loudness * 4.0));
+      }
+    } catch (_) {}
+  }
+
+  // ===========================================================================
+  // Player listeners
+  // ===========================================================================
 
   void _initAudioStreams() {
     _attachPlayerListeners(_playerA);
@@ -215,51 +200,63 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   void _attachPlayerListeners(AudioPlayer player) {
-    player.playbackEventStream.listen((PlaybackEvent event) {
+    _subs.add(player.playbackEventStream.listen((_) {
       if (identical(player, _activePlayer) || _isCrossfading) {
         _syncPlaybackState();
         _emitState();
       }
-    });
+    }, onError: (Object _) {}));
 
-    player.playerStateStream.listen((state) {
-      if (identical(player, _activePlayer) && state.processingState == ProcessingState.completed) {
-        if (_isCrossfading && _crossfadeTargetIndex != null) {
-          // Outgoing track finished during crossfade — snap to completion instantly
-          _completeCrossfade(_crossfadeTargetIndex!);
-        } else if (!_isCrossfading) {
-          _handleTrackCompleted();
+    _subs.add(player.playerStateStream.listen((state) {
+      if (!identical(player, _activePlayer)) return;
+      if (state.processingState != ProcessingState.completed) return;
+
+      if (_isCrossfading) {
+        final target = _crossfadeTargetIndex;
+        if (target == null) return;
+        if (_fadeWatch != null) {
+          // Outgoing deck ended during the fade: finish immediately.
+          _completeCrossfade(target);
+        } else {
+          // Outgoing deck ended while the incoming deck was still loading.
+          _cancelCrossfade();
+          _advanceTo(target);
+          unawaited(_playCurrentTrack());
         }
+      } else {
+        unawaited(_handleTrackCompleted());
       }
-    });
+    }));
 
-    player.positionStream.listen((pos) {
-      if (identical(player, _activePlayer)) {
-        _checkCrossfadeOrPrebuffer(pos);
-        _emitState();
-      }
-    });
+    // Fast position updates so the gapless hand-off can fire close to the end.
+    _subs.add(player
+        .createPositionStream(
+          minPeriod: const Duration(milliseconds: 50),
+          maxPeriod: const Duration(milliseconds: 200),
+        )
+        .listen((pos) {
+      if (!identical(player, _activePlayer)) return;
+      _checkUpcoming(pos);
+      _emitStateThrottled();
+    }));
 
-    player.bufferedPositionStream.listen((_) {
-      if (identical(player, _activePlayer)) {
-        _emitState();
-      }
-    });
+    _subs.add(player.bufferedPositionStream.listen((_) {
+      if (identical(player, _activePlayer)) _emitStateThrottled();
+    }));
 
-    player.durationStream.listen((duration) {
-      if (identical(player, _activePlayer)) {
-        if (duration != null && duration > Duration.zero) {
-          final current = mediaItem.value;
-          if (current != null && current.duration != duration) {
-            mediaItem.add(current.copyWith(duration: duration));
-          }
-        }
+    _subs.add(player.durationStream.listen((duration) {
+      if (!identical(player, _activePlayer)) return;
+      if (duration == null || duration <= Duration.zero) return;
+      final current = mediaItem.value;
+      if (current != null && current.duration != duration) {
+        mediaItem.add(current.copyWith(duration: duration));
       }
-    });
+    }));
   }
 
   void _syncPlaybackState() {
-    final isPlaying = _activePlayer.playing || (_isCrossfading && _inactivePlayer.playing);
+    final isPlaying =
+        _activePlayer.playing || (_fadeWatch != null && _inactivePlayer.playing);
     final processingState = _activePlayer.processingState;
 
     playbackState.add(playbackState.value.copyWith(
@@ -289,243 +286,161 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     ));
   }
 
-  void _checkCrossfadeOrPrebuffer(Duration position) {
-    final duration = _activePlayer.duration;
-    if (duration == null || duration <= const Duration(seconds: 4)) return;
-    if (_isCrossfading) return;
+  // ===========================================================================
+  // Helpers: indices, sources
+  // ===========================================================================
 
-    final remaining = duration - position;
+  bool _validIndex(int i) => i >= 0 && i < _playlist.length;
 
-    if (_crossfadeDuration > 0) {
-      // Pre-buffer for crossfade: start loading the next track 3s before fade window
-      final prebufferWindow = Duration(seconds: _crossfadeDuration + 3);
-      if (remaining <= prebufferWindow && remaining > Duration(seconds: _crossfadeDuration)) {
-        final nextIdx = _getNextIndex();
-        if (nextIdx != null && _prebufferedTrackIndex != nextIdx) {
-          _prebufferTrack(nextIdx);
-        }
-      }
-
-      // Crossfade trigger (+300ms buffer for position stream latency)
-      final crossfadeWindow = Duration(seconds: _crossfadeDuration, milliseconds: 300);
-      if (remaining <= crossfadeWindow) {
-        final nextIdx = _getNextIndex();
-        if (nextIdx != null) {
-          _startCrossfade(nextIdx);
-        }
-      }
-      return;
-    }
-
-    // Gapless pre-buffer trigger (~5s before track end)
-    if (_gaplessPlayback && remaining <= const Duration(seconds: 5)) {
-      final nextIdx = _getNextIndex();
-      if (nextIdx != null && _prebufferedTrackIndex != nextIdx) {
-        _prebufferTrack(nextIdx);
-      }
-    }
+  /// Finds [id] near [hint]; falls back to a search if the queue shifted.
+  int _locate(int hint, String id) {
+    if (_validIndex(hint) && _playlist[hint].id == id) return hint;
+    return _playlist.indexWhere((t) => t.id == id);
   }
 
-  Future<void> _prebufferTrack(int nextIndex) async {
-    if (nextIndex < 0 || nextIndex >= _playlist.length) return;
-    _prebufferedTrackIndex = nextIndex;
-    final track = _playlist[nextIndex];
-
-    try {
-      // Stop inactive player first to ensure it doesn't auto-play on source load
-      await _inactivePlayer.stop();
-      final hasLocal = track.filePath != null &&
-          track.filePath!.isNotEmpty &&
-          File(track.filePath!).existsSync();
-      if (hasLocal) {
-        await _inactivePlayer.setFilePath(track.filePath!);
-      } else {
-        var url = track.audioUrl;
-        if (_isNeedsUrlResolution(url) && _trackUrlResolver != null) {
-          url = await _trackUrlResolver!(track);
-          if (url.isNotEmpty && nextIndex >= 0 && nextIndex < _playlist.length) {
-            _playlist[nextIndex] = track.copyWith(audioUrl: url);
-          }
-        }
-        if (url.isNotEmpty) {
-          await _inactivePlayer.setUrl(url);
-        }
-      }
-      // Player is now in ready state with source loaded, not playing
-    } catch (_) {
-      _prebufferedTrackIndex = null;
-    }
+  bool _isNeedsUrlResolution(String? url) {
+    if (url == null || url.isEmpty || !url.startsWith('http')) return true;
+    return url.contains('jiotunepreview') ||
+        url.contains('preview.saavncdn.com') ||
+        url.contains('_p.mp4');
   }
 
-  void _startCrossfade(int nextIndex) {
-    if (_isCrossfading || nextIndex < 0 || nextIndex >= _playlist.length) return;
-    _isCrossfading = true;
-    _crossfadeTargetIndex = nextIndex;
-
-    final nextTrack = _playlist[nextIndex];
-    final totalFadeMs = _crossfadeDuration * 1000;
-    const intervalMs = 50;
-    int elapsedMs = 0;
-
-    () async {
-      try {
-        await _inactivePlayer.setVolume(0.0);
-        final hasLocal = nextTrack.filePath != null &&
-            nextTrack.filePath!.isNotEmpty &&
-            File(nextTrack.filePath!).existsSync();
-        if (_prebufferedTrackIndex == nextIndex) {
-          // Track is already pre-buffered in _inactivePlayer
-        } else if (hasLocal) {
-          await _inactivePlayer.setFilePath(nextTrack.filePath!);
-        } else {
-          var url = nextTrack.audioUrl;
-          if (_isNeedsUrlResolution(url) && _trackUrlResolver != null) {
-            url = await _trackUrlResolver!(nextTrack);
-            if (url.isNotEmpty && nextIndex >= 0 && nextIndex < _playlist.length) {
-              final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
-              if (isLocal) {
-                _playlist[nextIndex] = nextTrack.copyWith(filePath: url, isDownloaded: true);
-              } else {
-                _playlist[nextIndex] = nextTrack.copyWith(audioUrl: url);
-              }
-            }
-          }
-          if (url.isNotEmpty) {
-            final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
-            if (isLocal) {
-              await _inactivePlayer.setFilePath(url);
-            } else {
-              await _inactivePlayer.setUrl(url);
-            }
-          }
-        }
-
-        await _inactivePlayer.play();
-
-        _crossfadeTimer?.cancel();
-        _crossfadeTimer = Timer.periodic(const Duration(milliseconds: intervalMs), (timer) {
-          elapsedMs += intervalMs;
-          final t = (elapsedMs / totalFadeMs).clamp(0.0, 1.0);
-
-          // Smooth cosine curve for natural acoustic power fade
-          final fadeOutVol = math.cos(t * math.pi / 2).clamp(0.0, 1.0);
-          final fadeInVol = math.sin(t * math.pi / 2).clamp(0.0, 1.0);
-
-          _activePlayer.setVolume(fadeOutVol);
-          _inactivePlayer.setVolume(fadeInVol);
-
-          if (elapsedMs >= totalFadeMs) {
-            timer.cancel();
-            _completeCrossfade(nextIndex);
-          }
-        });
-      } catch (_) {
-        _cancelCrossfade();
-        _playTrackInternal(nextIndex);
-      }
-    }();
-  }
-
-  void _completeCrossfade(int nextIndex) {
-    _crossfadeTimer?.cancel();
-    _crossfadeTimer = null;
-    _crossfadeTargetIndex = null;
-
-    _activePlayer.stop();
-    _activePlayer.setVolume(1.0);
-    _inactivePlayer.setVolume(1.0);
-
-    // Swap players
-    final temp = _activePlayer;
-    _activePlayer = _inactivePlayer;
-    _inactivePlayer = temp;
-
-    _isCrossfading = false;
-    _prebufferedTrackIndex = null;
-    _currentIndex = nextIndex;
-
-    final track = _playlist[nextIndex];
-    mediaItem.add(_trackToMediaItem(track));
-    _trackPlayedController.add(track);
-    _syncPlaybackState();
-    _emitState();
-  }
-
-  void _cancelCrossfade() {
-    _crossfadeTimer?.cancel();
-    _crossfadeTimer = null;
-    _crossfadeTargetIndex = null;
-    _isCrossfading = false;
-    _activePlayer.setVolume(1.0);
-    _inactivePlayer.stop();
-    _inactivePlayer.setVolume(1.0);
-  }
-
-  int? _getNextIndex() {
-    if (_playlist.isEmpty) return null;
-    if (_repeatMode == AppRepeatMode.one) return _currentIndex;
-    if (_isShuffle) {
-      if (_shufflePointer < _shuffleIndices.length - 1) {
-        return _shuffleIndices[_shufflePointer + 1];
-      } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
-        return _shuffleIndices.isNotEmpty ? _shuffleIndices[0] : 0;
-      }
-      return null;
-    }
-    if (_currentIndex < _playlist.length - 1) {
-      return _currentIndex + 1;
-    } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
-      return 0;
-    }
+  String? _localPath(Track t) {
+    final p = t.filePath;
+    if (p != null && p.isNotEmpty && File(p).existsSync()) return p;
     return null;
   }
 
-  void _handleTrackCompleted() {
-    if (_repeatMode == AppRepeatMode.one) {
-      _activePlayer.seek(Duration.zero);
-      _activePlayer.play();
-    } else if (_prebufferedTrackIndex != null) {
-      // Instant Gapless handoff to pre-buffered deck
-      final nextIdx = _prebufferedTrackIndex!;
-      _prebufferedTrackIndex = null;
+  bool _looksLocal(String s) =>
+      File(s).existsSync() || s.startsWith('/') || s.contains(':\\');
 
-      // Start incoming track FIRST for true zero-gap transition
-      _inactivePlayer.setVolume(1.0);
-      _inactivePlayer.seek(Duration.zero);
-      _inactivePlayer.play();
-
-      // Then stop the outgoing player
-      _activePlayer.stop();
-      _activePlayer.setVolume(1.0);
-
-      // Swap player decks
-      final temp = _activePlayer;
-      _activePlayer = _inactivePlayer;
-      _inactivePlayer = temp;
-
-      _currentIndex = nextIdx;
-      if (_isShuffle) {
-        _shufflePointer = _shuffleIndices.indexOf(nextIdx);
+  /// Single loader used by active playback, prebuffering and crossfade.
+  /// Returns true only if the source was loaded and [isStale] stayed false.
+  Future<bool> _loadInto(
+    AudioPlayer player,
+    int index,
+    bool Function() isStale, {
+    required bool stopFirst,
+  }) async {
+    if (!_validIndex(index)) return false;
+    final id = _playlist[index].id;
+    try {
+      if (stopFirst) {
+        // Make sure a deck never auto-plays when its source changes.
+        await player.stop();
+        if (isStale()) return false;
       }
-      final track = _playlist[nextIdx];
-      mediaItem.add(_trackToMediaItem(track));
-      _trackPlayedController.add(track);
-      _syncPlaybackState();
-      _emitState();
-    } else if (_isShuffle) {
-      if (hasNext) {
-        skipToNext();
-      } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
-        _setupShuffleIndices();
-        if (_shuffleIndices.isNotEmpty) {
-          skipToNext();
+
+      var i = _locate(index, id);
+      if (i < 0) return false;
+      final track = _playlist[i];
+
+      final local = _localPath(track);
+      var isFile = local != null;
+      var source = local ?? track.audioUrl;
+
+      if (!isFile && _isNeedsUrlResolution(source) && _trackUrlResolver != null) {
+        final resolved = await _trackUrlResolver!(track);
+        if (isStale()) return false;
+        i = _locate(i, id);
+        if (i < 0 || resolved.isEmpty) return false;
+
+        if (_looksLocal(resolved)) {
+          _playlist[i] = _playlist[i].copyWith(filePath: resolved, isDownloaded: true);
+          isFile = true;
+        } else {
+          _playlist[i] = _playlist[i].copyWith(audioUrl: resolved);
         }
+        _invalidateQueueCache();
+        source = resolved;
       }
-    } else if (hasNext) {
-      skipToNext();
-    } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
-      playTrackAtIndex(0);
+
+      if (source.isEmpty) return false;
+
+      if (isFile) {
+        await player.setFilePath(source);
+      } else {
+        await player.setUrl(source);
+      }
+      return !isStale();
+    } catch (_) {
+      return false;
     }
+  }
+
+  // ===========================================================================
+  // Single place that moves the "current track" pointer
+  // ===========================================================================
+
+  void _advanceTo(int index, {bool recordHistory = true}) {
+    final prev = _currentIndex;
+
+    if (_isShuffle) {
+      final inSync = _shuffleIndices.length == _playlist.length;
+      final wrapped = inSync &&
+          _repeatMode == AppRepeatMode.all &&
+          _shuffleIndices.isNotEmpty &&
+          _shufflePointer == _shuffleIndices.length - 1 &&
+          index == _shuffleIndices.first;
+      final pos = inSync ? _shuffleIndices.indexOf(index) : -1;
+
+      if (!inSync || wrapped || pos < 0) {
+        _currentIndex = index;
+        _setupShuffleIndices(); // fresh order, `index` first, history cleared
+      } else {
+        _shufflePointer = pos;
+      }
+      if (recordHistory && prev >= 0 && prev != index) {
+        _historyIndices.add(prev);
+      }
+    }
+
+    _currentIndex = index;
+  }
+
+  void _setupShuffleIndices() {
+    _shuffleIndices.clear();
+    _historyIndices.clear();
+    if (_playlist.isEmpty) {
+      _shufflePointer = -1;
+      return;
+    }
+    final all = List.generate(_playlist.length, (i) => i);
+    if (_validIndex(_currentIndex)) {
+      all.remove(_currentIndex);
+      all.shuffle(math.Random());
+      _shuffleIndices.add(_currentIndex);
+      _shuffleIndices.addAll(all);
+    } else {
+      all.shuffle(math.Random());
+      _shuffleIndices.addAll(all);
+    }
+    _shufflePointer = 0;
+  }
+
+  void _ensureShuffle() {
+    if (_isShuffle && _shuffleIndices.length != _playlist.length) {
+      _setupShuffleIndices();
+    }
+  }
+
+  /// [userSkip] ignores repeat-one (a manual "next" should really go next).
+  int? _getNextIndex({bool userSkip = false}) {
+    if (_playlist.isEmpty) return null;
+    if (_repeatMode == AppRepeatMode.one && !userSkip) return _currentIndex;
+
+    if (_isShuffle) {
+      _ensureShuffle();
+      if (_shufflePointer < _shuffleIndices.length - 1) {
+        return _shuffleIndices[_shufflePointer + 1];
+      }
+      if (_repeatMode == AppRepeatMode.all) return _shuffleIndices.first;
+      return null;
+    }
+
+    if (_currentIndex < _playlist.length - 1) return _currentIndex + 1;
+    if (_repeatMode == AppRepeatMode.all) return 0;
+    return null;
   }
 
   bool get hasNext {
@@ -540,27 +455,292 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   bool get hasPrevious {
     if (_playlist.isEmpty) return false;
-    if (_isShuffle) {
-      return _historyIndices.isNotEmpty || _shufflePointer > 0;
-    }
+    if (_isShuffle) return _historyIndices.isNotEmpty || _shufflePointer > 0;
     return _currentIndex > 0;
   }
 
-  List<Track>? _cachedUnmodifiableQueue;
+  // ===========================================================================
+  // Upcoming-track logic: prebuffer, gapless, crossfade
+  // ===========================================================================
 
-  List<Track> get _unmodifiablePlaylist {
-    return _cachedUnmodifiableQueue ??= List.unmodifiable(_playlist);
+  int _effectiveFadeMs(Duration duration) {
+    return math.min(_crossfadeDuration * 1000, duration.inMilliseconds ~/ 2);
   }
 
-  void _invalidateQueueCache() {
-    _cachedUnmodifiableQueue = null;
+  void _checkUpcoming(Duration position) {
+    if (_isCrossfading || _activeLoading) return;
+    if (!_activePlayer.playing) return;
+    final duration = _activePlayer.duration;
+    if (duration == null || duration <= const Duration(seconds: 4)) return;
+    // Repeat-one loops in _handleTrackCompleted; nothing to prepare.
+    if (_repeatMode == AppRepeatMode.one) return;
+
+    final nextIdx = _getNextIndex();
+    if (nextIdx == null || !_validIndex(nextIdx)) return;
+    if (_prebufferFailedIndex == nextIdx) return; // normal load on completion
+
+    final remaining = duration - position;
+    final fadeMs = _effectiveFadeMs(duration);
+
+    if (fadeMs > 0) {
+      if (remaining <= Duration(milliseconds: fadeMs + 3000)) {
+        _prebuffer(nextIdx);
+      }
+      if (remaining <= Duration(milliseconds: fadeMs + 300)) {
+        // If the user seeked into the fade window, fade over what is left.
+        final fade = math.min(fadeMs, remaining.inMilliseconds);
+        if (fade >= _minFadeMs) {
+          unawaited(_startCrossfade(nextIdx, fade));
+          return;
+        }
+        // Too little time left to fade: fall through to a gapless hand-off.
+      } else {
+        return;
+      }
+    }
+
+    if (_gaplessPlayback || fadeMs > 0) {
+      if (remaining <= const Duration(seconds: 5)) _prebuffer(nextIdx);
+      if (remaining <= _gaplessLead && _prebufferReadyIndex == nextIdx) {
+        _gaplessHandoff(nextIdx, outgoingFinished: false);
+      }
+    }
+  }
+
+  void _clearPrebufferMarkers() {
+    _prebufferReadyIndex = null;
+    _prebufferingIndex = null;
+    _prebufferFailedIndex = null;
+    _prebufferFuture = null;
+  }
+
+  /// Called when the upcoming track may have changed (queue edit, shuffle or
+  /// repeat toggle, settings). With [keepFade] an already-running fade is left
+  /// alone; otherwise it is cancelled because its target index may be stale.
+  void _invalidateUpcoming({bool keepFade = false}) {
+    if (_isCrossfading) {
+      if (!keepFade) _cancelCrossfade();
+      return;
+    }
+    _deckGen++;
+    _clearPrebufferMarkers();
+  }
+
+  void _prebuffer(int index) {
+    if (!_validIndex(index)) return;
+    if (index == _prebufferReadyIndex ||
+        index == _prebufferingIndex ||
+        index == _prebufferFailedIndex) {
+      return;
+    }
+    final gen = ++_deckGen;
+    _prebufferReadyIndex = null;
+    _prebufferingIndex = index;
+    _prebufferFuture = _runPrebuffer(index, gen);
+  }
+
+  Future<void> _runPrebuffer(int index, int gen) async {
+    final ok = await _loadInto(
+      _inactivePlayer,
+      index,
+      () => gen != _deckGen,
+      stopFirst: true,
+    );
+    if (gen != _deckGen) return; // superseded: whoever bumped owns the state
+    _prebufferingIndex = null;
+    _prebufferFuture = null;
+    if (ok) {
+      _prebufferReadyIndex = index;
+    } else {
+      _prebufferFailedIndex = index; // remembered, so no retry storm
+    }
+  }
+
+  void _swapDecks() {
+    _deckGen++;
+    final t = _activePlayer;
+    _activePlayer = _inactivePlayer;
+    _inactivePlayer = t;
+  }
+
+  /// Everything that must happen once a different track is actually playing.
+  void _commitTrackChange(int index) {
+    _advanceTo(index);
+    _clearPrebufferMarkers();
+
+    final track = _playlist[index];
+    var item = _trackToMediaItem(track);
+    final d = _activePlayer.duration;
+    if (d != null && d > Duration.zero) item = item.copyWith(duration: d);
+    mediaItem.add(item);
+    _trackPlayedController.add(track);
+    _syncPlaybackState();
+    _emitState();
+  }
+
+  void _gaplessHandoff(int nextIndex, {required bool outgoingFinished}) {
+    if (_prebufferReadyIndex != nextIndex || !_validIndex(nextIndex)) return;
+    final incoming = _inactivePlayer;
+    final outgoing = _activePlayer;
+    _clearPrebufferMarkers();
+
+    // Start the incoming deck first; the outgoing deck simply plays out its
+    // last ~150ms (or is stopped if it already completed).
+    unawaited(incoming.setVolume(1.0));
+    unawaited(incoming.play());
+    if (outgoingFinished) unawaited(outgoing.stop());
+
+    _swapDecks();
+    _commitTrackChange(nextIndex);
+  }
+
+  Future<void> _startCrossfade(int nextIndex, int fadeMs) async {
+    if (_isCrossfading || !_validIndex(nextIndex)) return;
+    if (_prebufferFailedIndex == nextIndex) return;
+
+    _isCrossfading = true;
+    _crossfadeTargetIndex = nextIndex;
+
+    int gen;
+    if (_prebufferReadyIndex == nextIndex) {
+      gen = _deckGen;
+    } else if (_prebufferingIndex == nextIndex && _prebufferFuture != null) {
+      gen = _deckGen;
+      await _prebufferFuture;
+      if (gen != _deckGen || !_isCrossfading) return;
+      if (_prebufferReadyIndex != nextIndex) {
+        _abortCrossfadeAndKeepPlaying(nextIndex);
+        return;
+      }
+    } else {
+      gen = ++_deckGen;
+      _clearPrebufferMarkers();
+      final ok = await _loadInto(
+        _inactivePlayer,
+        nextIndex,
+        () => gen != _deckGen,
+        stopFirst: true,
+      );
+      if (gen != _deckGen || !_isCrossfading) return;
+      if (!ok) {
+        _abortCrossfadeAndKeepPlaying(nextIndex);
+        return;
+      }
+    }
+
+    // Loading may have taken a while: never fade longer than what is left.
+    var fade = fadeMs;
+    final dur = _activePlayer.duration;
+    if (dur != null) {
+      final left = (dur - _activePlayer.position).inMilliseconds;
+      fade = math.max(100, math.min(fade, left));
+    }
+
+    _clearPrebufferMarkers();
+    await _inactivePlayer.setVolume(0.0);
+    if (gen != _deckGen || !_isCrossfading) return;
+
+    final watch = Stopwatch();
+    _fadeWatch = watch;
+    // If the user paused while loading, start the fade on resume (see play()).
+    if (_activePlayer.playing) {
+      unawaited(_inactivePlayer.play());
+      watch.start();
+    }
+
+    _crossfadeTimer?.cancel();
+    _crossfadeTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (gen != _deckGen) {
+        timer.cancel();
+        return;
+      }
+      final t = math.min(1.0, watch.elapsedMilliseconds / fade);
+      // Equal-power curve.
+      unawaited(_activePlayer.setVolume(math.max(0.0, math.cos(t * math.pi / 2))));
+      unawaited(_inactivePlayer.setVolume(math.max(0.0, math.sin(t * math.pi / 2))));
+      if (t >= 1.0) {
+        timer.cancel();
+        _completeCrossfade(nextIndex);
+      }
+    });
+  }
+
+  /// The incoming track could not be loaded: don't cut the current song short.
+  /// Let it finish; the completion handler will try a normal load.
+  void _abortCrossfadeAndKeepPlaying(int failedIndex) {
+    _cancelCrossfade();
+    _prebufferFailedIndex = failedIndex;
+  }
+
+  void _completeCrossfade(int nextIndex) {
+    _crossfadeTimer?.cancel();
+    _crossfadeTimer = null;
+    _fadeWatch = null;
+    _crossfadeTargetIndex = null;
+    _isCrossfading = false;
+
+    final outgoing = _activePlayer;
+    unawaited(outgoing.stop());
+    unawaited(outgoing.setVolume(1.0));
+    unawaited(_inactivePlayer.setVolume(1.0));
+
+    _swapDecks();
+    _commitTrackChange(nextIndex);
+  }
+
+  void _cancelCrossfade() {
+    _deckGen++; // invalidates any in-flight load/timer for the inactive deck
+    _crossfadeTimer?.cancel();
+    _crossfadeTimer = null;
+    _fadeWatch = null;
+    _crossfadeTargetIndex = null;
+    _isCrossfading = false;
+    _clearPrebufferMarkers();
+    unawaited(_activePlayer.setVolume(1.0));
+    unawaited(_inactivePlayer.stop());
+    unawaited(_inactivePlayer.setVolume(1.0));
+  }
+
+  Future<void> _handleTrackCompleted() async {
+    if (_repeatMode == AppRepeatMode.one) {
+      await _activePlayer.seek(Duration.zero);
+      unawaited(_activePlayer.play());
+      return;
+    }
+
+    final next = _getNextIndex();
+    if (next == null) return;
+
+    if (_prebufferReadyIndex == next) {
+      _gaplessHandoff(next, outgoingFinished: true);
+      return;
+    }
+
+    _advanceTo(next);
+    await _playCurrentTrack();
+  }
+
+  // ===========================================================================
+  // State emission
+  // ===========================================================================
+
+  List<Track>? _cachedUnmodifiableQueue;
+
+  List<Track> get _unmodifiablePlaylist =>
+      _cachedUnmodifiableQueue ??= List.unmodifiable(_playlist);
+
+  void _invalidateQueueCache() => _cachedUnmodifiableQueue = null;
+
+  void _emitStateThrottled() {
+    if (_emitThrottle.elapsedMilliseconds >= 200) {
+      _emitThrottle.reset();
+      _emitState();
+    }
   }
 
   void _emitState() {
     Track? currentTrack;
-    if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
-      currentTrack = _playlist[_currentIndex];
-    }
+    if (_validIndex(_currentIndex)) currentTrack = _playlist[_currentIndex];
 
     _playerStateController.add(PlayerStateModel(
       currentTrack: currentTrack,
@@ -576,89 +756,64 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     ));
   }
 
+  // ===========================================================================
+  // Playback entry points
+  // ===========================================================================
+
   Future<void> playTrackList(List<Track> tracks, {int startIndex = 0}) async {
     if (tracks.isEmpty) return;
+    _cancelCrossfade();
     _playlist = List.from(tracks);
     _invalidateQueueCache();
     _currentIndex = startIndex.clamp(0, _playlist.length - 1);
-    if (_isShuffle) {
-      _setupShuffleIndices();
-    }
+    if (_isShuffle) _setupShuffleIndices();
 
     queue.add(_playlist.map(_trackToMediaItem).toList());
     await playTrackAtIndex(_currentIndex);
   }
 
   Future<void> playTrackAtIndex(int index) async {
-    if (index < 0 || index >= _playlist.length) return;
-    _currentIndex = index;
-
-    if (_isShuffle) {
-      if (_shuffleIndices.isEmpty || _shuffleIndices.length != _playlist.length) {
-        _setupShuffleIndices();
-      } else {
-        final pos = _shuffleIndices.indexOf(index);
-        if (pos != -1) {
-          _shufflePointer = pos;
-        }
-      }
-    }
-
+    if (!_validIndex(index)) return;
+    _advanceTo(index);
     await _playCurrentTrack();
   }
 
-  Future<void> _playTrackInternal(int index) async {
-    if (index < 0 || index >= _playlist.length) return;
-    _currentIndex = index;
+  Future<void> _goToWithoutHistory(int index) async {
+    if (!_validIndex(index)) return;
+    _advanceTo(index, recordHistory: false);
     await _playCurrentTrack();
   }
 
   Future<void> _playCurrentTrack() async {
-    if (_currentIndex < 0 || _currentIndex >= _playlist.length) return;
+    if (!_validIndex(_currentIndex)) return;
     _cancelCrossfade();
-    _prebufferedTrackIndex = null;
 
-    final track = _playlist[_currentIndex];
+    final gen = ++_activeGen;
+    _activeLoading = true;
+
+    final index = _currentIndex;
+    final track = _playlist[index];
     mediaItem.add(_trackToMediaItem(track));
     _trackPlayedController.add(track);
 
-    try {
-      _activePlayer.setVolume(1.0);
-      final hasLocal = track.filePath != null &&
-          track.filePath!.isNotEmpty &&
-          File(track.filePath!).existsSync();
-      if (hasLocal) {
-        await _activePlayer.setFilePath(track.filePath!);
-      } else {
-        var url = track.audioUrl;
-        if (_isNeedsUrlResolution(url) && _trackUrlResolver != null) {
-          playbackState.add(playbackState.value.copyWith(
-            processingState: AudioProcessingState.buffering,
-          ));
-          url = await _trackUrlResolver!(track);
-          if (url.isNotEmpty && _currentIndex >= 0 && _currentIndex < _playlist.length) {
-            final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
-            if (isLocal) {
-              _playlist[_currentIndex] = track.copyWith(filePath: url, isDownloaded: true);
-            } else {
-              _playlist[_currentIndex] = track.copyWith(audioUrl: url);
-            }
-          }
-        }
-        if (url.isNotEmpty) {
-          final isLocal = File(url).existsSync() || url.startsWith('/') || url.contains(':\\');
-          if (isLocal) {
-            await _activePlayer.setFilePath(url);
-          } else {
-            await _activePlayer.setUrl(url);
-          }
-        }
-      }
-      await _activePlayer.play();
-    } catch (_) {
-      // Audio load error handled gracefully
-    }
+    playbackState.add(playbackState.value.copyWith(
+      processingState: AudioProcessingState.buffering,
+    ));
 
+    unawaited(_activePlayer.setVolume(1.0));
+    // No stop() on the active deck: an idle state can tear down the
+    // foreground notification.
+    final ok = await _loadInto(
+      _activePlayer,
+      index,
+      () => gen != _activeGen,
+      stopFirst: false,
+    );
+    if (gen != _activeGen) return; // a newer request owns the state now
+    _activeLoading = false;
+
+    // play() only completes when playback ends/pauses: never await it here.
+    if (ok) unawaited(_activePlayer.play());
     _emitState();
   }
 
@@ -688,19 +843,33 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     );
   }
 
+  // ===========================================================================
+  // Transport controls
+  // ===========================================================================
+
   @override
-  Future<void> play() => _activePlayer.play();
+  Future<void> play() async {
+    // Resume a paused crossfade as a unit.
+    if (_isCrossfading && _fadeWatch != null) {
+      _fadeWatch!.start();
+      unawaited(_inactivePlayer.play());
+    }
+    unawaited(_activePlayer.play());
+  }
 
   @override
   Future<void> pause() async {
-    if (_isCrossfading) {
+    _fadeWatch?.stop(); // freeze the fade clock
+    await _activePlayer.pause();
+    if (_isCrossfading && _fadeWatch != null) {
       await _inactivePlayer.pause();
     }
-    await _activePlayer.pause();
   }
 
   @override
   Future<void> stop() async {
+    _activeGen++;
+    _activeLoading = false;
     _cancelCrossfade();
     await _activePlayer.stop();
     await _inactivePlayer.stop();
@@ -714,11 +883,9 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<void> onTaskRemoved() async {
-    final isPlaying = _activePlayer.playing || (_isCrossfading && _inactivePlayer.playing);
-    // When app is swiped away from Recents while paused or stopped, kill the background service immediately
-    if (!isPlaying) {
-      await stop();
-    }
+    final isPlaying =
+        _activePlayer.playing || (_fadeWatch != null && _inactivePlayer.playing);
+    if (!isPlaying) await stop();
     await super.onTaskRemoved();
   }
 
@@ -729,58 +896,23 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   @override
-  Future<void> seek(Duration position) {
-    if (_isCrossfading) {
-      _cancelCrossfade();
-    }
-    return _activePlayer.seek(position);
+  Future<void> seek(Duration position) async {
+    if (_isCrossfading) _cancelCrossfade();
+    await _activePlayer.seek(position);
   }
 
   @override
   Future<void> skipToNext() async {
     if (_playlist.isEmpty) return;
-
-    if (_isCrossfading) {
-      _cancelCrossfade();
-    }
-
-    if (_isShuffle) {
-      if (_shuffleIndices.isEmpty || _shuffleIndices.length != _playlist.length) {
-        _setupShuffleIndices();
-      }
-      if (_shufflePointer < _shuffleIndices.length - 1) {
-        _historyIndices.add(_currentIndex);
-        _shufflePointer++;
-        final nextIndex = _shuffleIndices[_shufflePointer];
-        await _playTrackInternal(nextIndex);
-      } else if (_repeatMode == AppRepeatMode.all) {
-        if (_playlist.length > 1) {
-          _historyIndices.add(_currentIndex);
-          _setupShuffleIndices();
-          if (_shuffleIndices.length > 1) {
-            _shufflePointer = 1;
-            await _playTrackInternal(_shuffleIndices[_shufflePointer]);
-          }
-        } else if (_playlist.length == 1) {
-          await _activePlayer.seek(Duration.zero);
-          await _activePlayer.play();
-        }
-      }
-      return;
-    }
-
-    if (_currentIndex < _playlist.length - 1) {
-      await playTrackAtIndex(_currentIndex + 1);
-    } else if (_repeatMode == AppRepeatMode.all && _playlist.isNotEmpty) {
-      await playTrackAtIndex(0);
-    }
+    final next = _getNextIndex(userSkip: true);
+    if (next == null) return;
+    _advanceTo(next);
+    await _playCurrentTrack(); // cancels any crossfade itself
   }
 
   @override
   Future<void> skipToPrevious() async {
-    if (_isCrossfading) {
-      _cancelCrossfade();
-    }
+    if (_isCrossfading) _cancelCrossfade();
 
     if (_activePlayer.position.inSeconds > 3) {
       await _activePlayer.seek(Duration.zero);
@@ -789,27 +921,27 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
     if (_isShuffle) {
       if (_historyIndices.isNotEmpty) {
-        final prevIndex = _historyIndices.removeLast();
-        _shufflePointer = _shuffleIndices.indexOf(prevIndex);
-        await _playTrackInternal(prevIndex);
-        return;
-      } else if (_shufflePointer > 0) {
-        _shufflePointer--;
-        final prevIndex = _shuffleIndices[_shufflePointer];
-        await _playTrackInternal(prevIndex);
-        return;
-      } else {
-        await _activePlayer.seek(Duration.zero);
+        await _goToWithoutHistory(_historyIndices.removeLast());
         return;
       }
+      if (_shufflePointer > 0) {
+        await _goToWithoutHistory(_shuffleIndices[_shufflePointer - 1]);
+        return;
+      }
+      await _activePlayer.seek(Duration.zero);
+      return;
     }
 
     if (hasPrevious) {
-      await playTrackAtIndex(_currentIndex - 1);
+      await _goToWithoutHistory(_currentIndex - 1);
     } else {
       await _activePlayer.seek(Duration.zero);
     }
   }
+
+  // ===========================================================================
+  // Shuffle / repeat
+  // ===========================================================================
 
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
@@ -821,15 +953,14 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _shufflePointer = -1;
       _historyIndices.clear();
     }
+    _invalidateUpcoming(keepFade: true);
     _emitState();
   }
 
   @override
   Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
     final shouldShuffle = shuffleMode != AudioServiceShuffleMode.none;
-    if (_isShuffle != shouldShuffle) {
-      toggleShuffle();
-    }
+    if (_isShuffle != shouldShuffle) toggleShuffle();
   }
 
   void cycleRepeatMode() {
@@ -845,6 +976,7 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         break;
     }
     preferencesService?.setRepeatMode(_repeatMode);
+    _invalidateUpcoming(keepFade: true);
     _emitState();
   }
 
@@ -865,6 +997,7 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     preferencesService?.setShuffleMode(_isShuffle);
     preferencesService?.setRepeatMode(_repeatMode);
+    _invalidateUpcoming(keepFade: true);
     _emitState();
   }
 
@@ -883,27 +1016,33 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         break;
     }
     preferencesService?.setRepeatMode(_repeatMode);
+    _invalidateUpcoming(keepFade: true);
     _emitState();
   }
 
+  // ===========================================================================
+  // Queue editing (every edit invalidates the prebuffer / running fade)
+  // ===========================================================================
+
   void addToQueue(Track track) {
+    _invalidateUpcoming();
     _playlist.add(track);
-    if (_isShuffle) {
-      _shuffleIndices.add(_playlist.length - 1);
-    }
+    if (_isShuffle) _shuffleIndices.add(_playlist.length - 1);
     _invalidateQueueCache();
     queue.add(_playlist.map(_trackToMediaItem).toList());
     _emitState();
   }
 
   void insertNextInQueue(Track track) {
+    _invalidateUpcoming();
     final insertIndex = (_currentIndex + 1).clamp(0, _playlist.length);
     _playlist.insert(insertIndex, track);
     if (_isShuffle) {
       for (int i = 0; i < _shuffleIndices.length; i++) {
-        if (_shuffleIndices[i] >= insertIndex) {
-          _shuffleIndices[i]++;
-        }
+        if (_shuffleIndices[i] >= insertIndex) _shuffleIndices[i]++;
+      }
+      for (int i = 0; i < _historyIndices.length; i++) {
+        if (_historyIndices[i] >= insertIndex) _historyIndices[i]++;
       }
       final targetPos = (_shufflePointer + 1).clamp(0, _shuffleIndices.length);
       _shuffleIndices.insert(targetPos, insertIndex);
@@ -915,57 +1054,78 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<void> removeQueueItemAt(int index) async {
-    if (index >= 0 && index < _playlist.length) {
-      _playlist.removeAt(index);
-      _invalidateQueueCache();
-      if (_isShuffle) {
-        _shuffleIndices.remove(index);
-        for (int i = 0; i < _shuffleIndices.length; i++) {
-          if (_shuffleIndices[i] > index) {
-            _shuffleIndices[i]--;
-          }
-        }
-        _historyIndices.removeWhere((i) => i == index);
-        for (int i = 0; i < _historyIndices.length; i++) {
-          if (_historyIndices[i] > index) {
-            _historyIndices[i]--;
-          }
-        }
-        if (_currentIndex >= 0) {
-          _shufflePointer = _shuffleIndices.indexOf(_currentIndex);
-        }
+    if (!_validIndex(index)) return;
+    _invalidateUpcoming();
+
+    final wasCurrent = index == _currentIndex;
+    _playlist.removeAt(index);
+    _invalidateQueueCache();
+
+    if (_isShuffle) {
+      _shuffleIndices.remove(index);
+      for (int i = 0; i < _shuffleIndices.length; i++) {
+        if (_shuffleIndices[i] > index) _shuffleIndices[i]--;
       }
-      if (index < _currentIndex) {
-        _currentIndex--;
-      } else if (index == _currentIndex && _playlist.isNotEmpty) {
-        playTrackAtIndex(_currentIndex.clamp(0, _playlist.length - 1));
+      _historyIndices.removeWhere((i) => i == index);
+      for (int i = 0; i < _historyIndices.length; i++) {
+        if (_historyIndices[i] > index) _historyIndices[i]--;
       }
-      queue.add(_playlist.map(_trackToMediaItem).toList());
-      _emitState();
     }
+
+    if (index < _currentIndex) _currentIndex--;
+
+    // Recompute the pointer only after _currentIndex has been adjusted.
+    if (_isShuffle && !wasCurrent && _currentIndex >= 0) {
+      _shufflePointer = _shuffleIndices.indexOf(_currentIndex);
+    }
+
+    queue.add(_playlist.map(_trackToMediaItem).toList());
+
+    if (wasCurrent) {
+      if (_playlist.isEmpty) {
+        _currentIndex = -1;
+        _shufflePointer = -1;
+        _activeGen++;
+        _activeLoading = false;
+        await _activePlayer.stop();
+      } else {
+        await _goToWithoutHistory(_currentIndex.clamp(0, _playlist.length - 1));
+      }
+    }
+    _emitState();
   }
 
   Future<void> removeTrackById(String trackId) async {
     final index = _playlist.indexWhere((t) => t.id == trackId);
-    if (index != -1) {
-      await removeQueueItemAt(index);
-    }
+    if (index != -1) await removeQueueItemAt(index);
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
+    if (!_validIndex(oldIndex)) return;
+    _invalidateUpcoming();
+    if (oldIndex < newIndex) newIndex -= 1;
+    newIndex = newIndex.clamp(0, _playlist.length - 1);
+
     final item = _playlist.removeAt(oldIndex);
     _playlist.insert(newIndex, item);
     _invalidateQueueCache();
 
-    if (_currentIndex == oldIndex) {
-      _currentIndex = newIndex;
-    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
-      _currentIndex--;
-    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
-      _currentIndex++;
+    // Where does a track that used to be at `i` live now?
+    int remap(int i) {
+      if (i == oldIndex) return newIndex;
+      if (oldIndex < newIndex && i > oldIndex && i <= newIndex) return i - 1;
+      if (oldIndex > newIndex && i >= newIndex && i < oldIndex) return i + 1;
+      return i;
+    }
+
+    if (_currentIndex >= 0) _currentIndex = remap(_currentIndex);
+    if (_isShuffle) {
+      for (int i = 0; i < _shuffleIndices.length; i++) {
+        _shuffleIndices[i] = remap(_shuffleIndices[i]);
+      }
+      for (int i = 0; i < _historyIndices.length; i++) {
+        _historyIndices[i] = remap(_historyIndices[i]);
+      }
     }
 
     queue.add(_playlist.map(_trackToMediaItem).toList());
@@ -973,18 +1133,29 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   void clearQueue() {
+    _activeGen++;
+    _activeLoading = false;
+    _cancelCrossfade();
     _playlist.clear();
     _invalidateQueueCache();
     _currentIndex = -1;
-    _cancelCrossfade();
-    _activePlayer.stop();
-    _inactivePlayer.stop();
+    _shuffleIndices.clear();
+    _historyIndices.clear();
+    _shufflePointer = -1;
+    unawaited(_activePlayer.stop());
+    unawaited(_inactivePlayer.stop());
     queue.add([]);
     _emitState();
   }
 
   Future<void> dispose() async {
+    _activeGen++;
+    _deckGen++;
     _crossfadeTimer?.cancel();
+    for (final s in _subs) {
+      await s.cancel();
+    }
+    _subs.clear();
     await _activePlayer.dispose();
     await _inactivePlayer.dispose();
     await _playerStateController.close();

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../../domain/models/track.dart';
@@ -107,6 +108,34 @@ class YouTubeSourceAdapter implements SourceAdapter {
     return null;
   }
 
+  static bool _isSameSong(Track ytTrack, Track saavnTrack) {
+    // 1. Durations must match within 5 seconds (5000 ms)
+    if (ytTrack.durationMs > 0 && saavnTrack.durationMs > 0) {
+      final diff = (ytTrack.durationMs - saavnTrack.durationMs).abs();
+      if (diff > 5000) return false;
+    }
+
+    // 2. The Saavn title's words must appear in the YouTube title
+    final saavnClean = saavnTrack.title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .trim();
+    final words = saavnClean
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 1)
+        .toList();
+
+    if (words.isEmpty) {
+      return false;
+    }
+
+    final ytClean = ytTrack.title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ');
+
+    return words.every((word) => ytClean.contains(word));
+  }
+
   /// Downloads YouTube track completely to local storage (Music/Musify)
   /// and saves it to the local library.
   Future<File?> downloadTrackToFile(
@@ -131,9 +160,7 @@ class YouTubeSourceAdapter implements SourceAdapter {
         final query = '${track.title} ${track.artistName}'.trim();
         final saavnResults = await saavn.search(query, limit: 3);
         for (final s in saavnResults) {
-          final isTitleMatch = s.title.toLowerCase().contains(track.title.toLowerCase()) ||
-              track.title.toLowerCase().contains(s.title.toLowerCase());
-          if (isTitleMatch) {
+          if (_isSameSong(track, s)) {
             final saavnUrl = await saavn.getStreamUrl(s);
             if (saavnUrl.isNotEmpty && saavnUrl.startsWith('http')) {
               var ext = '.m4a';
@@ -179,37 +206,44 @@ class YouTubeSourceAdapter implements SourceAdapter {
     if (videoId.isEmpty) return null;
 
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: [YoutubeApiClient.androidSdkless],
-      );
+      StreamManifest manifest;
+      bool isAndroidClient = true;
+      try {
+        manifest = await _yt.videos.streamsClient.getManifest(
+          videoId,
+          ytClients: [YoutubeApiClient.androidSdkless],
+        );
+      } catch (manifestError) {
+        debugPrint('androidSdkless manifest failed for $videoId ($manifestError), falling back to default manifest');
+        manifest = await _yt.videos.streamsClient.getManifest(videoId);
+        isAndroidClient = false;
+      }
 
-      // Prioritize pure audio-only streams (M4A/AAC or WebM/Opus) over video streams
-      final audioStreams = manifest.audioOnly.toList();
-      audioStreams.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+      final audioOnly = manifest.audioOnly.toList()
+        ..sort((a, b) => b.bitrate.compareTo(a.bitrate));
 
-      // Prefer highest bitrate AAC/M4A for widest metadata & hardware player compatibility,
-      // then highest bitrate audio overall, and fall back to muxed stream only if no audio-only exists.
-      final bestAudio = audioStreams.where((s) => s.container.name == 'mp4').firstOrNull ??
-          audioStreams.firstOrNull;
-
-      final stream = bestAudio ?? manifest.muxed.firstOrNull;
+      final StreamInfo? stream =
+          audioOnly.where((s) => s.container.name == 'mp4').firstOrNull ??
+          audioOnly.firstOrNull ??
+          manifest.muxed.where((s) => s.tag == 18).firstOrNull ??
+          manifest.muxed.firstOrNull;
       if (stream == null) return null;
 
-      final totalBytes = stream.size.totalBytes;
-      final url = stream.url.toString();
-      const ua = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip';
-
-      // Use .m4a for MP4 audio containers, .webm for WebM containers, or .m4a by default
-      final ext = stream.container.name == 'webm' ? '.webm' : '.m4a';
+      final ext = stream is MuxedStreamInfo
+          ? '.mp4'
+          : (stream.container.name == 'webm' ? '.webm' : '.m4a');
       final savePath = p.join(downloadDir.path, getSafeFilename(track, ext));
       final tempPath = '$savePath.tmp';
       final tempFile = File(tempPath);
       if (tempFile.existsSync()) tempFile.deleteSync();
 
+      final totalBytes = stream.size.totalBytes;
+      final url = stream.url.toString();
+      const ua = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip';
+
       final sink = tempFile.openWrite();
       int start = 0;
-      const chunkSize = 500 * 1024; // 500 KB boundary
+      const chunkSize = 500 * 1024;
 
       try {
         while (start < totalBytes) {
@@ -224,7 +258,7 @@ class YouTubeSourceAdapter implements SourceAdapter {
             options: Options(
               responseType: ResponseType.stream,
               headers: {
-                'User-Agent': ua,
+                if (isAndroidClient) 'User-Agent': ua,
                 'Range': 'bytes=$start-$end',
               },
             ),
@@ -249,7 +283,9 @@ class YouTubeSourceAdapter implements SourceAdapter {
       } catch (e) {
         await sink.close();
         if (tempFile.existsSync()) {
-          try { tempFile.deleteSync(); } catch (_) {}
+          try {
+            tempFile.deleteSync();
+          } catch (_) {}
         }
         rethrow;
       }
@@ -266,8 +302,8 @@ class YouTubeSourceAdapter implements SourceAdapter {
         onProgress?.call(1.0);
         return finalFile;
       }
-    } catch (_) {
-      // Download failed
+    } catch (e, st) {
+      debugPrint('YouTube download failed for $videoId: $e\n$st');
     }
 
     return null;
@@ -317,15 +353,26 @@ class YouTubeSourceAdapter implements SourceAdapter {
     return 'https://img.youtube.com/vi/$sourceId/hqdefault.jpg';
   }
 
-  static ({String artist, String title}) parseTitleAndArtist(String rawTitle, String channelAuthor) {
+  static ({String artist, String title}) parseTitleAndArtist(
+      String rawTitle, String channelAuthor) {
+    var clean = rawTitle
+        .replaceAll(
+          RegExp(
+            r'\s*[\(\[][^\)\]]*(?:official|video|audio|lyric|visualizer|4k|hd|hq|mv|remastered)[^\)\]]*[\)\]]',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+
     final cleanAuthor = channelAuthor
         .replaceAll(' - Topic', '')
         .replaceAll(RegExp(r'\s*VEVO$', caseSensitive: false), '')
         .trim();
 
     return (
-      artist: cleanAuthor.isNotEmpty ? cleanAuthor : 'YouTube',
-      title: rawTitle.trim(),
+      artist: cleanAuthor.isNotEmpty ? cleanAuthor : 'Unknown Artist',
+      title: clean.isNotEmpty ? clean : rawTitle.trim(),
     );
   }
 

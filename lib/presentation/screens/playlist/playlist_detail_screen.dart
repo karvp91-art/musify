@@ -10,6 +10,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
+import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
@@ -1730,6 +1731,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           // Universal Floating Mini Player
           if (!_isSelectionMode)
             const FloatingMiniPlayer(),
+
+          // Floating Dynamic Island Download Status Capsule
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 0,
+            right: 0,
+            child: const DownloadDynamicIsland(),
+          ),
         ],
       ),
     ),

@@ -6,6 +6,7 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/artist/artist_detail_screen.dart';
+import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
@@ -433,6 +434,14 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
 
           // Universal Floating Mini Player
           const FloatingMiniPlayer(),
+
+          // Floating Dynamic Island Download Status Capsule
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 0,
+            right: 0,
+            child: const DownloadDynamicIsland(),
+          ),
         ],
       ),
     ),

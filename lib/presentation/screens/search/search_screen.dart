@@ -16,6 +16,7 @@ import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/screens/stream/widgets/stream_cards.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/providers/network_providers.dart';
+import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
@@ -1112,68 +1113,80 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         bottomNavigationBar: _isSelectionMode && _selectedTrackIds.isNotEmpty
             ? _buildBatchActionBar(theme, visibleTracks)
             : null,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              // Top Bar: Selection Header or Search Input Bar
-              _isSelectionMode
-                  ? _buildSelectionHeader(theme, visibleTracks)
-                  : _buildSearchBar(theme, isDark),
+        body: Stack(
+          children: [
+            SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  // Top Bar: Selection Header or Search Input Bar
+                  _isSelectionMode
+                      ? _buildSelectionHeader(theme, visibleTracks)
+                      : _buildSearchBar(theme, isDark),
 
-              // Filter Chips (when active search query exists and not in selection mode)
-              if (!_isSelectionMode &&
-                  _searchController.text.trim().length >= 2 &&
-                  (_searchResults.isNotEmpty || _multiResult.isNotEmpty))
-                _buildFilterPills(
-                  _filters,
-                  _selectedFilter,
-                  (val) => setState(() => _selectedFilter = val),
-                  theme,
-                  isDark,
-                ),
+                  // Filter Chips (when active search query exists and not in selection mode)
+                  if (!_isSelectionMode &&
+                      _searchController.text.trim().length >= 2 &&
+                      (_searchResults.isNotEmpty || _multiResult.isNotEmpty))
+                    _buildFilterPills(
+                      _filters,
+                      _selectedFilter,
+                      (val) => setState(() => _selectedFilter = val),
+                      theme,
+                      isDark,
+                    ),
 
-              // Main Content Area
-              Expanded(
-                child: Stack(
-                  children: [
-                    _searchController.text.trim().length < 2
-                        ? ListView(
-                            physics: const ClampingScrollPhysics(),
-                            padding: EdgeInsets.only(bottom: bottomPadding),
-                            children: [
-                              // Recent Searches History Section
-                              _buildSearchHistory(theme, isDark),
+                  // Main Content Area
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        _searchController.text.trim().length < 2
+                            ? ListView(
+                                physics: const ClampingScrollPhysics(),
+                                padding: EdgeInsets.only(bottom: bottomPadding),
+                                children: [
+                                  // Recent Searches History Section
+                                  _buildSearchHistory(theme, isDark),
 
-                              // Trending Searches Tags
-                              _buildTrendingSearchTopics(theme, isDark),
+                                  // Trending Searches Tags
+                                  _buildTrendingSearchTopics(theme, isDark),
 
-                              // Recently Played Section
-                              _buildRecentlyPlayedSection(theme, isDark),
-                            ],
-                          )
-                        : _buildActiveSearchResults(theme, isDark, bottomPadding),
+                                  // Recently Played Section
+                                  _buildRecentlyPlayedSection(theme, isDark),
+                                ],
+                              )
+                            : _buildActiveSearchResults(theme, isDark, bottomPadding),
 
-                    if (_isSearching)
-                      const Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: LinearProgressIndicator(
-                          minHeight: 2.5,
-                          backgroundColor: Colors.transparent,
-                          color: AppColors.neonLime,
-                        ),
-                      ),
+                        if (_isSearching)
+                          const Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            child: LinearProgressIndicator(
+                              minHeight: 2.5,
+                              backgroundColor: Colors.transparent,
+                              color: AppColors.neonLime,
+                            ),
+                          ),
 
-                    // Universal Floating MiniPlayer
-                    if (!_isSelectionMode)
-                      const FloatingMiniPlayer(),
-                  ],
-                ),
+                        // Universal Floating MiniPlayer
+                        if (!_isSelectionMode)
+                          const FloatingMiniPlayer(),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+
+            // Top-anchored Floating Download Dynamic Island
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 0,
+              right: 0,
+              child: const DownloadDynamicIsland(),
+            ),
+          ],
         ),
       ),
     );
@@ -1543,6 +1556,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               track: track,
               isCurrent: isCurrent,
               isPlaying: isTilePlaying,
+              isYouTubeSection: track.source == AudioSourceType.youtube,
               enableSwipePlayNext: false,
               isSelectionMode: _isSelectionMode,
               isSelected: _selectedTrackIds.contains(track.id),
@@ -2164,7 +2178,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           child: ListView.builder(
             physics: const ClampingScrollPhysics(),
             padding: EdgeInsets.only(bottom: bottomPadding),
-            itemExtent: _selectedFilter == 'YouTube' ? 88.0 : 76.0,
+            itemExtent: _selectedFilter == 'YouTube' ? 88.0 : (_selectedFilter == 'Songs' ? 76.0 : null),
             itemCount: filteredResults.length,
             itemBuilder: (context, index) {
               final track = filteredResults[index];
@@ -2176,7 +2190,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                 track: track,
                 isCurrent: isCurrent,
                 isPlaying: isTilePlaying,
-                isYouTubeSection: _selectedFilter == 'YouTube',
+                isYouTubeSection: _selectedFilter == 'YouTube' || track.source == AudioSourceType.youtube,
                 enableSwipePlayNext: false,
                 isSelectionMode: _isSelectionMode,
                 isSelected: _selectedTrackIds.contains(track.id),

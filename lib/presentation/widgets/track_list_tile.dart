@@ -62,7 +62,7 @@ class TrackListTile extends ConsumerWidget {
       likedTrackIdsProvider.select((ids) => ids.contains(track.id)),
     );
 
-    final isYt = isYouTubeSection || track.source == AudioSourceType.youtube;
+    final isYt = isYouTubeSection;
 
     final tileContent = InkWell(
       onTap: () {
@@ -232,8 +232,8 @@ class TrackListTile extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.style(
                             color: isCurrent ? primaryColor : theme.colorScheme.onSurface,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12.5,
                             height: 1.25,
                             letterSpacing: -0.15,
                           ),
