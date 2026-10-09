@@ -6,6 +6,7 @@ import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/screens/search/search_screen.dart';
 import 'package:musify/presentation/screens/settings/studio_equalizer_screen.dart';
 import 'package:musify/presentation/screens/stream/widgets/stream_cards.dart';
@@ -104,9 +105,11 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
         handler.pause();
       } else {
         handler.play();
+        openNowPlayingScreen(context, targetTrack: targetTrack);
       }
     } else {
       handler.playTrackList(trackList, startIndex: initialIndex);
+      openNowPlayingScreen(context, targetTrack: targetTrack);
     }
   }
 
@@ -141,9 +144,6 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final homepageDataAsync = ref.watch(streamHomepageDataProvider);
-    final currentPlayingTrackId = ref.watch(currentPlayingTrackIdProvider);
-    final isPlaying = ref.watch(isPlaybackPlayingProvider);
-    final recentTracksAsync = ref.watch(recentlyPlayedTracksStreamProvider);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -155,8 +155,8 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
           displacement: 20,
           onRefresh: _handleRefresh,
           child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: ClampingScrollPhysics(),
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
             slivers: [
               // 1. Sticky Pinned App Bar with Dynamic Greeting & Neon Accents
@@ -222,7 +222,7 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
                   _CircleHeaderButton(
                     icon: isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
                     iconSize: 20,
-                    iconColor:  isDark ? AppColors.neonLime : AppColors.neonLimeDim,
+                    iconColor: isDark ? AppColors.neonLime : AppColors.neonLimeDim,
                     onTap: () {
                       ref.read(themeModeProvider.notifier).toggleTheme();
                     },
@@ -249,151 +249,275 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
                 error: (error, stack) => SliverToBoxAdapter(
                   child: OfflineStateView(
                     title: 'Offline Mode',
-                    message: 'Connect to the internet to explore stream charts, new releases, and trending hits.',
+                    message:
+                        'Connect to the internet to explore stream charts, new releases, and trending hits.',
                     onRetry: _handleRefresh,
                   ),
                 ),
-                data: (data) {
-                  final liveRecent = recentTracksAsync.value ?? data.recentlyPlayed;
-
-                  return SliverToBoxAdapter(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Section 1: Recently Played (Horizontal Carousel)
-                        if (liveRecent.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          const StreamSectionHeader(
-                            title: 'Recently Played',
-                            subtitle: 'Jump back into your history',
-                          ),
-                          SizedBox(
-                            height: 196,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              scrollDirection: Axis.horizontal,
-                              physics: const ClampingScrollPhysics(),
-                              itemCount: liveRecent.length,
-                              separatorBuilder: (context, index) => const SizedBox(width: 14),
-                              itemBuilder: (context, index) {
-                                final track = liveRecent[index];
-                                final isCurrent = currentPlayingTrackId == track.id;
-
-                                return StreamSongCard(
-                                  track: track,
-                                  isCurrent: isCurrent,
-                                  isPlaying: isPlaying,
-                                  onTap: () => _playTrack(liveRecent, index),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-
-                        // Section 2: Popular Artists (Horizontal Carousel of Avatars)
-                        if (data.popularArtists.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          const StreamSectionHeader(
-                            title: 'Popular Artists',
-                            subtitle: 'Top trending singers & producers',
-                          ),
-                          SizedBox(
-                            height: 148,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              scrollDirection: Axis.horizontal,
-                              physics: const ClampingScrollPhysics(),
-                              itemCount: data.popularArtists.length,
-                              separatorBuilder: (context, index) => const SizedBox(width: 16),
-                              itemBuilder: (context, index) {
-                                final artist = data.popularArtists[index];
-                                return StreamArtistCircleCard(artist: artist);
-                              },
-                            ),
-                          ),
-                        ],
-
-                        // Section 3: Movie Soundtracks (Horizontal Carousel of Movie Albums)
-                        if (data.movieAlbums.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          const StreamSectionHeader(
-                            title: 'Movie Soundtracks',
-                            subtitle: 'Original film albums & blockbuster hits',
-                          ),
-                          SizedBox(
-                            height: 196,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              scrollDirection: Axis.horizontal,
-                              physics: const ClampingScrollPhysics(),
-                              itemCount: data.movieAlbums.length,
-                              separatorBuilder: (context, index) => const SizedBox(width: 14),
-                              itemBuilder: (context, index) {
-                                final album = data.movieAlbums[index];
-                                return StreamAlbumCard(album: album);
-                              },
-                            ),
-                          ),
-                        ],
-
-                        // Section 4: Top Charts (Horizontal Carousel of Chart Cubes)
-                        if (data.topCharts.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          const StreamSectionHeader(
-                            title: 'Top Charts',
-                            subtitle: 'Ranked playlists updated daily',
-                          ),
-                          SizedBox(
-                            height: 196,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              scrollDirection: Axis.horizontal,
-                              physics: const ClampingScrollPhysics(),
-                              itemCount: data.topCharts.length,
-                              separatorBuilder: (context, index) => const SizedBox(width: 14),
-                              itemBuilder: (context, index) {
-                                final chart = data.topCharts[index];
-                                return StreamChartCard(chart: chart);
-                              },
-                            ),
-                          ),
-                        ],
-
-                        // Section 5: Editorial Picks / Made For You (Playlists Carousel)
-                        if (data.editorialPlaylists.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          const StreamSectionHeader(
-                            title: 'Editorial Picks',
-                            subtitle: 'Handpicked mixes & collections',
-                          ),
-                          SizedBox(
-                            height: 196,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              scrollDirection: Axis.horizontal,
-                              physics: const ClampingScrollPhysics(),
-                              itemCount: data.editorialPlaylists.length,
-                              separatorBuilder: (context, index) => const SizedBox(width: 14),
-                              itemBuilder: (context, index) {
-                                final playlist = data.editorialPlaylists[index];
-                                return StreamPlaylistCard(playlist: playlist);
-                              },
-                            ),
-                          ),
-                        ],
-
-                        // Bottom Spacing for Floating Dock + Mini Player
-                        const SizedBox(height: 160),
-
-                      ],
+                data: (data) => SliverMainAxisGroup(
+                  slivers: [
+                    // Section 1: Recently Played (Horizontal Carousel)
+                    SliverToBoxAdapter(
+                      child: RepaintBoundary(
+                        child: _RecentlyPlayedSection(
+                          fallbackTracks: data.recentlyPlayed,
+                          onPlayTrack: _playTrack,
+                        ),
+                      ),
                     ),
-                  );
-                },
+
+                    // Section 2: Popular Artists (Horizontal Carousel of Avatars)
+                    if (data.popularArtists.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: RepaintBoundary(
+                          child: _PopularArtistsSection(
+                            artists: data.popularArtists,
+                          ),
+                        ),
+                      ),
+
+                    // Section 3: Movie Soundtracks (Horizontal Carousel of Movie Albums)
+                    if (data.movieAlbums.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: RepaintBoundary(
+                          child: _MovieSoundtracksSection(
+                            albums: data.movieAlbums,
+                          ),
+                        ),
+                      ),
+
+                    // Section 4: Top Charts (Horizontal Carousel of Chart Cubes)
+                    if (data.topCharts.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: RepaintBoundary(
+                          child: _TopChartsSection(
+                            charts: data.topCharts,
+                          ),
+                        ),
+                      ),
+
+                    // Section 5: Editorial Picks / Made For You (Playlists Carousel)
+                    if (data.editorialPlaylists.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: RepaintBoundary(
+                          child: _EditorialPlaylistsSection(
+                            playlists: data.editorialPlaylists,
+                          ),
+                        ),
+                      ),
+
+                    // Bottom Spacing for Floating Dock + Mini Player
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: 160),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Isolated Section Components for Frame Rate and Paint Optimization
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _RecentlyPlayedSection extends ConsumerWidget {
+  final List<Track> fallbackTracks;
+  final void Function(List<Track> trackList, int index) onPlayTrack;
+
+  const _RecentlyPlayedSection({
+    required this.fallbackTracks,
+    required this.onPlayTrack,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final recentTracks =
+        ref.watch(recentlyPlayedTracksStreamProvider).value ?? fallbackTracks;
+    if (recentTracks.isEmpty) return const SizedBox.shrink();
+
+    final currentPlayingTrackId = ref.watch(currentPlayingTrackIdProvider);
+    final isPlaying = ref.watch(isPlaybackPlayingProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        const StreamSectionHeader(
+          title: 'Recently Played',
+          subtitle: 'Jump back into your history',
+        ),
+        SizedBox(
+          height: 196,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: recentTracks.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 14),
+            itemBuilder: (context, index) {
+              final track = recentTracks[index];
+              final isCurrent = currentPlayingTrackId == track.id;
+
+              return StreamSongCard(
+                track: track,
+                isCurrent: isCurrent,
+                isPlaying: isPlaying,
+                onTap: () => onPlayTrack(recentTracks, index),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PopularArtistsSection extends StatelessWidget {
+  final List<SearchArtistItem> artists;
+
+  const _PopularArtistsSection({required this.artists});
+
+  @override
+  Widget build(BuildContext context) {
+    if (artists.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 16),
+        const StreamSectionHeader(
+          title: 'Popular Artists',
+          subtitle: 'Top trending singers & producers',
+        ),
+        SizedBox(
+          height: 148,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: artists.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 16),
+            itemBuilder: (context, index) {
+              return StreamArtistCircleCard(artist: artists[index]);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MovieSoundtracksSection extends StatelessWidget {
+  final List<SearchAlbumItem> albums;
+
+  const _MovieSoundtracksSection({required this.albums});
+
+  @override
+  Widget build(BuildContext context) {
+    if (albums.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 16),
+        const StreamSectionHeader(
+          title: 'Movie Soundtracks',
+          subtitle: 'Original film albums & blockbuster hits',
+        ),
+        SizedBox(
+          height: 196,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: albums.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 14),
+            itemBuilder: (context, index) {
+              return StreamAlbumCard(album: albums[index]);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TopChartsSection extends StatelessWidget {
+  final List<TopChartItem> charts;
+
+  const _TopChartsSection({required this.charts});
+
+  @override
+  Widget build(BuildContext context) {
+    if (charts.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 16),
+        const StreamSectionHeader(
+          title: 'Top Charts',
+          subtitle: 'Ranked playlists updated daily',
+        ),
+        SizedBox(
+          height: 196,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: charts.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 14),
+            itemBuilder: (context, index) {
+              return StreamChartCard(chart: charts[index]);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditorialPlaylistsSection extends StatelessWidget {
+  final List<SearchPlaylistItem> playlists;
+
+  const _EditorialPlaylistsSection({required this.playlists});
+
+  @override
+  Widget build(BuildContext context) {
+    if (playlists.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 16),
+        const StreamSectionHeader(
+          title: 'Editorial Picks',
+          subtitle: 'Handpicked mixes & collections',
+        ),
+        SizedBox(
+          height: 196,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: playlists.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 14),
+            itemBuilder: (context, index) {
+              return StreamPlaylistCard(playlist: playlists[index]);
+            },
+          ),
+        ),
+      ],
     );
   }
 }

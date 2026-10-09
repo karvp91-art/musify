@@ -13,8 +13,10 @@ import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
+import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 
 /// An industry-standard, high-performance Playlist Detail screen aligned 1:1
 /// with the Home Screen (All tab) design system:
@@ -272,8 +274,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     if (shuffle) {
       final shuffled = List<Track>.from(tracks)..shuffle();
       audioHandler.playTrackList(shuffled, startIndex: 0);
+      openNowPlayingScreen(context, targetTrack: shuffled.first);
     } else {
       audioHandler.playTrackList(tracks, startIndex: 0);
+      openNowPlayingScreen(context, targetTrack: tracks.first);
     }
   }
 
@@ -1070,8 +1074,12 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           child: Stack(
             children: [
               tracksAsync.when(
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: AppColors.neonLime),
+            loading: () => ListView(
+              physics: const NeverScrollableScrollPhysics(),
+              children: const [
+                MediaHeaderSkeleton(),
+                TrackListSkeleton(itemCount: 8, shrinkWrap: true),
+              ],
             ),
             error: (err, _) => Center(
               child: Text(
@@ -1664,9 +1672,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                                       HapticFeedback.selectionClick();
                                       if (!isPlaybackPlaying) {
                                         audioHandler.play();
+                                        openNowPlayingScreen(context, targetTrack: track);
                                       }
                                     } else {
                                       audioHandler.playTrackList(displayTracks, startIndex: index);
+                                      openNowPlayingScreen(context, targetTrack: track);
                                     }
                                   },
                                   onLongPress: () {

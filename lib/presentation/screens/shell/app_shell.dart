@@ -39,15 +39,15 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     _pageController = PageController(
       initialPage: ref.read(currentTabIndexProvider).clamp(0, _screens.length - 1),
     );
-    // 320ms forward duration with fluid Apple Music / Material 3 deceleration curve
+    // 480ms forward duration with smooth easeOutCubic curve for graceful slide-up
     _playerExpandController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
-      reverseDuration: const Duration(milliseconds: 260),
+      duration: const Duration(milliseconds: 480),
+      reverseDuration: const Duration(milliseconds: 380),
     );
     _expandAnimation = CurvedAnimation(
       parent: _playerExpandController,
-      curve: const Cubic(0.2, 0.9, 0.22, 1.0),
+      curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
     _slideAnimation = Tween<Offset>(

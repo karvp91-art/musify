@@ -8,6 +8,7 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 import 'package:musify/services/backup_service.dart';
 
 /// Opens the Backup & Restore screen with authentic iOS slide navigation.
@@ -686,13 +687,10 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                           child: ElevatedButton.icon(
                             onPressed: _isExporting ? null : _handleExport,
                             icon: _isExporting
-                                ? SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: isDark ? Colors.black : Colors.white,
-                                    ),
+                                ? PulseDotsIndicator(
+                                    size: 5,
+                                    spacing: 3,
+                                    color: isDark ? Colors.black : Colors.white,
                                   )
                                 : const Icon(Icons.download_rounded, size: 20),
                             label: Text(
@@ -756,12 +754,12 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 
                       // Backup Files List (Open Canvas)
                       if (_isLoading)
-                        Center(
+                        const Center(
                           child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: activeGreenColor,
+                            padding: EdgeInsets.all(32),
+                            child: PulseDotsIndicator(
+                              size: 8,
+                              spacing: 5,
                             ),
                           ),
                         )

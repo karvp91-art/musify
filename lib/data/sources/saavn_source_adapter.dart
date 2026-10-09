@@ -66,7 +66,7 @@ class SaavnSourceAdapter implements SourceAdapter {
   }
 
   @override
-  Future<List<Track>> search(String query, {int limit = 25}) async {
+  Future<List<Track>> search(String query, {int limit = 25, int page = 1}) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
 
@@ -79,7 +79,7 @@ class SaavnSourceAdapter implements SourceAdapter {
           '_marker': '0',
           'cc': 'in',
           'n': limit,
-          'p': 1,
+          'p': page,
           'q': trimmed,
         },
       );

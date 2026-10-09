@@ -7,6 +7,7 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 
 /// Opens the subtle and solid playlist creation modal bottom sheet.
 Future<Playlist?> showCreatePlaylistModal(
@@ -389,13 +390,10 @@ class _PlaylistFormBottomSheetState extends ConsumerState<_PlaylistFormBottomShe
                           ),
                           onPressed: isValid && !_isSubmitting ? _submit : null,
                           child: _isSubmitting
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Color(0xFF111827),
-                                  ),
+                              ? const PulseDotsIndicator(
+                                  size: 7,
+                                  spacing: 4,
+                                  color: Color(0xFF111827),
                                 )
                               : Row(
                                   mainAxisAlignment: MainAxisAlignment.center,

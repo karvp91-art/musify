@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 
 /// Shows a modal dialog for manually editing track metadata (title, artist, album).
 Future<bool?> showEditTrackInfoDialog(BuildContext context, WidgetRef ref, Track track) async {
@@ -195,13 +196,10 @@ class _EditTrackInfoDialogState extends ConsumerState<_EditTrackInfoDialog> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     child: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
+                        ? const PulseDotsIndicator(
+                            size: 6,
+                            spacing: 4,
+                            color: Colors.white,
                           )
                         : const Text(
                             'Save',

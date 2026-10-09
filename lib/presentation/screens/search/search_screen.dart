@@ -11,6 +11,7 @@ import 'package:musify/data/sources/saavn_source_adapter.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/album/album_detail_screen.dart';
 import 'package:musify/presentation/screens/artist/artist_detail_screen.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/screens/stream/stream_playlist_detail_screen.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/screens/stream/widgets/stream_cards.dart';
@@ -19,6 +20,7 @@ import 'package:musify/presentation/providers/network_providers.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
+import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
 
@@ -33,11 +35,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
   Timer? _debounceTimer;
   Timer? _historyTimer;
   SearchMultiResult _multiResult = const SearchMultiResult();
   List<Track> _searchResults = [];
   bool _isSearching = false;
+  int _searchPage = 1;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
   String _selectedFilter = 'All';
 
   @override
@@ -103,6 +109,68 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
+      _loadMoreSearchResults();
+    }
+  }
+
+  Future<void> _loadMoreSearchResults() async {
+    if (_isLoadingMore || !_hasMore || _isSearching) return;
+    final query = _searchController.text.trim();
+    if (query.isEmpty || query.length < 2) return;
+    if (ref.read(isOfflineProvider)) {
+      setState(() => _hasMore = false);
+      return;
+    }
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final nextPage = _searchPage + 1;
+      final saavn = ref.read(saavnAdapterProvider);
+      final newTracks = await saavn.search(query, page: nextPage, limit: 25);
+
+      if (!mounted) return;
+
+      if (newTracks.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+      } else {
+        final List<Track> updated = [..._searchResults];
+        final seenKeys = updated.map((t) => '${SaavnSourceAdapter.normalizeSongTitle(t.title)}|${t.artistName.toLowerCase().trim()}').toSet();
+        for (final t in newTracks) {
+          final key = '${SaavnSourceAdapter.normalizeSongTitle(t.title)}|${t.artistName.toLowerCase().trim()}';
+          if (seenKeys.add(key)) {
+            updated.add(t);
+          }
+        }
+
+        setState(() {
+          _searchPage = nextPage;
+          _searchResults = updated;
+          _isLoadingMore = false;
+          if (newTracks.length < 10) {
+            _hasMore = false;
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
+  }
+
+  @override
   void deactivate() {
     if (_isSelectionMode) {
       ref.read(isMultiSelectionModeProvider.notifier).setMode(false);
@@ -115,6 +183,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (_isSelectionMode) {
       ref.read(isMultiSelectionModeProvider.notifier).setMode(false);
     }
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _debounceTimer?.cancel();
@@ -125,6 +195,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   void _performSearch(String query, {bool addToHistory = true}) async {
     _debounceTimer?.cancel();
     _historyTimer?.cancel();
+    _searchPage = 1;
+    _hasMore = true;
+    _isLoadingMore = false;
     final trimmed = query.trim().replaceAll(RegExp(r'\s+'), ' ');
     if (trimmed.isEmpty) {
       setState(() {
@@ -341,6 +414,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         audioHandler.pause();
       } else {
         audioHandler.play();
+        openNowPlayingScreen(context, targetTrack: track);
       }
       return;
     }
@@ -356,6 +430,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     } else {
       audioHandler.playTrackList([track, ...effectiveList], startIndex: 0);
     }
+    openNowPlayingScreen(context, targetTrack: track);
   }
 
   void _handleBatchAddToPlaylist(BuildContext context, List<Track> selectedTracks) {
@@ -1056,9 +1131,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                             audioHandler.pause();
                           } else {
                             audioHandler.play();
+                            openNowPlayingScreen(context, targetTrack: track);
                           }
                         } else {
                           audioHandler.playTrackList(recentTracks, startIndex: index);
+                          openNowPlayingScreen(context, targetTrack: track);
                         }
                       },
                     );
@@ -1226,51 +1303,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   Widget _buildSearchLoadingState(ThemeData theme, bool isDark) {
-    return ListView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: 6,
-      itemBuilder: (context, index) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF20222B) : const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 160,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF20222B) : const Color(0xFFE5E7EB),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: 100,
-                    height: 11,
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF20222B) : const Color(0xFFE5E7EB),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (_selectedFilter == 'All') {
+      return const SearchMultiSkeleton();
+    }
+    return const TrackListSkeleton(itemCount: 8);
   }
 
   Widget _buildActiveSearchResults(ThemeData theme, bool isDark, double bottomPadding) {
@@ -2176,11 +2212,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           ),
         Expanded(
           child: ListView.builder(
+            controller: _scrollController,
             physics: const ClampingScrollPhysics(),
             padding: EdgeInsets.only(bottom: bottomPadding),
             itemExtent: _selectedFilter == 'YouTube' ? 88.0 : (_selectedFilter == 'Songs' ? 76.0 : null),
-            itemCount: filteredResults.length,
+            itemCount: filteredResults.length + (_isLoadingMore ? 2 : 0),
             itemBuilder: (context, index) {
+              if (index >= filteredResults.length) {
+                return const TrackTileSkeleton();
+              }
               final track = filteredResults[index];
               final isCurrent = currentPlayingTrackId == track.id;
               final isTilePlaying = isCurrent && isPlaybackPlaying;
@@ -2213,6 +2253,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                     HapticFeedback.selectionClick();
                     if (!isPlaybackPlaying) {
                       audioHandler.play();
+                      openNowPlayingScreen(context, targetTrack: track);
                     }
                     return;
                   }

@@ -10,8 +10,11 @@ import 'package:musify/presentation/screens/album/album_detail_screen.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
+import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 
 /// Borderless circular action button matching AudioSettingsScreen header style
 class _CircleHeaderButton extends StatelessWidget {
@@ -72,11 +75,36 @@ class ArtistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
+  final ScrollController _scrollController = ScrollController();
   bool _showAllSongs = false;
   final List<Track> _additionalSongs = [];
   int _nextPage = 2;
   bool _isLoadingMore = false;
   bool _hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_showAllSongs && _hasMore && !_isLoadingMore && _scrollController.hasClients) {
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
+        final name = widget.initialName ?? ref.read(saavnArtistDetailsProvider(widget.artistId)).value?.name ?? '';
+        if (name.isNotEmpty) {
+          _loadMoreSongs(name);
+        }
+      }
+    }
+  }
 
   Future<void> _loadMoreSongs(String artistName) async {
     if (_isLoadingMore || !_hasMore) return;
@@ -193,6 +221,7 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                           onTap: () {
                             final shuffled = List<Track>.from(combinedSongs)..shuffle();
                             audioHandler.playTrackList(shuffled, startIndex: 0);
+                            openNowPlayingScreen(context, targetTrack: shuffled.first);
                           },
                         ),
                     ],
@@ -214,6 +243,7 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                       final displayedSongs = _showAllSongs ? combinedSongs : combinedSongs.take(5).toList();
 
                       return ListView(
+                        controller: _scrollController,
                         physics: const ClampingScrollPhysics(),
                         padding: const EdgeInsets.only(bottom: 140),
                         children: [
@@ -342,6 +372,7 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                                     : () {
                                         HapticFeedback.mediumImpact();
                                         audioHandler.playTrackList(combinedSongs, startIndex: 0);
+                                        openNowPlayingScreen(context, targetTrack: combinedSongs.first);
                                       },
                               ),
                             ),
@@ -408,6 +439,7 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                                       audioHandler.pause();
                                     } else {
                                       audioHandler.play();
+                                      openNowPlayingScreen(context, targetTrack: track);
                                     }
                                   } else {
                                     final playIdx = combinedSongs.indexWhere((t) => t.id == track.id);
@@ -415,6 +447,7 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                                       combinedSongs,
                                       startIndex: playIdx != -1 ? playIdx : 0,
                                     );
+                                    openNowPlayingScreen(context, targetTrack: track);
                                   }
                                 },
                                 onLikeToggle: () {
@@ -438,13 +471,9 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                     child: _isLoadingMore
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: AppColors.neonLime,
-                                            ),
+                                        ? const PulseDotsIndicator(
+                                            size: 7,
+                                            spacing: 4,
                                           )
                                         : Row(
                                             mainAxisAlignment: MainAxisAlignment.center,
@@ -592,8 +621,12 @@ class _ArtistDetailScreenState extends ConsumerState<ArtistDetailScreen> {
                         ],
                       );
                     },
-                    loading: () => const Center(
-                      child: CircularProgressIndicator(color: AppColors.neonLime),
+                    loading: () => ListView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: const [
+                        ArtistHeaderSkeleton(),
+                        TrackListSkeleton(itemCount: 6, shrinkWrap: true),
+                      ],
                     ),
                     error: (err, _) => OfflineStateView(
                       title: 'Failed to Load Artist',

@@ -5,6 +5,7 @@ import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/providers/network_providers.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 
 /// Production-grade reusable offline empty/error state view.
 /// Shows rich visual feedback, clear recovery messaging, and one-tap navigation to downloaded/local music.
@@ -118,13 +119,10 @@ class _OfflineStateViewState extends ConsumerState<OfflineStateView> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: _isChecking
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.amber,
-                          ),
+                      ? const PulseDotsIndicator(
+                          size: 5,
+                          spacing: 3,
+                          color: Colors.amber,
                         )
                       : Text(
                           'Retry',
@@ -256,13 +254,10 @@ class _OfflineStateViewState extends ConsumerState<OfflineStateView> {
                     ),
                   ),
                   icon: _isChecking
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.colorScheme.primary,
-                          ),
+                      ? PulseDotsIndicator(
+                          size: 5,
+                          spacing: 3,
+                          color: theme.colorScheme.primary,
                         )
                       : const Icon(Icons.refresh_rounded, size: 18),
                   label: Text(

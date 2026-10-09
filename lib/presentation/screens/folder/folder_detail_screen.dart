@@ -7,6 +7,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 
 /// Borderless circular action button matching AudioSettingsScreen header style
 class _CircleHeaderButton extends StatelessWidget {
@@ -200,6 +201,7 @@ class _FolderDetailScreenState extends ConsumerState<FolderDetailScreen> {
                               if (displayedTracks.isNotEmpty) {
                                 final shuffled = List<Track>.from(displayedTracks)..shuffle();
                                 audioHandler.playTrackList(shuffled, startIndex: 0);
+                                openNowPlayingScreen(context, targetTrack: shuffled.first);
                               }
                             },
                           ),
@@ -260,6 +262,7 @@ class _FolderDetailScreenState extends ConsumerState<FolderDetailScreen> {
                               ? null
                               : () {
                                   audioHandler.playTrackList(displayedTracks, startIndex: 0);
+                                  openNowPlayingScreen(context, targetTrack: displayedTracks.first);
                                 },
                           style: FilledButton.styleFrom(
                             backgroundColor: AppColors.neonLime,
@@ -382,9 +385,11 @@ class _FolderDetailScreenState extends ConsumerState<FolderDetailScreen> {
                                     HapticFeedback.selectionClick();
                                     if (!isPlaybackPlaying) {
                                       audioHandler.play();
+                                      openNowPlayingScreen(context, targetTrack: track);
                                     }
                                   } else {
                                     audioHandler.playTrackList(displayedTracks, startIndex: index);
+                                    openNowPlayingScreen(context, targetTrack: track);
                                   }
                                 },
                                 onLongPress: () {

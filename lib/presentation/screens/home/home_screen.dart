@@ -18,7 +18,9 @@ import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/create_playlist_modal.dart';
+import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/screens/settings/audio_settings_screen.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/services/online_artwork_enricher.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../folder/folder_detail_screen.dart';
@@ -897,7 +899,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
           ]),
         );
       },
-      loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
+      loading: () => TrackListSkeleton.sliver(itemCount: 6),
       error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Error: $e', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)))),
     );
   }
@@ -950,9 +952,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                     HapticFeedback.selectionClick();
                     if (!isPlaybackPlaying) {
                       audioHandler.play();
+                      openNowPlayingScreen(context, targetTrack: track);
                     }
                   } else {
                     audioHandler.playTrackList(tracks, startIndex: index);
+                    openNowPlayingScreen(context, targetTrack: track);
                   }
                 },
                 onLongPress: () {
@@ -968,7 +972,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
           ),
         );
       },
-      loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
+      loading: () => TrackListSkeleton.sliver(itemCount: 8),
       error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Error: $e', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)))),
     );
   }
@@ -1073,9 +1077,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                 HapticFeedback.selectionClick();
                 if (!isPlaybackPlaying) {
                   audioHandler.play();
+                  openNowPlayingScreen(context, targetTrack: track);
                 }
               } else {
                 audioHandler.playTrackList(displayedTracks, startIndex: index);
+                openNowPlayingScreen(context, targetTrack: track);
               }
             },
             onLongPress: () {
@@ -1156,6 +1162,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                 if (allTracks.isNotEmpty) {
                   final shuffled = List<Track>.from(allTracks)..shuffle();
                   audioHandler.playTrackList(shuffled, startIndex: 0);
+                  openNowPlayingScreen(context, targetTrack: shuffled.first);
                 }
               },
               child: Padding(
@@ -1389,7 +1396,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                   child: sortedTracksAsync.when(
                     data: (_) {
                       return CustomScrollView(
-                        physics: const ClampingScrollPhysics(
+                        physics: const BouncingScrollPhysics(
                           parent: AlwaysScrollableScrollPhysics(),
                         ),
                         slivers: [
@@ -1501,9 +1508,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                                       HapticFeedback.selectionClick();
                                       if (!isPlaybackPlaying) {
                                         audioHandler.play();
+                                        openNowPlayingScreen(context, targetTrack: track);
                                       }
                                     } else {
                                       audioHandler.playTrackList(displayedTracks, startIndex: index);
+                                      openNowPlayingScreen(context, targetTrack: track);
                                     }
                                   },
                                   onLongPress: () {
@@ -1526,7 +1535,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                       ],
                     );
                   },
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () => const TrackListSkeleton(itemCount: 10),
                   error: (err, _) => Center(
                     child: Text(
                       'Failed to load music: $err',
@@ -1690,6 +1699,7 @@ class _HomePlaylistItem extends ConsumerWidget {
                 HapticFeedback.selectionClick();
                 if (tracks.isNotEmpty) {
                   audioHandler.playTrackList(tracks, startIndex: 0);
+                  openNowPlayingScreen(context, targetTrack: tracks.first);
                 } else {
                   AppSnackBar.show(
                     context,
@@ -1744,6 +1754,7 @@ class _HomePlaylistItem extends ConsumerWidget {
                   if (value == 'play') {
                     if (tracks.isNotEmpty) {
                       audioHandler.playTrackList(tracks, startIndex: 0);
+                      openNowPlayingScreen(context, targetTrack: tracks.first);
                     } else {
                       AppSnackBar.show(
                         context,

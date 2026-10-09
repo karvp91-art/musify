@@ -9,8 +9,10 @@ import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
+import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 
 /// Borderless circular action button matching StudioEqualizerScreen header style
 class _CircleHeaderButton extends StatelessWidget {
@@ -77,7 +79,9 @@ class _StreamPlaylistDetailScreenState extends ConsumerState<StreamPlaylistDetai
     if (songs.isEmpty) return;
     HapticFeedback.selectionClick();
     final handler = ref.read(audioHandlerProvider);
+    final track = songs[index];
     handler.playTrackList(songs, startIndex: index);
+    openNowPlayingScreen(context, targetTrack: track);
   }
 
   void _playAll(List<Track> songs, {bool shuffle = false}) {
@@ -87,8 +91,10 @@ class _StreamPlaylistDetailScreenState extends ConsumerState<StreamPlaylistDetai
     if (shuffle) {
       final shuffled = List<Track>.from(songs)..shuffle();
       handler.playTrackList(shuffled, startIndex: 0);
+      openNowPlayingScreen(context, targetTrack: shuffled.first);
     } else {
       handler.playTrackList(songs, startIndex: 0);
+      openNowPlayingScreen(context, targetTrack: songs.first);
     }
   }
 
@@ -325,14 +331,7 @@ class _StreamPlaylistDetailScreenState extends ConsumerState<StreamPlaylistDetai
 
                 // Track List or Loading State
                 playlistAsync.when(
-                  loading: () => const SliverToBoxAdapter(
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 40),
-                        child: CircularProgressIndicator(color: AppColors.neonLime),
-                      ),
-                    ),
-                  ),
+                  loading: () => TrackListSkeleton.sliver(itemCount: 8),
                   error: (err, stack) => SliverToBoxAdapter(
                     child: OfflineStateView(
                       title: 'Failed to Load Playlist',

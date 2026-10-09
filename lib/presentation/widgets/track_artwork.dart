@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 
 class TrackArtwork extends StatelessWidget {
   final String? artworkUrl;
@@ -97,7 +98,7 @@ class TrackArtwork extends StatelessWidget {
   static const int heroArtworkDimension = 480;
 
   /// Pre-caches the player artwork into memory ahead of time so opening NowPlayingScreen has 0ms latency
-  static void precacheArtwork(BuildContext context, String? artworkUrl) {
+  static Future<void> precacheArtwork(BuildContext context, String? artworkUrl) async {
     if (artworkUrl == null || artworkUrl.trim().isEmpty || isPlaceholderUrl(artworkUrl)) return;
     try {
       final ImageProvider provider;
@@ -114,7 +115,7 @@ class TrackArtwork extends StatelessWidget {
           height: heroArtworkDimension,
         );
       }
-      precacheImage(provider, context).catchError((_) {});
+      await precacheImage(provider, context).catchError((_) {});
     } catch (_) {}
   }
 
@@ -179,17 +180,11 @@ class TrackArtwork extends StatelessWidget {
         memCacheWidth: targetCacheWidth,
         memCacheHeight: targetCacheHeight,
         fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
+        placeholder: (context, url) => ArtworkShimmerPlaceholder(
           width: w,
           height: h,
-          color: isDark ? const Color(0xFF1E202A) : const Color(0xFFECEEF2),
-          child: const Center(
-            child: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
+          borderRadius: effectiveRadius.topLeft.x,
+          shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
         ),
         errorWidget: (context, url, error) => fallbackWidget,
       );
@@ -213,25 +208,25 @@ class TrackArtwork extends StatelessWidget {
         borderRadius: effectiveRadius,
         boxShadow: ambientGlow
             ? [
-                // Outer colored glow
-                BoxShadow(
-                  color: primaryColor.withValues(alpha: 0.18),
-                  blurRadius: 48,
-                  spreadRadius: 6,
-                ),
-                // Deep drop shadow for depth
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  blurRadius: 32,
-                  offset: const Offset(0, 12),
-                ),
-                // Subtle inner-ish rim glow
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  blurRadius: 2,
-                  spreadRadius: 1,
-                ),
-              ]
+          // Outer colored glow
+          BoxShadow(
+            color: primaryColor.withValues(alpha: 0.18),
+            blurRadius: 48,
+            spreadRadius: 6,
+          ),
+          // Deep drop shadow for depth
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 32,
+            offset: const Offset(0, 12),
+          ),
+          // Subtle inner-ish rim glow
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.06),
+            blurRadius: 2,
+            spreadRadius: 1,
+          ),
+        ]
             : null,
       ),
       child: ClipRRect(
@@ -396,4 +391,3 @@ class _VinylGroovesPainter extends CustomPainter {
   bool shouldRepaint(covariant _VinylGroovesPainter oldDelegate) =>
       oldDelegate.grooveColor != grooveColor;
 }
-

@@ -5,6 +5,7 @@ import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/data/repositories/local_files_scanner.dart';
 import 'package:musify/services/online_artwork_enricher.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 import '../providers/audio_providers.dart';
 
 /// Triggers background device scan and opens the redesigned floating modal bottom sheet
@@ -542,13 +543,10 @@ class _ScanStorageBottomSheetState extends ConsumerState<ScanStorageBottomSheet>
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                      color: activeAccent,
-                                    ),
+                                  PulseDotsIndicator(
+                                    size: 5,
+                                    spacing: 3,
+                                    color: activeAccent,
                                   ),
                                   const SizedBox(width: 10),
                                   Text(

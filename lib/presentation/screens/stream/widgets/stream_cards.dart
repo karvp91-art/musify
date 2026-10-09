@@ -167,6 +167,7 @@ class StreamSongCard extends StatelessWidget {
                     child: TrackArtwork(
                       artworkUrl: track.artworkUrl,
                       size: 136,
+                      cacheDimension: 280,
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
@@ -292,6 +293,7 @@ class StreamAlbumCard extends StatelessWidget {
                 child: TrackArtwork(
                   artworkUrl: album.imageUrl,
                   size: 140,
+                  cacheDimension: 280,
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
@@ -377,6 +379,7 @@ class StreamArtistCircleCard extends StatelessWidget {
                 child: TrackArtwork(
                   artworkUrl: artist.imageUrl,
                   size: 92,
+                  cacheDimension: 200,
                   borderRadius: BorderRadius.circular(46),
                 ),
               ),
@@ -466,6 +469,7 @@ class StreamChartCard extends StatelessWidget {
                     child: TrackArtwork(
                       artworkUrl: chart.imageUrl,
                       size: 140,
+                      cacheDimension: 280,
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
@@ -665,6 +669,7 @@ class StreamPlaylistCard extends StatelessWidget {
                 child: TrackArtwork(
                   artworkUrl: playlist.imageUrl,
                   size: 140,
+                  cacheDimension: 280,
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),

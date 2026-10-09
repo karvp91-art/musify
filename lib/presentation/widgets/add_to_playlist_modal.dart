@@ -6,6 +6,7 @@ import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 import 'playlist_artwork.dart';
 import 'track_artwork.dart';
 import 'create_playlist_modal.dart';
@@ -325,7 +326,7 @@ class _AddToPlaylistBottomSheetState extends ConsumerState<AddToPlaylistBottomSh
                 loading: () => const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
-                    child: CircularProgressIndicator(color: AppColors.neonLime),
+                    child: PulseDotsIndicator(size: 8, spacing: 5),
                   ),
                 ),
                 error: (err, _) => Padding(
@@ -394,13 +395,10 @@ class _AddToPlaylistBottomSheetState extends ConsumerState<AddToPlaylistBottomSh
                   ),
                   onPressed: _isProcessing ? null : () => _commitAddToPlaylist(customPlaylists),
                   child: _isProcessing
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Color(0xFF111827),
-                          ),
+                      ? const PulseDotsIndicator(
+                          size: 7,
+                          spacing: 4,
+                          color: Color(0xFF111827),
                         )
                       : Text(
                           'Add to Playlist',

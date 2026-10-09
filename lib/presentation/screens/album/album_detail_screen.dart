@@ -6,6 +6,7 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/artist/artist_detail_screen.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
@@ -141,6 +142,9 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                             onTap: () {
                               final shuffled = List<Track>.from(songs)..shuffle();
                               audioHandler.playTrackList(shuffled, startIndex: 0);
+                              if (shuffled.isNotEmpty) {
+                                openNowPlayingScreen(context, targetTrack: shuffled.first);
+                              }
                             },
                           );
                         },
@@ -338,6 +342,9 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                                         : () {
                                             HapticFeedback.mediumImpact();
                                             audioHandler.playTrackList(songs, startIndex: 0);
+                                            if (songs.isNotEmpty) {
+                                              openNowPlayingScreen(context, targetTrack: songs.first);
+                                            }
                                           },
                                   ),
                                 ),
@@ -410,6 +417,7 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                               onTap: () {
                                 HapticFeedback.selectionClick();
                                 audioHandler.playTrackList(songs, startIndex: songs.indexOf(track));
+                                openNowPlayingScreen(context, targetTrack: track);
                               },
                               onLikeToggle: () {
                                 ref.read(audioRepositoryProvider).toggleLike(track);

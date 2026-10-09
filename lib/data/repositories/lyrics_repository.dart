@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:musify/core/utils/lrc_parser.dart';
 import 'package:musify/data/sources/saavn_source_adapter.dart';
 import 'package:musify/domain/models/lyrics.dart';
@@ -63,7 +64,7 @@ class LyricsRepository {
     if (lrclibData != null) {
       final synced = lrclibData['syncedLyrics'] as String?;
       if (synced != null && synced.trim().isNotEmpty) {
-        final lines = LrcParser.parseLrc(synced);
+        final lines = await compute(LrcParser.parseLrc, synced);
         if (lines.isNotEmpty) {
           return Lyrics(
             trackId: track.id,
@@ -79,7 +80,7 @@ class LyricsRepository {
     // Fall back to JioSaavn plain lyrics
     if (saavnData != null && saavnData['lyrics'] != null) {
       final rawLyrics = saavnData['lyrics'].toString();
-      final lines = LrcParser.parsePlain(rawLyrics);
+      final lines = await compute(LrcParser.parsePlain, rawLyrics);
       final plain = lines.map((l) => l.text).join('\n');
       return Lyrics(
         trackId: track.id,
@@ -94,7 +95,7 @@ class LyricsRepository {
     // Fall back to LRCLIB plain lyrics
     if (lrclibData != null && lrclibData['plainLyrics'] != null) {
       final plain = lrclibData['plainLyrics'].toString();
-      final lines = LrcParser.parsePlain(plain);
+      final lines = await compute(LrcParser.parsePlain, plain);
       return Lyrics(
         trackId: track.id,
         plainLyrics: plain,
@@ -113,7 +114,7 @@ class LyricsRepository {
     if (lrclibData != null) {
       final synced = lrclibData['syncedLyrics'] as String?;
       if (synced != null && synced.trim().isNotEmpty) {
-        final lines = LrcParser.parseLrc(synced);
+        final lines = await compute(LrcParser.parseLrc, synced);
         if (lines.isNotEmpty) {
           return Lyrics(
             trackId: track.id,
@@ -127,7 +128,7 @@ class LyricsRepository {
 
       final plain = lrclibData['plainLyrics'] as String?;
       if (plain != null && plain.trim().isNotEmpty) {
-        final lines = LrcParser.parsePlain(plain);
+        final lines = await compute(LrcParser.parsePlain, plain);
         return Lyrics(
           trackId: track.id,
           plainLyrics: plain,
@@ -142,7 +143,7 @@ class LyricsRepository {
     final saavnData = await _saavnAdapter.searchAndGetLyrics(track.title, track.artistName);
     if (saavnData != null && saavnData['lyrics'] != null) {
       final rawLyrics = saavnData['lyrics'].toString();
-      final lines = LrcParser.parsePlain(rawLyrics);
+      final lines = await compute(LrcParser.parsePlain, rawLyrics);
       final plain = lines.map((l) => l.text).join('\n');
       return Lyrics(
         trackId: track.id,

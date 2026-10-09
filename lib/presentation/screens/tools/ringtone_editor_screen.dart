@@ -15,6 +15,7 @@ import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
+import 'package:musify/presentation/widgets/loading_indicators.dart';
 import 'package:musify/services/ringtone_service.dart';
 
 class RingtoneEditorScreen extends ConsumerStatefulWidget {
@@ -343,7 +344,7 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const CircularProgressIndicator(),
+                          const LyricsLoadingWave(height: 38),
                           const SizedBox(height: 16),
                           Text(
                             _downloadProgress > 0
@@ -1103,13 +1104,10 @@ class _StudioActionCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: isLoading
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Color(0xFF111827),
-                        ),
+                    ? const PulseDotsIndicator(
+                        size: 5,
+                        spacing: 3,
+                        color: Color(0xFF111827),
                       )
                     : Text(
                         actionLabel,

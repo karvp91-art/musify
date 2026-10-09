@@ -9,6 +9,8 @@ import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/widgets/create_playlist_modal.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
+import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
@@ -202,10 +204,7 @@ class LibraryScreen extends ConsumerWidget {
                 }).toList(),
               );
             },
-            loading: () => const Center(child: Padding(
-              padding: EdgeInsets.all(32.0),
-              child: CircularProgressIndicator(),
-            )),
+            loading: () => const TrackListSkeleton(itemCount: 4, shrinkWrap: true),
             error: (e, _) => Center(child: Text('Error: $e')),
           ),
         ],
@@ -373,6 +372,7 @@ class _PlaylistListTile extends ConsumerWidget {
           if (value == 'play') {
             if (tracks.isNotEmpty) {
               audioHandler.playTrackList(tracks, startIndex: 0);
+              openNowPlayingScreen(context, targetTrack: tracks.first);
             } else {
               AppSnackBar.show(
                 context,

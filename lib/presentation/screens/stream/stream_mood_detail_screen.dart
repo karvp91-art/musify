@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
@@ -9,7 +8,9 @@ import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/download_dynamic_island.dart';
 import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/offline_state_view.dart';
+import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
+import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 
 class _CircleHeaderButton extends StatelessWidget {
   final IconData icon;
@@ -65,11 +66,65 @@ class StreamMoodDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _StreamMoodDetailScreenState extends ConsumerState<StreamMoodDetailScreen> {
+  final ScrollController _scrollController = ScrollController();
+  final List<Track> _moreTracks = [];
+  int _page = 1;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextPage = _page + 1;
+      final saavn = ref.read(saavnAdapterProvider);
+      final results = await saavn.search('${widget.mood.query} top hits', page: nextPage, limit: 25);
+      if (!mounted) return;
+      if (results.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+      } else {
+        setState(() {
+          _page = nextPage;
+          _moreTracks.addAll(results);
+          _isLoadingMore = false;
+          if (results.length < 10) _hasMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
   void _playTrack(List<Track> songs, int index) {
     if (songs.isEmpty) return;
     HapticFeedback.selectionClick();
     final handler = ref.read(audioHandlerProvider);
+    final track = songs[index];
     handler.playTrackList(songs, startIndex: index);
+    openNowPlayingScreen(context, targetTrack: track);
   }
 
   void _playAll(List<Track> songs, {bool shuffle = false}) {
@@ -79,8 +134,10 @@ class _StreamMoodDetailScreenState extends ConsumerState<StreamMoodDetailScreen>
     if (shuffle) {
       final shuffled = List<Track>.from(songs)..shuffle();
       handler.playTrackList(shuffled, startIndex: 0);
+      openNowPlayingScreen(context, targetTrack: shuffled.first);
     } else {
       handler.playTrackList(songs, startIndex: 0);
+      openNowPlayingScreen(context, targetTrack: songs.first);
     }
   }
 
@@ -92,7 +149,15 @@ class _StreamMoodDetailScreenState extends ConsumerState<StreamMoodDetailScreen>
     final tracksAsync = ref.watch(streamMoodTracksProvider(mood.query));
     final currentPlayingTrackId = ref.watch(currentPlayingTrackIdProvider);
     final isPlaying = ref.watch(isPlaybackPlayingProvider);
-    final songs = tracksAsync.value ?? [];
+    final baseSongs = tracksAsync.value ?? [];
+
+    final List<Track> songs = [...baseSongs];
+    final seenIds = baseSongs.map((t) => t.id).toSet();
+    for (final t in _moreTracks) {
+      if (seenIds.add(t.id)) {
+        songs.add(t);
+      }
+    }
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -101,6 +166,7 @@ class _StreamMoodDetailScreenState extends ConsumerState<StreamMoodDetailScreen>
         child: Stack(
           children: [
             CustomScrollView(
+              controller: _scrollController,
               physics: const ClampingScrollPhysics(),
               slivers: [
                 // Top Custom Navigation Bar
@@ -258,14 +324,7 @@ class _StreamMoodDetailScreenState extends ConsumerState<StreamMoodDetailScreen>
 
                 // Tracks List
                 tracksAsync.when(
-                  loading: () => const SliverToBoxAdapter(
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 40),
-                        child: CircularProgressIndicator(color: AppColors.neonLime),
-                      ),
-                    ),
-                  ),
+                  loading: () => TrackListSkeleton.sliver(itemCount: 8),
                   error: (err, stack) => SliverToBoxAdapter(
                     child: OfflineStateView(
                       title: 'Failed to Load Tracks',
@@ -273,8 +332,8 @@ class _StreamMoodDetailScreenState extends ConsumerState<StreamMoodDetailScreen>
                       onRetry: () => ref.refresh(streamMoodTracksProvider(mood.query)),
                     ),
                   ),
-                  data: (tracks) {
-                    if (tracks.isEmpty) {
+                  data: (_) {
+                    if (songs.isEmpty) {
                       return SliverToBoxAdapter(
                         child: Center(
                           child: Padding(
@@ -295,20 +354,23 @@ class _StreamMoodDetailScreenState extends ConsumerState<StreamMoodDetailScreen>
                       sliver: SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                            final track = tracks[index];
+                            if (index >= songs.length) {
+                              return const TrackTileSkeleton();
+                            }
+                            final track = songs[index];
                             final isCurrentTrack = currentPlayingTrackId == track.id;
 
                             return TrackListTile(
                               track: track,
                               isCurrent: isCurrentTrack,
                               isPlaying: isCurrentTrack && isPlaying,
-                              onTap: () => _playTrack(tracks, index),
+                              onTap: () => _playTrack(songs, index),
                               onMoreOptions: () {
                                 showAddToPlaylistModal(context, ref, track: track);
                               },
                             );
                           },
-                          childCount: tracks.length,
+                          childCount: songs.length + (_isLoadingMore ? 2 : 0),
                         ),
                       ),
                     );
