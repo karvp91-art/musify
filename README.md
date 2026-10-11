@@ -17,8 +17,18 @@
   </p>
 
   <p align="center">
-    <a href="https://github.com/karvp91-art/musify/releases/latest"><b>Download Latest APK</b></a> •
+    <a href="https://github.com/karvp91-art/musify/releases/latest">
+      <img src="https://img.shields.io/badge/⚡_DOWNLOAD_APK-v1.0.0_LATEST-84CC16?style=for-the-badge&logo=android&logoColor=000000&labelColor=A3E635" height="44" alt="Download APK" />
+    </a>
+    &nbsp;&nbsp;
+    <a href="https://github.com/karvp91-art/musify/releases">
+      <img src="https://img.shields.io/badge/📦_ALL_RELEASES-GITHUB-18181B?style=for-the-badge&logo=github&logoColor=white" height="44" alt="All Releases" />
+    </a>
+  </p>
+
+  <p align="center">
     <a href="#-key-features"><b>Features</b></a> •
+    <a href="#-download--installation"><b>Installation</b></a> •
     <a href="#-automated-github-releases"><b>CI/CD Releases</b></a> •
     <a href="#-build-from-source"><b>Build Guide</b></a>
   </p>
@@ -63,11 +73,27 @@
 
 ## 📥 Download & Installation
 
-Get the latest pre-compiled Android APK directly from GitHub Releases:
+<div align="center">
 
-1. Head over to **[Releases](https://github.com/karvp91-art/musify/releases/latest)**.
-2. Download `Musify-vX.X.X.apk`.
-3. Open the APK on your Android device to install.
+| 📱 Target | ⚡ Current Version | 📦 Package | ⬇️ Quick Download |
+| :---: | :---: | :---: | :---: |
+| **Android 8.0+** <br/> *(Phone & Tablet)* | **v1.0.0** <br/> *(Latest Stable)* | `Musify-v1.0.0.apk` <br/> *(Universal Build)* | <a href="https://github.com/karvp91-art/musify/releases/latest"><img src="https://img.shields.io/badge/DOWNLOAD-APK-84CC16?style=for-the-badge&logo=android&logoColor=000000" height="36" alt="Download APK"/></a> |
+
+<br/>
+
+<a href="https://github.com/karvp91-art/musify/releases/latest">
+  <img src="https://img.shields.io/badge/⬇️_GET_MUSIFY_FOR_ANDROID-OFFICIAL_RELEASE-84CC16?style=for-the-badge&logo=android&logoColor=000000&labelColor=A3E635" height="52" alt="Get Musify for Android" />
+</a>
+
+<p align="center"><sub>Direct fast CDN download hosted on GitHub Releases • No ads • 100% Free</sub></p>
+
+</div>
+
+### Quick Installation:
+1. Tap the green **[GET MUSIFY FOR ANDROID](https://github.com/karvp91-art/musify/releases/latest)** button above (or download from the [Releases](https://github.com/karvp91-art/musify/releases) page).
+2. Once the `.apk` finishes downloading, tap the notification on your phone to install.
+3. If Android prompts *"Install unknown apps"*, toggle **Allow from this source**.
+4. Open **Musify** and enjoy! 🎵
 
 ---
 
