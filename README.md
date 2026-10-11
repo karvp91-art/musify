@@ -17,8 +17,8 @@
   </p>
 
   <p align="center">
-    <a href="https://github.com/karvp91-art/musify/releases/latest">
-      <img src="https://img.shields.io/badge/⚡_DOWNLOAD_APK-v1.0.0_LATEST-84CC16?style=for-the-badge&logo=android&logoColor=000000&labelColor=A3E635" height="44" alt="Download APK" />
+    <a href="https://github.com/karvp91-art/musify/releases/latest/download/Musify.apk">
+      <img src="https://img.shields.io/badge/⚡_DIRECT_DOWNLOAD_APK-LATEST-84CC16?style=for-the-badge&logo=android&logoColor=000000&labelColor=A3E635" height="44" alt="Direct Download APK" />
     </a>
     &nbsp;&nbsp;
     <a href="https://github.com/karvp91-art/musify/releases">
@@ -75,22 +75,22 @@
 
 <div align="center">
 
-| 📱 Target | ⚡ Current Version | 📦 Package | ⬇️ Quick Download |
+| 📱 Target | ⚡ Current Version | 📦 Package | ⬇️ 1-Click Direct Download |
 | :---: | :---: | :---: | :---: |
-| **Android 8.0+** <br/> *(Phone & Tablet)* | **v1.0.0** <br/> *(Latest Stable)* | `Musify-v1.0.0.apk` <br/> *(Universal Build)* | <a href="https://github.com/karvp91-art/musify/releases/latest"><img src="https://img.shields.io/badge/DOWNLOAD-APK-84CC16?style=for-the-badge&logo=android&logoColor=000000" height="36" alt="Download APK"/></a> |
+| **Android 8.0+** <br/> *(Phone & Tablet)* | **v1.0.0** <br/> *(Latest Stable)* | `Musify.apk` <br/> *(Universal Build)* | <a href="https://github.com/karvp91-art/musify/releases/latest/download/Musify.apk"><img src="https://img.shields.io/badge/DIRECT_DOWNLOAD-APK-84CC16?style=for-the-badge&logo=android&logoColor=000000" height="36" alt="Direct Download APK"/></a> |
 
 <br/>
 
-<a href="https://github.com/karvp91-art/musify/releases/latest">
-  <img src="https://img.shields.io/badge/⬇️_GET_MUSIFY_FOR_ANDROID-OFFICIAL_RELEASE-84CC16?style=for-the-badge&logo=android&logoColor=000000&labelColor=A3E635" height="52" alt="Get Musify for Android" />
+<a href="https://github.com/karvp91-art/musify/releases/latest/download/Musify.apk">
+  <img src="https://img.shields.io/badge/⬇️_DIRECT_DOWNLOAD_MUSIFY.APK-1--CLICK_INSTALL-84CC16?style=for-the-badge&logo=android&logoColor=000000&labelColor=A3E635" height="52" alt="Direct Download Musify APK" />
 </a>
 
-<p align="center"><sub>Direct fast CDN download hosted on GitHub Releases • No ads • 100% Free</sub></p>
+<p align="center"><sub>Direct fast CDN download • Clicking instantly starts download of Musify.apk • 100% Free</sub></p>
 
 </div>
 
 ### Quick Installation:
-1. Tap the green **[GET MUSIFY FOR ANDROID](https://github.com/karvp91-art/musify/releases/latest)** button above (or download from the [Releases](https://github.com/karvp91-art/musify/releases) page).
+1. Tap the green **[DIRECT DOWNLOAD MUSIFY.APK](https://github.com/karvp91-art/musify/releases/latest/download/Musify.apk)** button above. Download starts immediately!
 2. Once the `.apk` finishes downloading, tap the notification on your phone to install.
 3. If Android prompts *"Install unknown apps"*, toggle **Allow from this source**.
 4. Open **Musify** and enjoy! 🎵

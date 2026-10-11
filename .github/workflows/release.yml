@@ -58,14 +58,14 @@ jobs:
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
           
           mkdir -p release_assets
+          cp build/app/outputs/flutter-apk/app-release.apk "release_assets/Musify.apk"
           cp build/app/outputs/flutter-apk/app-release.apk "release_assets/Musify-${TAG_NAME}.apk"
-          echo "artifact_path=release_assets/Musify-${TAG_NAME}.apk" >> $GITHUB_OUTPUT
 
       - name: Upload Build Artifact to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
           name: Musify-${{ steps.prep.outputs.tag }}
-          path: ${{ steps.prep.outputs.artifact_path }}
+          path: release_assets/
           retention-days: 14
 
       - name: Publish GitHub Release
@@ -73,7 +73,9 @@ jobs:
         with:
           tag_name: ${{ steps.prep.outputs.tag }}
           name: Musify ${{ steps.prep.outputs.tag }}
-          files: ${{ steps.prep.outputs.artifact_path }}
+          files: |
+            release_assets/Musify.apk
+            release_assets/Musify-${{ steps.prep.outputs.tag }}.apk
           draft: false
           prerelease: false
           generate_release_notes: true
