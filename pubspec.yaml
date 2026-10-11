@@ -89,6 +89,12 @@ flutter:
     - assets/splash/
     - assets/fonts/
 
+  shaders:
+    - assets/shaders/liquid_wave_progress.frag
+    - assets/shaders/vinyl_anisotropic.frag
+    - assets/shaders/ambient_mesh_aura.frag
+    - assets/shaders/lyrics_glow_wipe.frag
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

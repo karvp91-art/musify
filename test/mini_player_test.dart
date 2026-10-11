@@ -61,13 +61,9 @@ void main() {
 
     // 1. Title & Artist
     expect(find.text('shup buqqin tokyodrift danzaku'), findsOneWidget);
-    expect(find.text('Unknown Artist'), findsOneWidget);
+    expect(find.text('UNKNOWN ARTIST'), findsOneWidget);
 
-    // 2. Timestamps from reference UI
-    expect(find.text('0:42'), findsOneWidget);
-    expect(find.text('3:31'), findsOneWidget);
-
-    // 3. Play/Pause and Next action buttons
+    // 2. Play/Pause and Next action buttons
     expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
     expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
   });
@@ -113,7 +109,6 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('shup buqqin tokyodrift danzaku'), findsWidgets);
-    expect(find.text('0:42'), findsOneWidget);
-    expect(find.text('3:31'), findsOneWidget);
   });
 }
+

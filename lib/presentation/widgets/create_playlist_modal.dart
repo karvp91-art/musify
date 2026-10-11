@@ -7,6 +7,7 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/core/utils/app_snack_bar.dart';
 import 'package:musify/domain/models/playlist.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
+import 'package:musify/presentation/screens/playlist/import_playlist_screen.dart';
 import 'package:musify/presentation/widgets/loading_indicators.dart';
 
 /// Opens the subtle and solid playlist creation modal bottom sheet.
@@ -425,6 +426,38 @@ class _PlaylistFormBottomSheetState extends ConsumerState<_PlaylistFormBottomShe
                   ],
                 ),
               ),
+
+              if (!_isEditing) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Center(
+                    child: TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      ),
+                      onPressed: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const ImportPlaylistScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.link_rounded, size: 16),
+                      label: const Text(
+                        'Import from Spotify, JioSaavn or YouTube',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

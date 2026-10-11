@@ -344,6 +344,31 @@ class PreferencesService {
     }
   }
 
+  // --- Favorite Playlists ---
+  static const String keyFavoritePlaylistIds = 'favorite_playlist_ids';
+
+  List<String> getFavoritePlaylistIds() {
+    return _getStringList(keyFavoritePlaylistIds) ?? [];
+  }
+
+  Future<bool> setFavoritePlaylistIds(List<String> ids) {
+    return _setStringList(keyFavoritePlaylistIds, ids);
+  }
+
+  Future<bool> toggleFavoritePlaylist(String playlistId) async {
+    final list = List<String>.from(getFavoritePlaylistIds());
+    if (list.contains(playlistId)) {
+      list.remove(playlistId);
+    } else {
+      list.add(playlistId);
+    }
+    return setFavoritePlaylistIds(list);
+  }
+
+  bool isPlaylistFavorite(String playlistId) {
+    return getFavoritePlaylistIds().contains(playlistId);
+  }
+
   // --- Generic Key-Value Helpers ---
 
   String? _getString(String key) =>
@@ -352,6 +377,15 @@ class PreferencesService {
   Future<bool> _setString(String key, String val) async {
     _fallbackStorage[key] = val;
     if (_prefs != null) return _prefs.setString(key, val);
+    return true;
+  }
+
+  List<String>? _getStringList(String key) =>
+      _prefs != null ? _prefs.getStringList(key) : (_fallbackStorage[key] as List<String>?);
+
+  Future<bool> _setStringList(String key, List<String> val) async {
+    _fallbackStorage[key] = val;
+    if (_prefs != null) return _prefs.setStringList(key, val);
     return true;
   }
 

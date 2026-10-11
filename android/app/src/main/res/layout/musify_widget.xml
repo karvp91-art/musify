@@ -1,100 +1,195 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
-    android:paddingStart="12dp"
-    android:paddingEnd="12dp"
-    android:paddingTop="10dp"
-    android:paddingBottom="10dp">
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
 
-    <!-- Album Artwork -->
-    <ImageView
-        android:id="@+id/widget_artwork"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:layout_alignParentStart="true"
-        android:layout_centerVertical="true"
-        android:background="@drawable/widget_artwork_bg"
-        android:src="@drawable/ic_widget_music_default"
-        android:scaleType="centerCrop"
-        android:contentDescription="Album Art" />
-
-    <!-- Playback Controls (Right aligned) -->
+    <!-- Top Header: Headphones Icon + 'My Music' + Chevron Right -->
     <LinearLayout
-        android:id="@+id/widget_controls"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentEnd="true"
-        android:layout_centerVertical="true"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <ImageView
-            android:id="@+id/widget_btn_prev"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:padding="8dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_widget_prev"
-            android:contentDescription="Previous Track" />
-
-        <ImageView
-            android:id="@+id/widget_btn_play_pause"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:background="@drawable/widget_play_btn_bg"
-            android:src="@drawable/ic_widget_play"
-            android:scaleType="centerInside"
-            android:padding="10dp"
-            android:contentDescription="Play/Pause" />
-
-        <ImageView
-            android:id="@+id/widget_btn_next"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:padding="8dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_widget_next"
-            android:contentDescription="Next Track" />
-    </LinearLayout>
-
-    <!-- Track Metadata (Center, between Artwork and Controls) -->
-    <LinearLayout
-        android:id="@+id/widget_text_container"
+        android:id="@+id/widget_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_toEndOf="@id/widget_artwork"
-        android:layout_toStartOf="@id/widget_controls"
-        android:layout_centerVertical="true"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="8dp"
-        android:orientation="vertical">
+        android:clickable="true"
+        android:focusable="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="match_parent"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Musify"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/widget_artist"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="Tap to play music"
-            android:textColor="#A0A8B8"
-            android:textSize="12sp"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            <ImageView
+                android:id="@+id/widget_header_icon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="Music"
+                android:src="@drawable/ic_widget_headphones" />
+
+            <TextView
+                android:id="@+id/widget_header_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="My Music"
+                android:textColor="#FFFFFF"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/widget_header_chevron"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:contentDescription="Open App"
+            android:src="@drawable/ic_widget_chevron_right" />
     </LinearLayout>
 
-</RelativeLayout>
+    <!-- Main Content Area: Artwork on Left, Metadata & Playback Controls on Right -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="10dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- Album Artwork with Equalizer Indicator Overlay -->
+        <FrameLayout
+            android:id="@+id/widget_artwork_container"
+            android:layout_width="76dp"
+            android:layout_height="76dp"
+            android:layout_gravity="center_vertical"
+            android:clickable="true"
+            android:focusable="false">
+
+            <ImageView
+                android:id="@+id/widget_artwork"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
+                android:background="@drawable/widget_artwork_bg"
+                android:contentDescription="Album Art"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_widget_music_default" />
+
+            <!-- Soundwave Equalizer overlay on bottom of artwork -->
+            <ImageView
+                android:id="@+id/widget_equalizer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|center_horizontal"
+                android:layout_marginBottom="6dp"
+                android:contentDescription="Playing indicator"
+                android:src="@drawable/ic_widget_equalizer"
+                android:visibility="visible" />
+        </FrameLayout>
+
+        <!-- Metadata & Controls Column -->
+        <LinearLayout
+            android:id="@+id/widget_content_column"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="vertical">
+
+            <!-- Clickable Info Section (Title & Artist) -->
+            <LinearLayout
+                android:id="@+id/widget_info_layout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="false"
+                android:orientation="vertical">
+
+                <!-- Track Title -->
+                <TextView
+                    android:id="@+id/widget_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="Musify"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <!-- Artist Name -->
+                <TextView
+                    android:id="@+id/widget_artist"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="Tap to play music"
+                    android:textColor="#9E9EA7"
+                    android:textSize="12.5sp" />
+            </LinearLayout>
+
+            <!-- Circular Controls Row (Isolated from text container click) -->
+            <LinearLayout
+                android:id="@+id/widget_controls"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <!-- Previous Track Button -->
+                <ImageView
+                    android:id="@+id/widget_btn_prev"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:background="@drawable/widget_circle_btn_bg"
+                    android:clickable="true"
+                    android:contentDescription="Previous Track"
+                    android:focusable="false"
+                    android:padding="9dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_widget_prev" />
+
+                <!-- Play/Pause Button (Vibrant Neon Lime) -->
+                <ImageView
+                    android:id="@+id/widget_btn_play_pause"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/widget_play_btn_bg"
+                    android:clickable="true"
+                    android:contentDescription="Play/Pause"
+                    android:focusable="false"
+                    android:padding="11dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_widget_play" />
+
+                <!-- Next Track Button -->
+                <ImageView
+                    android:id="@+id/widget_btn_next"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:background="@drawable/widget_circle_btn_bg"
+                    android:clickable="true"
+                    android:contentDescription="Next Track"
+                    android:focusable="false"
+                    android:padding="9dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_widget_next" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:musify/core/theme/app_colors.dart';
+import 'package:musify/core/shaders/shader_service.dart';
 import 'package:musify/presentation/widgets/loading_indicators.dart';
 
 class TrackArtwork extends StatelessWidget {
@@ -242,9 +244,9 @@ class TrackArtwork extends StatelessWidget {
 }
 
 /// A high-aesthetic procedural vinyl & sleeve graphic rendered for songs lacking cover artwork.
-/// Features theme-harmonized gradient foundation, etched micro-concentric vinyl grooves,
-/// a centered lacquer disc hub, and subtle diagonal holographic rim sheen.
-class _ProceduralCoverArtwork extends StatelessWidget {
+/// Features theme-harmonized gradient foundation, etched micro-concentric vinyl grooves with
+/// GPU anisotropic rainbow diffraction reflections, a centered lacquer disc hub, and subtle rim sheen.
+class _ProceduralCoverArtwork extends StatefulWidget {
   final double width;
   final double height;
   final BorderRadius borderRadius;
@@ -266,20 +268,46 @@ class _ProceduralCoverArtwork extends StatelessWidget {
   });
 
   @override
+  State<_ProceduralCoverArtwork> createState() => _ProceduralCoverArtworkState();
+}
+
+class _ProceduralCoverArtworkState extends State<_ProceduralCoverArtwork> {
+  FragmentProgram? _vinylShader;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadShader();
+  }
+
+  Future<void> _loadShader() async {
+    final cached = ShaderService.instance.getCached(AppShaders.vinylAnisotropic);
+    if (cached != null) {
+      if (mounted) setState(() => _vinylShader = cached);
+      return;
+    }
+    final program = await ShaderService.instance.getProgram(AppShaders.vinylAnisotropic);
+    if (mounted && program != null) {
+      setState(() => _vinylShader = program);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final minDim = math.min(width, height);
+    final minDim = math.min(widget.width, widget.height);
     final centerLabelRadius = minDim * 0.44;
 
     final Widget vinylStack = Stack(
       alignment: Alignment.center,
       children: [
-        // 1. Concentric Micro Vinyl Grooves
+        // 1. Concentric Micro Vinyl Grooves with GPU Anisotropic Rainbow Reflex
         Positioned.fill(
           child: CustomPaint(
             painter: _VinylGroovesPainter(
-              grooveColor: isDark
-                  ? Colors.white.withValues(alpha: 0.07)
-                  : Colors.black.withValues(alpha: 0.05),
+              grooveColor: widget.isDark
+                  ? Colors.white.withValues(alpha: 0.10)
+                  : Colors.black.withValues(alpha: 0.08),
+              program: _vinylShader,
             ),
           ),
         ),
@@ -290,18 +318,18 @@ class _ProceduralCoverArtwork extends StatelessWidget {
           height: centerLabelRadius,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isDark
+            color: widget.isDark
                 ? const Color(0xFF10121A)
                 : const Color(0xFFFAFBFD),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                color: Colors.black.withValues(alpha: widget.isDark ? 0.35 : 0.08),
                 blurRadius: 4,
                 offset: const Offset(0, 1),
               ),
             ],
             border: Border.all(
-              color: isDark
+              color: widget.isDark
                   ? AppColors.neonLime.withValues(alpha: 0.28)
                   : AppColors.limeAccentDark.withValues(alpha: 0.22),
               width: 1.2,
@@ -309,69 +337,111 @@ class _ProceduralCoverArtwork extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Icon(
-            icon,
+            widget.icon,
             size: centerLabelRadius * 0.52,
-            color: iconColor,
+            color: widget.iconColor,
           ),
         ),
 
-        // 3. Subtle Holographic Specular Sheen (diagonal light reflection)
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: const Alignment(-1.0, -1.0),
-                  end: const Alignment(1.0, 1.0),
-                  stops: const [0.0, 0.45, 0.55, 1.0],
-                  colors: [
-                    Colors.white.withValues(alpha: isDark ? 0.08 : 0.16),
-                    Colors.white.withValues(alpha: 0.0),
-                    Colors.white.withValues(alpha: 0.0),
-                    Colors.black.withValues(alpha: isDark ? 0.10 : 0.03),
-                  ],
+        // 3. Subtle Holographic Specular Sheen (CPU fallback when shader is not available)
+        if (_vinylShader == null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: const Alignment(-1.0, -1.0),
+                    end: const Alignment(1.0, 1.0),
+                    stops: const [0.0, 0.45, 0.55, 1.0],
+                    colors: [
+                      Colors.white.withValues(alpha: widget.isDark ? 0.08 : 0.16),
+                      Colors.white.withValues(alpha: 0.0),
+                      Colors.white.withValues(alpha: 0.0),
+                      Colors.black.withValues(alpha: widget.isDark ? 0.10 : 0.03),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
 
     return Container(
-      width: width,
-      height: height,
+      width: widget.width,
+      height: widget.height,
       decoration: BoxDecoration(
-        borderRadius: isCircle ? null : borderRadius,
-        shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: widget.isCircle ? null : widget.borderRadius,
+        shape: widget.isCircle ? BoxShape.circle : BoxShape.rectangle,
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: gradientColors,
+          colors: widget.gradientColors,
         ),
         border: Border.all(
-          color: isDark
+          color: widget.isDark
               ? Colors.white.withValues(alpha: 0.10)
               : Colors.black.withValues(alpha: 0.06),
           width: 1.0,
         ),
       ),
-      child: isCircle
+      child: widget.isCircle
           ? ClipOval(child: vinylStack)
-          : ClipRRect(borderRadius: borderRadius, child: vinylStack),
+          : ClipRRect(borderRadius: widget.borderRadius, child: vinylStack),
     );
   }
 }
 
 class _VinylGroovesPainter extends CustomPainter {
   final Color grooveColor;
+  final FragmentProgram? program;
+  final double angle;
 
-  _VinylGroovesPainter({required this.grooveColor});
+  _VinylGroovesPainter({
+    required this.grooveColor,
+    this.program,
+    this.angle = 0.0,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
     final minDim = math.min(size.width, size.height);
+    if (minDim <= 0) return;
+
+    if (program != null) {
+      final shader = program!.fragmentShader();
+
+      // 0, 1: uResolution
+      shader.setFloat(0, size.width);
+      shader.setFloat(1, size.height);
+
+      // 2: uAngle
+      shader.setFloat(2, angle);
+
+      // 3: uInnerRadius (normalized to minDim)
+      shader.setFloat(3, 0.22);
+
+      // 4: uOuterRadius (normalized to minDim)
+      shader.setFloat(4, 0.495);
+
+      // 5, 6, 7, 8: uBaseColor (vec4)
+      shader.setFloat(5, grooveColor.r);
+      shader.setFloat(6, grooveColor.g);
+      shader.setFloat(7, grooveColor.b);
+      shader.setFloat(8, grooveColor.a);
+
+      // 9: uIntensity
+      shader.setFloat(9, 0.75);
+
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..shader = shader,
+      );
+      return;
+    }
+
+    // CPU fallback
+    final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = minDim * 0.48;
     final minRadius = minDim * 0.24;
 
@@ -389,5 +459,7 @@ class _VinylGroovesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _VinylGroovesPainter oldDelegate) =>
-      oldDelegate.grooveColor != grooveColor;
-}
+      oldDelegate.grooveColor != grooveColor ||
+      oldDelegate.program != program ||
+      oldDelegate.angle != angle;
+}

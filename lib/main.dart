@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
 import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
+import 'core/shaders/shader_service.dart';
 import 'presentation/providers/audio_providers.dart';
 import 'presentation/screens/shell/app_shell.dart';
 import 'services/audio_player_handler.dart';
@@ -16,6 +17,8 @@ import 'services/intent_handler_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LiquidGlassWidgets.initialize();
+  // Pre-warm GPU fragment shaders in background for instantaneous first-frame rendering
+  ShaderService.instance.preloadAll();
   
   // Enable GoogleFonts to load from local bundled assets immediately on startup
   GoogleFonts.config.allowRuntimeFetching = true;

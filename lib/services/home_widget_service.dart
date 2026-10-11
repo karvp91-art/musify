@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:musify/domain/models/track.dart';
 import 'audio_player_handler.dart';
 
@@ -8,6 +10,10 @@ class HomeWidgetService {
   static const MethodChannel _channel = MethodChannel('com.musify/widget');
   static HomeWidgetService? _instance;
   final MusifyAudioHandler _audioHandler;
+  final Dio _dio = Dio();
+
+  String? _lastArtworkUrl;
+  String? _cachedArtworkPath;
 
   HomeWidgetService._(this._audioHandler) {
     _initChannel();
@@ -28,7 +34,8 @@ class HomeWidgetService {
       if (call.method == 'onWidgetAction') {
         final action = call.arguments as String?;
         if (action == 'playPause') {
-          if (_audioHandler.playbackState.value.playing) {
+          final isPlaying = _audioHandler.playbackState.value.playing;
+          if (isPlaying) {
             await _audioHandler.pause();
           } else {
             await _audioHandler.play();
@@ -58,17 +65,45 @@ class HomeWidgetService {
   Future<void> updateWidget({
     Track? track,
     required bool isPlaying,
+    String? source,
   }) async {
     if (!Platform.isAndroid) return;
 
     try {
       if (track != null) {
         String? artworkPath;
-        String? artworkUrl = track.artworkUrl;
+        final artworkUrl = track.artworkUrl;
 
-        // Check if artwork or track has a local file path
-        if (track.filePath != null && track.filePath!.isNotEmpty && File(track.filePath!).existsSync()) {
-          artworkPath = track.filePath;
+        // Check if artwork is already cached or local
+        if (artworkUrl != null && artworkUrl.isNotEmpty) {
+          if (!artworkUrl.startsWith('http') && File(artworkUrl).existsSync()) {
+            artworkPath = artworkUrl;
+          } else if (artworkUrl == _lastArtworkUrl &&
+              _cachedArtworkPath != null &&
+              File(_cachedArtworkPath!).existsSync()) {
+            artworkPath = _cachedArtworkPath;
+          } else if (artworkUrl.startsWith('http')) {
+            try {
+              final tempDir = await getTemporaryDirectory();
+              final file = File('${tempDir.path}/musify_widget_art.png');
+              final response = await _dio.get<List<int>>(
+                artworkUrl,
+                options: Options(
+                  responseType: ResponseType.bytes,
+                  sendTimeout: const Duration(seconds: 4),
+                  receiveTimeout: const Duration(seconds: 4),
+                ),
+              );
+              if (response.data != null && response.data!.isNotEmpty) {
+                await file.writeAsBytes(response.data!);
+                artworkPath = file.path;
+                _lastArtworkUrl = artworkUrl;
+                _cachedArtworkPath = artworkPath;
+              }
+            } catch (_) {
+              // Fallback to passing remote URL to Android native loader
+            }
+          }
         }
 
         await _channel.invokeMethod('updateWidget', {
@@ -77,6 +112,7 @@ class HomeWidgetService {
           'artworkPath': artworkPath,
           'artworkUrl': artworkUrl,
           'isPlaying': isPlaying,
+          'source': source ?? 'My Music',
         });
       } else {
         await _channel.invokeMethod('updateWidget', {
@@ -85,6 +121,7 @@ class HomeWidgetService {
           'artworkPath': null,
           'artworkUrl': null,
           'isPlaying': false,
+          'source': 'My Music',
         });
       }
     } catch (_) {

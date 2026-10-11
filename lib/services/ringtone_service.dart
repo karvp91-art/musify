@@ -37,12 +37,31 @@ class RingtoneService {
     }
   }
 
+  /// Extracts real audio waveform amplitude samples from an audio file natively.
+  static Future<List<double>?> extractWaveform(String inputPath, {int samples = 64}) async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final res = await _channel.invokeMethod<List>('extractWaveform', {
+        'inputPath': inputPath,
+        'samples': samples,
+      });
+      if (res != null) {
+        return res.map((e) => (e as num).toDouble()).toList();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Trims an audio file natively via Android MediaExtractor + MediaMuxer or frame-slicing.
   static Future<String?> trimAudio({
     required String inputPath,
     required String outputPath,
     required int startMs,
     required int endMs,
+    int fadeInMs = 0,
+    int fadeOutMs = 0,
   }) async {
     try {
       final res = await _channel.invokeMethod<Map>('trimAudio', {
@@ -50,6 +69,8 @@ class RingtoneService {
         'outputPath': outputPath,
         'startMs': startMs,
         'endMs': endMs,
+        'fadeInMs': fadeInMs,
+        'fadeOutMs': fadeOutMs,
       });
 
       if (res != null && res['success'] == true) {

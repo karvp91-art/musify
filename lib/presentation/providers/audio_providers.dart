@@ -23,13 +23,19 @@ import 'package:musify/services/preferences_service.dart';
 
 import 'package:musify/data/repositories/stream_content_repository.dart';
 import 'package:musify/domain/models/stream_home_models.dart';
+import 'package:musify/services/playlist_import_service.dart';
 import 'package:musify/domain/models/equalizer_state.dart';
 import 'package:musify/domain/models/search_result_models.dart';
 import 'package:musify/domain/models/artist_details.dart';
 import 'package:musify/domain/models/album_details.dart';
 import 'package:path/path.dart' as p;
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:palette_generator/palette_generator.dart';
 import 'package:musify/domain/models/music_folder.dart';
+import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/services/palette_service.dart';
+export 'package:palette_generator/palette_generator.dart';
 export 'package:musify/domain/models/equalizer_state.dart';
 export 'package:musify/domain/models/search_result_models.dart';
 export 'package:musify/domain/models/artist_details.dart';
@@ -89,6 +95,17 @@ final youtubeAdapterProvider = Provider<YouTubeSourceAdapter>((ref) {
   final adapter = YouTubeSourceAdapter(saavnAdapter: saavn, repo: repo);
   ref.onDispose(() => adapter.close());
   return adapter;
+});
+
+final playlistImportServiceProvider = Provider<PlaylistImportService>((ref) {
+  final saavn = ref.watch(saavnAdapterProvider);
+  final youtube = ref.watch(youtubeAdapterProvider);
+  final repo = ref.watch(audioRepositoryProvider);
+  return PlaylistImportService(
+    saavnAdapter: saavn,
+    youtubeAdapter: youtube,
+    audioRepository: repo,
+  );
 });
 
 final sourceRouterProvider = Provider<SourceRouter>((ref) {
@@ -152,6 +169,16 @@ final streamPlaylistDetailsProvider = FutureProvider.family<StreamPlaylistDetail
 final streamMoodTracksProvider = FutureProvider.family<List<Track>, String>((ref, query) async {
   final streamRepo = ref.watch(streamContentRepositoryProvider);
   return streamRepo.getTracksForMood(query);
+});
+
+final streamArtistsByCategoryProvider = FutureProvider.family<List<SearchArtistItem>, String>((ref, category) async {
+  final streamRepo = ref.watch(streamContentRepositoryProvider);
+  return streamRepo.getArtistsByCategory(category);
+});
+
+final streamSoundtracksByCategoryProvider = FutureProvider.family<List<SearchAlbumItem>, String>((ref, category) async {
+  final streamRepo = ref.watch(streamContentRepositoryProvider);
+  return streamRepo.getMovieSoundtracksByCategory(category);
 });
 
 final recentlyPlayedTracksStreamProvider = StreamProvider<List<Track>>((ref) {
@@ -655,6 +682,61 @@ final trackPaletteProvider = FutureProvider.family<MiniPlayerPalette, ({Track tr
   final service = ref.watch(paletteServiceProvider);
   return service.getPaletteForTrack(args.track, isDark: args.isDark);
 });
+
+// Dynamic PaletteGenerator Provider for Playlists & Media Covers
+final playlistPaletteGeneratorProvider = FutureProvider.family<PaletteGenerator?, ({String? coverUrl, String? trackArtworkUrl})>((ref, args) async {
+  final url = (args.coverUrl != null && args.coverUrl!.trim().isNotEmpty)
+      ? args.coverUrl!
+      : (args.trackArtworkUrl != null && args.trackArtworkUrl!.trim().isNotEmpty)
+          ? args.trackArtworkUrl!
+          : null;
+  if (url == null || TrackArtwork.isPlaceholderUrl(url)) return null;
+
+  try {
+    ImageProvider imageProvider;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      imageProvider = CachedNetworkImageProvider(url);
+    } else {
+      imageProvider = FileImage(File(url));
+    }
+    return await PaletteGenerator.fromImageProvider(
+      imageProvider,
+      size: const Size(64, 64),
+      maximumColorCount: 16,
+    ).timeout(const Duration(milliseconds: 2000));
+  } catch (_) {
+    return null;
+  }
+});
+
+// Favorite Playlists Reactive State Notifier & Provider
+class FavoritePlaylistIdsNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    final prefs = ref.watch(preferencesServiceProvider);
+    return prefs.getFavoritePlaylistIds().toSet();
+  }
+
+  Future<void> toggleFavorite(String playlistId) async {
+    final prefs = ref.read(preferencesServiceProvider);
+    final updated = Set<String>.from(state);
+    if (updated.contains(playlistId)) {
+      updated.remove(playlistId);
+    } else {
+      updated.add(playlistId);
+    }
+    state = updated;
+    await prefs.setFavoritePlaylistIds(updated.toList());
+  }
+
+  bool isFavorite(String playlistId) => state.contains(playlistId);
+}
+
+final favoritePlaylistIdsProvider =
+    NotifierProvider<FavoritePlaylistIdsNotifier, Set<String>>(
+  FavoritePlaylistIdsNotifier.new,
+);
+
 
 
 

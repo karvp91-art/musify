@@ -15,6 +15,8 @@ class StreamContentRepository {
 
   final Map<String, ({StreamPlaylistDetails details, DateTime timestamp})> _playlistCache = {};
   final Map<String, ({List<Track> tracks, DateTime timestamp})> _genreTracksCache = {};
+  final Map<String, ({List<SearchArtistItem> artists, DateTime timestamp})> _artistsCategoryCache = {};
+  final Map<String, ({List<SearchAlbumItem> albums, DateTime timestamp})> _soundtracksCategoryCache = {};
 
   StreamContentRepository({
     required SaavnSourceAdapter saavnAdapter,
@@ -130,11 +132,54 @@ class StreamContentRepository {
     return tracks;
   }
 
+  /// Fetches artists filtered by language/type category with in-memory caching and pagination
+  Future<List<SearchArtistItem>> getArtistsByCategory(
+    String category, {
+    int page = 1,
+    int limit = 18,
+    bool forceRefresh = false,
+  }) async {
+    final cacheKey = '${category}_p$page';
+    final cached = _artistsCategoryCache[cacheKey];
+    if (!forceRefresh && cached != null && DateTime.now().difference(cached.timestamp) < _cacheTtl) {
+      return cached.artists;
+    }
+
+    final artists = await _saavn.getArtistsByCategory(category, page: page, limit: limit);
+    if (artists.isNotEmpty) {
+      _artistsCategoryCache[cacheKey] = (artists: artists, timestamp: DateTime.now());
+    }
+    return artists;
+  }
+
+  /// Fetches movie soundtrack albums filtered by category with in-memory caching and pagination
+  Future<List<SearchAlbumItem>> getMovieSoundtracksByCategory(
+    String category, {
+    int page = 1,
+    int limit = 18,
+    bool forceRefresh = false,
+  }) async {
+    final cacheKey = '${category}_p$page';
+    final cached = _soundtracksCategoryCache[cacheKey];
+    if (!forceRefresh && cached != null && DateTime.now().difference(cached.timestamp) < _cacheTtl) {
+      return cached.albums;
+    }
+
+    final albums = await _saavn.getMovieSoundtracksByCategory(category, page: page, limit: limit);
+    if (albums.isNotEmpty) {
+      _soundtracksCategoryCache[cacheKey] = (albums: albums, timestamp: DateTime.now());
+    }
+    return albums;
+  }
+
   /// Clears in-memory caches
   void clearCache() {
     _cachedHomepageData = null;
     _lastFetchTime = null;
     _playlistCache.clear();
     _genreTracksCache.clear();
+    _artistsCategoryCache.clear();
+    _soundtracksCategoryCache.clear();
   }
 }
+

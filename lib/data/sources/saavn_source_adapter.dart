@@ -98,6 +98,129 @@ class SaavnSourceAdapter implements SourceAdapter {
     return search('$genre top hits', limit: limit);
   }
 
+  /// Searches the entire JioSaavn database for artists using search.getArtistResults
+  Future<List<SearchArtistItem>> searchArtists(String query, {int page = 1, int limit = 25}) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+
+    try {
+      final response = await _dio.get(
+        '',
+        queryParameters: {
+          '__call': 'search.getArtistResults',
+          '_format': 'json',
+          '_marker': '0',
+          'cc': 'in',
+          'n': limit,
+          'p': page,
+          'q': trimmed,
+        },
+      );
+
+      dynamic data = response.data;
+      if (data is String) {
+        try {
+          data = jsonDecode(data);
+        } catch (_) {
+          return [];
+        }
+      }
+
+      if (data is! Map<String, dynamic>) return [];
+
+      final results = data['results'] as List<dynamic>?;
+      if (results == null) return [];
+
+      final List<SearchArtistItem> artists = [];
+      final seenIds = <String>{};
+
+      for (final item in results) {
+        if (item is Map<String, dynamic>) {
+          final id = item['id']?.toString() ?? '';
+          final name = unescapeHtml(item['name'] as String? ?? item['title'] as String? ?? '');
+          final image = upgradeArtwork(item['image'] as String?);
+          final role = unescapeHtml(item['role'] as String? ?? 'Artist');
+
+          if (id.isNotEmpty && name.isNotEmpty && seenIds.add(id)) {
+            artists.add(SearchArtistItem(
+              id: id,
+              title: name,
+              imageUrl: image,
+              description: role.isNotEmpty ? role : 'Artist',
+            ));
+          }
+        }
+      }
+
+      return artists;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Searches the entire JioSaavn database for albums/soundtracks using search.getAlbumResults
+  Future<List<SearchAlbumItem>> searchAlbums(String query, {int page = 1, int limit = 25}) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+
+    try {
+      final response = await _dio.get(
+        '',
+        queryParameters: {
+          '__call': 'search.getAlbumResults',
+          '_format': 'json',
+          '_marker': '0',
+          'cc': 'in',
+          'n': limit,
+          'p': page,
+          'q': trimmed,
+        },
+      );
+
+      dynamic data = response.data;
+      if (data is String) {
+        try {
+          data = jsonDecode(data);
+        } catch (_) {
+          return [];
+        }
+      }
+
+      if (data is! Map<String, dynamic>) return [];
+
+      final results = data['results'] as List<dynamic>?;
+      if (results == null) return [];
+
+      final List<SearchAlbumItem> albums = [];
+      final seenIds = <String>{};
+
+      for (final item in results) {
+        if (item is Map<String, dynamic>) {
+          final id = item['albumid']?.toString() ?? item['id']?.toString() ?? '';
+          final title = unescapeHtml(item['title'] as String? ?? item['name'] as String? ?? '');
+          final image = upgradeArtwork(item['image'] as String?);
+          final music = unescapeHtml(item['music'] as String? ?? item['primary_artists'] as String? ?? '');
+          final year = item['year']?.toString();
+
+          if (id.isNotEmpty && title.isNotEmpty && seenIds.add(id)) {
+            albums.add(SearchAlbumItem(
+              id: id,
+              title: title,
+              imageUrl: image,
+              music: music,
+              description: 'Movie Album',
+              year: year,
+            ));
+          }
+        }
+      }
+
+      return albums;
+    } catch (_) {
+      return [];
+    }
+  }
+
   List<Track> _parseSearchResults(dynamic data) {
     if (data == null) return [];
 
@@ -172,7 +295,11 @@ class SaavnSourceAdapter implements SourceAdapter {
     final quality = preferencesService?.getAudioQuality() ?? '320k';
     final encryptedUrl = item['encrypted_media_url'] as String? ??
         moreInfo?['encrypted_media_url'] as String?;
-    final streamUrl = DesCipher.decryptJioSaavnDirectUrl(encryptedUrl, quality: quality) ?? '';
+    final previewUrl = item['media_preview_url'] as String? ??
+        moreInfo?['media_preview_url'] as String? ??
+        '';
+    final decryptedUrl = DesCipher.decryptJioSaavnDirectUrl(encryptedUrl, quality: quality);
+    final streamUrl = (decryptedUrl != null && decryptedUrl.isNotEmpty) ? decryptedUrl : previewUrl;
 
     final bitrateVal = switch (quality) {
       '96k' => 96,
@@ -922,33 +1049,435 @@ class SaavnSourceAdapter implements SourceAdapter {
     }
   }
 
-  /// Fetches popular superstar artists with real JioSaavn IDs and verified artwork
-  Future<List<SearchArtistItem>> getPopularArtists() async {
-    const artistQueries = [
+  static const Map<String, List<String>> artistCategoryPools = {
+    'all': [
       'Arijit Singh',
-      'Diljit Dosanjh',
-      'Shreya Ghoshal',
       'The Weeknd',
       'Taylor Swift',
-      'Karan Aujla',
-      'Billie Eilish',
+      'YOASOBI',
+      'Diljit Dosanjh',
       'Anirudh Ravichander',
+      'Shreya Ghoshal',
+      'Billie Eilish',
+      'Kenshi Yonezu',
+      'Karan Aujla',
+      'A.R. Rahman',
+      'LiSA',
       'Atif Aslam',
-      'AP Dhillon',
-      'Pritam',
+      'Bruno Mars',
       'Sidhu Moose Wala',
-    ];
+      'Ado',
+      'Pritam',
+      'Dua Lipa',
+      'Sid Sriram',
+      'Fujii Kaze',
+      'Sonu Nigam',
+      'Ed Sheeran',
+      'RADWIMPS',
+      'AP Dhillon',
+      'Devi Sri Prasad',
+      'KK',
+      'Drake',
+      'Eve',
+      'B Praak',
+      'Harris Jayaraj',
+      'Neha Kakkar',
+      'Post Malone',
+      'Aimer',
+      'Guru Randhawa',
+      'Yuvan Shankar Raja',
+      'Mohit Chauhan',
+      'Ariana Grande',
+      'King Gnu',
+      'Shubh',
+      'Ilaiyaraaja',
+      'Sunidhi Chauhan',
+      'Kendrick Lamar',
+      'ONE OK ROCK',
+      'Amrinder Gill',
+      'Sushin Shyam',
+      'Jubin Nautiyal',
+      'Eminem',
+      'Hikaru Utada',
+      'Garry Sandhu',
+      'Hesham Abdul Wahab',
+      'Vishal Mishra',
+      'Justin Bieber',
+      'Vaundy',
+      'Jass Manak',
+      'Thaman S',
+    ],
+    'hindi': [
+      'Arijit Singh',
+      'Shreya Ghoshal',
+      'Atif Aslam',
+      'Pritam',
+      'Neha Kakkar',
+      'Sonu Nigam',
+      'KK',
+      'Mohit Chauhan',
+      'Jubin Nautiyal',
+      'Sunidhi Chauhan',
+      'Vishal Mishra',
+      'Sachin-Jigar',
+      'Armaan Malik',
+      'Darshan Raval',
+      'Amit Trivedi',
+      'Badshah',
+      'Alka Yagnik',
+      'Kumar Sanu',
+      'Udit Narayan',
+      'Kishore Kumar',
+      'Lata Mangeshkar',
+      'Mohammed Rafi',
+      'Shankar Mahadevan',
+      'Vishal-Shekhar',
+      'Honey Singh',
+      'Mika Singh',
+      'Javed Ali',
+      'Shilpa Rao',
+      'Benny Dayal',
+      'Papon',
+      'Rahat Fateh Ali Khan',
+      'Lucky Ali',
+      'Sukhwinder Singh',
+      'Monali Thakur',
+      'Shaan',
+      'Hariharan',
+      'Kailash Kher',
+      'Adnan Sami',
+      'Palak Muchhal',
+      'Kavita Krishnamurthy',
+      'Anuradha Paudwal',
+      'Himesh Reshammiya',
+      'Mithoon',
+      'Tanishk Bagchi',
+      'Anupam Roy',
+      'Sona Mohapatra',
+      'Ayushmann Khurrana',
+      'Babul Supriyo',
+      'Jasleen Royal',
+      'Stebin Ben',
+      'Akhil Sachdeva',
+      'Salim Merchant',
+    ],
+    'english': [
+      'The Weeknd',
+      'Taylor Swift',
+      'Billie Eilish',
+      'Bruno Mars',
+      'Ed Sheeran',
+      'Dua Lipa',
+      'Drake',
+      'Post Malone',
+      'Ariana Grande',
+      'Eminem',
+      'Kendrick Lamar',
+      'Justin Bieber',
+      'Coldplay',
+      'Imagine Dragons',
+      'Olivia Rodrigo',
+      'SZA',
+      'Travis Scott',
+      'Rihanna',
+      'Beyoncé',
+      'Adele',
+      'Maroon 5',
+      'Shawn Mendes',
+      'Selena Gomez',
+      'Charlie Puth',
+      'Katy Perry',
+      'Harry Styles',
+      'Zayn',
+      'Sam Smith',
+      'Lady Gaga',
+      'Sia',
+      'Khalid',
+      'Camila Cabello',
+      'Halsey',
+      'Marshmello',
+      'Alan Walker',
+      'David Guetta',
+      'The Chainsmokers',
+      'Calvin Harris',
+      'Avicii',
+      'Martin Garrix',
+      'Kygo',
+      'Queen',
+      'Michael Jackson',
+      'Linkin Park',
+      'OneRepublic',
+      'Lana Del Rey',
+      'Doja Cat',
+      'Sabrina Carpenter',
+      'Benson Boone',
+      'Arctic Monkeys',
+      'Twenty One Pilots',
+    ],
+    'japanese': [
+      'YOASOBI',
+      'Kenshi Yonezu',
+      'LiSA',
+      'Ado',
+      'RADWIMPS',
+      'Joe Hisaishi',
+      'Fujii Kaze',
+      'Hikaru Utada',
+      'Eve',
+      'Aimer',
+      'ONE OK ROCK',
+      'Official HIGE DANDism',
+      'Vaundy',
+      'King Gnu',
+      'Mrs. GREEN APPLE',
+      'sumika',
+      'back number',
+      'Aimyon',
+      'Kana-Boon',
+      'milet',
+      'Asian Kung-Fu Generation',
+      'TK from Ling Tosite Sigure',
+      'Yuki Kajiura',
+      'Hiroyuki Sawano',
+      'MAN WITH A MISSION',
+      'SPYAIR',
+      'FLOW',
+      'UVERworld',
+      'Creepy Nuts',
+      'Daoko',
+      'ClariS',
+      'Kana Hanazawa',
+      'Minami',
+      'ReoNa',
+      'MYTH & ROID',
+      'fripSide',
+      'GRANRODEO',
+      'BLUE ENCOUNT',
+      'Burnout Syndromes',
+      'Sayuri',
+      'Polkadot Stingray',
+      'Frederic',
+      'Vickeblanka',
+      'Linked Horizon',
+      'Goose house',
+      'ASCA',
+      'Yui',
+    ],
+    'punjabi': [
+      'Diljit Dosanjh',
+      'Karan Aujla',
+      'Sidhu Moose Wala',
+      'AP Dhillon',
+      'Shubh',
+      'Amrinder Gill',
+      'B Praak',
+      'Guru Randhawa',
+      'Garry Sandhu',
+      'Jass Manak',
+      'Hardeep Grewal',
+      'Jordan Sandhu',
+      'Amrit Maan',
+      'Babbu Maan',
+      'Gippy Grewal',
+      'Parmish Verma',
+      'Mankirt Aulakh',
+      'Kulwinder Billa',
+      'Tarsem Jassar',
+      'Prabh Gill',
+      'Gurdas Maan',
+      'Jazzy B',
+      'Bohemia',
+      'Sukhe Muzical Doctorz',
+      'Maninder Buttar',
+      'Nimrat Khaira',
+      'Sunanda Sharma',
+      'Jasmine Sandlas',
+      'Shipra Goyal',
+      'Baani Sandhu',
+      'Gurnam Bhullar',
+      'Akhil',
+      'Jassie Gill',
+      'Harrdy Sandhu',
+      'Mickey Singh',
+      'Pav Dharia',
+      'Imran Khan',
+      'Yo Yo Honey Singh',
+      'Deep Jandu',
+      'Ninja',
+      'Kulbir Jhinjer',
+      'R Nait',
+      'Korala Maan',
+      'Prem Dhillon',
+      'Guri',
+    ],
+    'south_indian': [
+      'Anirudh Ravichander',
+      'A.R. Rahman',
+      'Sid Sriram',
+      'G.V. Prakash Kumar',
+      'Devi Sri Prasad',
+      'Harris Jayaraj',
+      'Santhosh Narayanan',
+      'Yuvan Shankar Raja',
+      'Ilaiyaraaja',
+      'Thaman S',
+      'Sushin Shyam',
+      'Hesham Abdul Wahab',
+      'K.J. Yesudas',
+      'S.P. Balasubrahmanyam',
+      'K.S. Chithra',
+      'Sujatha Mohan',
+      'Chinmayi Sripaada',
+      'Dhee',
+      'Jonita Gandhi',
+      'Andrea Jeremiah',
+      'Vijay Prakash',
+      'Karthik',
+      'Haricharan',
+      'Benny Dayal',
+      'Pradeep Kumar',
+      'Sean Roldan',
+      'D. Imman',
+      'Vidyasagar',
+      'M.M. Keeravani',
+      'Mickey J. Meyer',
+      'Sai Abhyankkar',
+      'Sanjith Hegde',
+      'Anurag Kulkarni',
+      'Ram Miriyala',
+      'Mangli',
+      'Jakes Bejoy',
+      'Deepak Dev',
+      'Shaan Rahman',
+      'Alphons Joseph',
+      'Govind Vasantha',
+      'Vijay Antony',
+      'Sam C.S.',
+      'Ghibran',
+      'Hip Hop Tamizha',
+    ],
+  };
 
+  static const Map<String, List<String>> soundtrackCategoryPools = {
+    'all': [
+      'Animal',
+      'Interstellar',
+      'Your Name',
+      'RRR',
+      'Kabir Singh',
+      'Oppenheimer',
+      'Suzume',
+      'KGF Chapter 2',
+      'Brahmastra',
+      'Spider-Man Into The Spider-Verse',
+      'Demon Slayer Mugen Train',
+      'Pushpa',
+      'Jawan',
+      'La La Land',
+      'Weathering With You',
+      'Leo',
+      'Carry On Jatta 3',
+      'Rockstar',
+    ],
+    'hindi': [
+      'Animal',
+      'Kabir Singh',
+      'Brahmastra',
+      'Jawan',
+      'Pathaan',
+      'Aashiqui 2',
+      'Rockstar',
+      'Yeh Jawaani Hai Deewani',
+      'Gully Boy',
+      'Shershaah',
+      'Stree 2',
+      'Fighter',
+      'Laila Majnu',
+      'Ae Dil Hai Mushkil',
+      'Kalank',
+      'Tamasha',
+      'Kedarnath',
+      'War',
+      'Sanju',
+      'Bajirao Mastani',
+      'Dilwale',
+      'OK Jaanu',
+    ],
+    'english': [
+      'Interstellar',
+      'Oppenheimer',
+      'Spider-Man Into The Spider-Verse',
+      'Dune',
+      'La La Land',
+      'Titanic',
+      'The Dark Knight',
+      'Inception',
+      'Black Panther',
+      'Guardians of the Galaxy',
+      'Barbie',
+      'Top Gun Maverick',
+      'Avatar',
+      'The Greatest Showman',
+      'Bohemian Rhapsody',
+      'Tron Legacy',
+    ],
+    'japanese': [
+      'Your Name',
+      'Suzume',
+      'Weathering With You',
+      'Demon Slayer Mugen Train',
+      'Attack on Titan',
+      'Jujutsu Kaisen 0',
+      'Spirited Away',
+      'Naruto Shippuden',
+      'One Piece Film Red',
+      'Chainsaw Man',
+      'A Silent Voice',
+      'Howls Moving Castle',
+    ],
+    'south_indian': [
+      'RRR',
+      'KGF Chapter 2',
+      'Pushpa',
+      'Leo',
+      'Jailer',
+      'Vikram',
+      'Baahubali 2',
+      'Kantara',
+      'Ponniyin Selvan',
+      'Salaar',
+      'Devara',
+      'Master',
+      'Ala Vaikunthapurramuloo',
+      'Sita Ramam',
+    ],
+    'punjabi': [
+      'Carry On Jatta 3',
+      'Qismat',
+      'Sufna',
+      'Chal Mera Putt',
+      'Angrej',
+      'Saunkan Saunkne',
+      'Jatt & Juliet 3',
+      'Warning',
+      'Kali Jotta',
+      'Maurh',
+      'Shareek',
+    ],
+  };
+
+  /// Fetches artists resolving queries via searchMulti in parallel
+  Future<List<SearchArtistItem>> _fetchArtistsFromQueries(List<String> queries) async {
     final List<SearchArtistItem> artists = [];
     final seenIds = <String>{};
 
     try {
-      final futures = artistQueries.map((name) => searchMulti(name));
+      final futures = queries.map((name) => searchMulti(name));
       final results = await Future.wait(futures);
 
       for (int i = 0; i < results.length; i++) {
         final multi = results[i];
-        final queryName = artistQueries[i].toLowerCase();
+        final queryName = queries[i].toLowerCase();
 
         SearchArtistItem? matchedArtist;
 
@@ -984,6 +1513,43 @@ class SaavnSourceAdapter implements SourceAdapter {
     } catch (_) {}
 
     return artists;
+  }
+
+  /// Fetches popular superstar artists with real JioSaavn IDs and verified artwork
+  Future<List<SearchArtistItem>> getPopularArtists() async {
+    const defaultQueries = [
+      'Arijit Singh',
+      'Diljit Dosanjh',
+      'Shreya Ghoshal',
+      'The Weeknd',
+      'Taylor Swift',
+      'Karan Aujla',
+      'Billie Eilish',
+      'Anirudh Ravichander',
+      'Atif Aslam',
+      'AP Dhillon',
+      'Pritam',
+      'Sidhu Moose Wala',
+    ];
+    return _fetchArtistsFromQueries(defaultQueries);
+  }
+
+  /// Fetches artists filtered by language/type category with pagination support
+  Future<List<SearchArtistItem>> getArtistsByCategory(
+    String category, {
+    int page = 1,
+    int limit = 18,
+  }) async {
+    final key = category.toLowerCase().trim();
+    final pool = artistCategoryPools[key] ?? artistCategoryPools['all']!;
+
+    final start = (page - 1) * limit;
+    if (start >= pool.length) {
+      return [];
+    }
+    final end = (start + limit > pool.length) ? pool.length : start + limit;
+    final queries = pool.sublist(start, end);
+    return _fetchArtistsFromQueries(queries);
   }
 
   /// Curated pool of iconic & blockbuster Indian movie soundtrack albums
@@ -1027,21 +1593,18 @@ class SaavnSourceAdapter implements SourceAdapter {
     'Cocktail',
   ];
 
-  /// Fetches randomized movie soundtrack albums from JioSaavn
-  Future<List<SearchAlbumItem>> getPopularMovieAlbums({int count = 12}) async {
-    final shuffled = List<String>.from(_movieSoundtrackPool)..shuffle();
-    final selectedQueries = shuffled.take(count).toList();
-
-    final List<SearchAlbumItem> movieAlbums = [];
+  /// Fetches album soundtracks resolving queries in parallel
+  Future<List<SearchAlbumItem>> _fetchAlbumsFromQueries(List<String> queries) async {
+    final List<SearchAlbumItem> albums = [];
     final seenIds = <String>{};
 
     try {
-      final futures = selectedQueries.map((name) => searchMulti(name));
+      final futures = queries.map((name) => searchMulti(name));
       final results = await Future.wait(futures);
 
       for (int i = 0; i < results.length; i++) {
         final multi = results[i];
-        final query = selectedQueries[i].toLowerCase();
+        final query = queries[i].toLowerCase();
 
         SearchAlbumItem? matchedAlbum;
 
@@ -1071,13 +1634,77 @@ class SaavnSourceAdapter implements SourceAdapter {
         }
 
         if (matchedAlbum != null && seenIds.add(matchedAlbum.id)) {
-          movieAlbums.add(matchedAlbum);
+          albums.add(matchedAlbum);
         }
       }
     } catch (_) {}
 
-    return movieAlbums;
+    return albums;
   }
+
+  /// Fetches randomized movie soundtrack albums from JioSaavn
+  Future<List<SearchAlbumItem>> getPopularMovieAlbums({int count = 12}) async {
+    final shuffled = List<String>.from(_movieSoundtrackPool)..shuffle();
+    final selectedQueries = shuffled.take(count).toList();
+    return _fetchAlbumsFromQueries(selectedQueries);
+  }
+
+  String _getSoundtrackSearchQuery(String category, int page) {
+    final key = category.toLowerCase().trim();
+    switch (key) {
+      case 'hindi':
+        return page.isOdd ? 'bollywood soundtrack' : 'hindi movie soundtrack';
+      case 'english':
+        return page.isOdd ? 'hollywood soundtrack' : 'original motion picture soundtrack';
+      case 'japanese':
+        return page.isOdd ? 'anime soundtrack' : 'anime original soundtrack';
+      case 'south_indian':
+        if (page % 3 == 1) return 'tamil movie soundtrack';
+        if (page % 3 == 2) return 'telugu movie soundtrack';
+        return 'south indian soundtrack';
+      case 'punjabi':
+        return page.isOdd ? 'punjabi soundtrack' : 'punjabi movie soundtrack';
+      case 'all':
+      default:
+        if (page % 3 == 1) return 'soundtrack album';
+        if (page % 3 == 2) return 'original motion picture soundtrack';
+        return 'film soundtrack';
+    }
+  }
+
+  /// Fetches movie soundtrack albums filtered by category with pagination support
+  Future<List<SearchAlbumItem>> getMovieSoundtracksByCategory(
+    String category, {
+    int page = 1,
+    int limit = 18,
+  }) async {
+    final key = category.toLowerCase().trim();
+    final List<SearchAlbumItem> albums = [];
+    final seenIds = <String>{};
+
+    // On page 1, prepend iconic curated blockbusters
+    if (page == 1) {
+      final curatedPool = soundtrackCategoryPools[key] ?? soundtrackCategoryPools['all']!;
+      final curatedAlbums = await _fetchAlbumsFromQueries(curatedPool.take(12).toList());
+      for (final alb in curatedAlbums) {
+        if (seenIds.add(alb.id)) {
+          albums.add(alb);
+        }
+      }
+    }
+
+    // Fetch live paginated albums from JioSaavn using category search endpoint
+    final query = _getSoundtrackSearchQuery(key, page);
+    final searchResults = await searchAlbums(query, page: page, limit: limit);
+    for (final alb in searchResults) {
+      if (seenIds.add(alb.id)) {
+        albums.add(alb);
+      }
+    }
+
+    return albums;
+  }
+
 
   /// Fetches editorial playlists
   Future<List<SearchPlaylistItem>> getEditorialPlaylists() async {

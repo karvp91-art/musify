@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:musify/core/shaders/shader_service.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
@@ -34,10 +36,12 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
   late final AnimationController _skipPressScaleController;
 
   MiniPlayerPalette? _cachedPalette;
+  FragmentProgram? _vinylShader;
 
   @override
   void initState() {
     super.initState();
+    _loadVinylShader();
     // Smooth 14-second rotation per revolution for physical turntable vinyl
     _vinylController = AnimationController(
       vsync: this,
@@ -78,6 +82,18 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
         }
       }
     });
+  }
+
+  Future<void> _loadVinylShader() async {
+    final cached = ShaderService.instance.getCached(AppShaders.vinylAnisotropic);
+    if (cached != null) {
+      if (mounted) setState(() => _vinylShader = cached);
+      return;
+    }
+    final program = await ShaderService.instance.getProgram(AppShaders.vinylAnisotropic);
+    if (mounted && program != null) {
+      setState(() => _vinylShader = program);
+    }
   }
 
   @override
@@ -442,12 +458,19 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // 1. Concentric Micro Vinyl Grooves on outer vinyl ring
+              // 1. Concentric Micro Vinyl Grooves with GPU Anisotropic Rainbow Reflex
               Positioned.fill(
-                child: CustomPaint(
-                  painter: _MiniVinylGroovesPainter(
-                    artworkRadius: artworkSize / 2,
-                  ),
+                child: AnimatedBuilder(
+                  animation: _vinylController,
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _MiniVinylGroovesPainter(
+                        artworkRadius: artworkSize / 2,
+                        angle: _vinylController.value * 2.0 * math.pi,
+                        program: _vinylShader,
+                      ),
+                    );
+                  },
                 ),
               ),
 
@@ -500,28 +523,29 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 ),
               ),
 
-              // 5. Diagonal Subtle Vinyl Holographic Specular Sheen
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: ClipOval(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: const Alignment(-1.0, -1.0),
-                          end: const Alignment(1.0, 1.0),
-                          stops: const [0.0, 0.45, 0.55, 1.0],
-                          colors: [
-                            Colors.white.withValues(alpha: 0.12),
-                            Colors.white.withValues(alpha: 0.0),
-                            Colors.white.withValues(alpha: 0.0),
-                            Colors.black.withValues(alpha: 0.18),
-                          ],
+              // 5. Diagonal Subtle Vinyl Holographic Specular Sheen (CPU fallback only)
+              if (_vinylShader == null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ClipOval(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: const Alignment(-1.0, -1.0),
+                            end: const Alignment(1.0, 1.0),
+                            stops: const [0.0, 0.45, 0.55, 1.0],
+                            colors: [
+                              Colors.white.withValues(alpha: 0.12),
+                              Colors.white.withValues(alpha: 0.0),
+                              Colors.white.withValues(alpha: 0.0),
+                              Colors.black.withValues(alpha: 0.18),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -530,14 +554,60 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
   }
 }
 
-/// Custom painter for fine turntable vinyl micro-groove rings
+/// Custom painter for turntable vinyl micro-groove rings with GPU Anisotropic rainbow reflex
 class _MiniVinylGroovesPainter extends CustomPainter {
   final double? artworkRadius;
+  final double angle;
+  final FragmentProgram? program;
 
-  _MiniVinylGroovesPainter({this.artworkRadius});
+  _MiniVinylGroovesPainter({
+    this.artworkRadius,
+    this.angle = 0.0,
+    this.program,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    if (program != null) {
+      final shader = program!.fragmentShader();
+      final minDim = math.min(size.width, size.height);
+      final effectiveArtRadius = artworkRadius ?? (size.width * 0.39);
+      final innerNorm = (effectiveArtRadius / minDim).clamp(0.0, 0.49);
+      const outerNorm = 0.495;
+
+      // 0, 1: uResolution
+      shader.setFloat(0, size.width);
+      shader.setFloat(1, size.height);
+
+      // 2: uAngle
+      shader.setFloat(2, angle);
+
+      // 3: uInnerRadius
+      shader.setFloat(3, innerNorm);
+
+      // 4: uOuterRadius
+      shader.setFloat(4, outerNorm);
+
+      // 5, 6, 7, 8: uBaseColor (vec4)
+      const baseColor = Color(0xFF14161C);
+      shader.setFloat(5, baseColor.r);
+      shader.setFloat(6, baseColor.g);
+      shader.setFloat(7, baseColor.b);
+      shader.setFloat(8, 0.95);
+
+      // 9: uIntensity
+      shader.setFloat(9, 0.85);
+
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..shader = shader,
+      );
+      return;
+    }
+
+    // CPU Fallback
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = size.width / 2 - 1.2;
     final effectiveArtRadius = artworkRadius ?? (size.width * 0.39);
@@ -559,8 +629,11 @@ class _MiniVinylGroovesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MiniVinylGroovesPainter oldDelegate) =>
-      oldDelegate.artworkRadius != artworkRadius;
+      oldDelegate.artworkRadius != artworkRadius ||
+      oldDelegate.angle != angle ||
+      oldDelegate.program != program;
 }
+
 
 /// Ultra-thin 1.5px micro-progress bar rendered at the bottom of the capsule
 class _MiniPlayerMicroProgress extends ConsumerWidget {

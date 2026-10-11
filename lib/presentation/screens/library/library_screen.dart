@@ -11,6 +11,8 @@ import 'package:musify/presentation/widgets/floating_mini_player.dart';
 import 'package:musify/presentation/widgets/playlist_artwork.dart';
 import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/screens/player/now_playing_screen.dart';
+import 'package:musify/presentation/screens/playlist/import_playlist_screen.dart';
+import 'package:musify/presentation/widgets/import_playlist_banner.dart';
 import '../playlist/playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
@@ -74,6 +76,11 @@ class LibraryScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Your Library', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.4)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download_rounded, size: 24),
+            tooltip: 'Import Playlist Link',
+            onPressed: () => openImportPlaylistScreen(context),
+          ),
           IconButton(
             icon: const Icon(Icons.add_rounded, size: 26),
             tooltip: 'New Playlist',
@@ -148,14 +155,32 @@ class LibraryScreen extends ConsumerWidget {
                   'Playlists',
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, letterSpacing: -0.3),
                 ),
-                TextButton.icon(
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Create', style: TextStyle(fontWeight: FontWeight.w700)),
-                  onPressed: () => _showNewPlaylistDialog(context, ref),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton.icon(
+                      icon: const Icon(Icons.link_rounded, size: 18),
+                      label: const Text('Import', style: TextStyle(fontWeight: FontWeight.w700)),
+                      onPressed: () => openImportPlaylistScreen(context),
+                    ),
+                    const SizedBox(width: 4),
+                    TextButton.icon(
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Create', style: TextStyle(fontWeight: FontWeight.w700)),
+                      onPressed: () => _showNewPlaylistDialog(context, ref),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
+
+          // ── Import Playlist Banner Card ──
+          ImportPlaylistBanner(
+            onTap: () => openImportPlaylistScreen(context),
+          ),
+
+          const SizedBox(height: 8),
 
           // User Playlists with dynamic mosaic artwork
           playlistsAsync.when(

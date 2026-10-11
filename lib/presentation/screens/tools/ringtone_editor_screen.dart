@@ -48,8 +48,20 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
   StreamSubscription? _positionSub;
   StreamSubscription? _playerStateSub;
 
-  // Waveform heights
-  late final List<double> _waveformHeights;
+  // Waveform heights & Real Waveform State
+  late List<double> _waveformHeights;
+  bool _isRealWaveform = false;
+
+  // Fade In & Fade Out State (in seconds)
+  int _fadeInSec = 0; // 0 (Off), 1s, 2s, 3s
+  int _fadeOutSec = 0; // 0 (Off), 1s, 2s, 3s
+
+  // Interactive Waveform Drag States
+  bool _isDraggingStart = false;
+  bool _isDraggingEnd = false;
+  bool _isDraggingWindow = false;
+  double _dragWindowInitialStart = 0.0;
+  double _dragWindowInitialEnd = 0.0;
 
   @override
   void initState() {
@@ -64,8 +76,8 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
 
   void _generateWaveform() {
     final random = Random(widget.track.title.hashCode ^ widget.track.artistName.hashCode);
-    _waveformHeights = List.generate(48, (index) {
-      final base = sin(index / 7.0).abs() * 0.6 + 0.3;
+    _waveformHeights = List.generate(60, (index) {
+      final base = sin(index / 8.0).abs() * 0.6 + 0.3;
       final noise = (random.nextDouble() - 0.5) * 0.3;
       return (base + noise).clamp(0.2, 1.0);
     });
@@ -111,13 +123,42 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
           _endMs = min(_totalDurationMs, 30000.0);
         }
 
+        // 2. Extract REAL audio waveform amplitudes from audio file
+        try {
+          final realAmplitudes = await RingtoneService.extractWaveform(_workingFilePath!, samples: 60);
+          if (realAmplitudes != null && realAmplitudes.isNotEmpty && mounted) {
+            setState(() {
+              _waveformHeights = realAmplitudes;
+              _isRealWaveform = true;
+            });
+          }
+        } catch (_) {}
+
         _positionSub = _player.positionStream.listen((pos) {
           if (!mounted) return;
           final currentMs = pos.inMilliseconds.toDouble();
           setState(() => _currentPlaybackMs = currentMs);
 
+          // Real-time volume fading curve during loop playback preview
+          if (_isPlaying) {
+            double targetVol = 1.0;
+            if (_fadeInSec > 0 && currentMs < _startMs + (_fadeInSec * 1000)) {
+              final elapsed = currentMs - _startMs;
+              targetVol = (elapsed / (_fadeInSec * 1000)).clamp(0.05, 1.0);
+            }
+            if (_fadeOutSec > 0 && currentMs > _endMs - (_fadeOutSec * 1000)) {
+              final remaining = _endMs - currentMs;
+              final fadeVol = (remaining / (_fadeOutSec * 1000)).clamp(0.05, 1.0);
+              targetVol = min(targetVol, fadeVol);
+            }
+            _player.setVolume(targetVol);
+          }
+
           // If reached end of trimmed zone, loop back to start
           if (currentMs >= _endMs) {
+            if (_fadeInSec > 0) {
+              _player.setVolume(0.05);
+            }
             _player.seek(Duration(milliseconds: _startMs.toInt()));
           }
         });
@@ -156,6 +197,11 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
     } else {
       HapticFeedback.selectionClick();
       ref.read(audioHandlerProvider).pause();
+      if (_fadeInSec > 0) {
+        await _player.setVolume(0.05);
+      } else {
+        await _player.setVolume(1.0);
+      }
       await _player.seek(Duration(milliseconds: _startMs.toInt()));
       await _player.play();
     }
@@ -199,6 +245,8 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
       outputPath: outputPath,
       startMs: _startMs.toInt(),
       endMs: _endMs.toInt(),
+      fadeInMs: _fadeInSec * 1000,
+      fadeOutMs: _fadeOutSec * 1000,
     );
   }
 
@@ -471,10 +519,10 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
 
                         const SizedBox(height: 14),
 
-                        // High-Fidelity Waveform Display (Open, borderless canvas)
+                        // High-Fidelity Waveform Display with Interactive Draggable Trim Handles
                         Container(
-                          height: 104,
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                          height: 124,
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                           color: Colors.transparent,
                           child: LayoutBuilder(
                             builder: (context, constraints) {
@@ -483,46 +531,150 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
                               final endFrac = (_endMs / _totalDurationMs).clamp(0.0, 1.0);
                               final playFrac = (_currentPlaybackMs / _totalDurationMs).clamp(0.0, 1.0);
 
-                              return Stack(
-                                children: [
-                                  // Waveform dynamic bars (Neon Lime inside active trim)
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    children: _waveformHeights.asMap().entries.map((entry) {
-                                      final idx = entry.key;
-                                      final hFrac = entry.value;
-                                      final barFrac = idx / (_waveformHeights.length - 1);
-                                      final isInsideTrim = barFrac >= startFrac && barFrac <= endFrac;
+                              final startX = totalWidth * startFrac;
+                              final endX = totalWidth * endFrac;
+                              final selectionWidth = max(6.0, endX - startX);
 
-                                      return Container(
-                                        width: 3.5,
-                                        height: 72 * hFrac,
-                                        decoration: BoxDecoration(
-                                          color: isInsideTrim
-                                              ? AppColors.neonLime
-                                              : (isDark ? const Color(0xFF282C38) : const Color(0xFFD1D5DB)),
-                                          borderRadius: BorderRadius.circular(2),
+                              return Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  // Real audio waveform / synthetic badge in top right
+                                  Positioned(
+                                    top: 0,
+                                    right: 4,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: _isRealWaveform
+                                            ? AppColors.neonLime.withValues(alpha: 0.15)
+                                            : (isDark ? Colors.white10 : Colors.black12),
+                                        borderRadius: BorderRadius.circular(5),
+                                        border: Border.all(
+                                          color: _isRealWaveform
+                                              ? AppColors.neonLime.withValues(alpha: 0.35)
+                                              : Colors.transparent,
+                                          width: 0.8,
                                         ),
-                                      );
-                                    }).toList(),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _isRealWaveform ? Icons.graphic_eq_rounded : Icons.waves_rounded,
+                                            size: 11,
+                                            color: _isRealWaveform ? AppColors.neonLime : textMuted,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _isRealWaveform ? 'Real Audio Waveform' : 'Analyzing Wave...',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: _isRealWaveform ? AppColors.neonLime : textMuted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
 
-                                  // Highlighted active trim box in Neon Lime
+                                  // Background Tap-to-seek waveform bars
                                   Positioned(
-                                    left: totalWidth * startFrac,
-                                    width: max(4.0, totalWidth * (endFrac - startFrac)),
-                                    top: 0,
-                                    bottom: 0,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: AppColors.neonLime.withValues(alpha: 0.22),
-                                        border: const Border.symmetric(
-                                          vertical: BorderSide(
-                                            color: AppColors.neonLime,
-                                            width: 2.5,
+                                    top: 22,
+                                    left: 0,
+                                    right: 0,
+                                    height: 74,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTapUp: (details) {
+                                        final tapFrac = (details.localPosition.dx / totalWidth).clamp(0.0, 1.0);
+                                        final seekMs = tapFrac * _totalDurationMs;
+                                        _player.seek(Duration(milliseconds: seekMs.toInt()));
+                                      },
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        children: _waveformHeights.asMap().entries.map((entry) {
+                                          final idx = entry.key;
+                                          final hFrac = entry.value;
+                                          final barFrac = idx / (_waveformHeights.length - 1);
+                                          final isInsideTrim = barFrac >= startFrac && barFrac <= endFrac;
+
+                                          return Container(
+                                            width: 3.5,
+                                            height: 68 * hFrac,
+                                            decoration: BoxDecoration(
+                                              color: isInsideTrim
+                                                  ? AppColors.neonLime
+                                                  : (isDark ? const Color(0xFF282C38) : const Color(0xFFD1D5DB)),
+                                              borderRadius: BorderRadius.circular(2),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Highlighted active trim box with slide window gesture
+                                  Positioned(
+                                    left: startX,
+                                    width: selectionWidth,
+                                    top: 22,
+                                    height: 74,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onHorizontalDragStart: (details) {
+                                        _dragWindowInitialStart = _startMs;
+                                        _dragWindowInitialEnd = _endMs;
+                                        setState(() => _isDraggingWindow = true);
+                                      },
+                                      onHorizontalDragUpdate: (details) {
+                                        final deltaMs = (details.primaryDelta! / totalWidth) * _totalDurationMs;
+                                        final windowDuration = _dragWindowInitialEnd - _dragWindowInitialStart;
+                                        final maxStart = max(0.0, _totalDurationMs - windowDuration);
+                                        final newStart = (_startMs + deltaMs).clamp(0.0, maxStart);
+                                        final newEnd = (newStart + windowDuration).clamp(0.0, _totalDurationMs);
+                                        setState(() {
+                                          _startMs = newStart;
+                                          _endMs = newEnd;
+                                        });
+                                      },
+                                      onHorizontalDragEnd: (_) {
+                                        setState(() => _isDraggingWindow = false);
+                                        if (_isPlaying) {
+                                          _player.seek(Duration(milliseconds: _startMs.toInt()));
+                                        }
+                                      },
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: _isDraggingWindow
+                                              ? AppColors.neonLime.withValues(alpha: 0.32)
+                                              : AppColors.neonLime.withValues(alpha: 0.18),
+                                          border: Border.symmetric(
+                                            horizontal: BorderSide(
+                                              color: AppColors.neonLime.withValues(alpha: _isDraggingWindow ? 0.7 : 0.3),
+                                              width: 1,
+                                            ),
                                           ),
                                         ),
+                                        alignment: Alignment.center,
+                                        child: _isDraggingWindow
+                                            ? Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF111827).withValues(alpha: 0.85),
+                                                  borderRadius: BorderRadius.circular(5),
+                                                ),
+                                                child: Text(
+                                                  'Sliding ${((_endMs - _startMs) / 1000).toStringAsFixed(1)}s',
+                                                  style: const TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppColors.neonLime,
+                                                  ),
+                                                ),
+                                              )
+                                            : null,
                                       ),
                                     ),
                                   ),
@@ -530,22 +682,86 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
                                   // Playhead needle
                                   if (_isPlaying)
                                     Positioned(
-                                      left: totalWidth * playFrac,
-                                      top: 0,
-                                      bottom: 0,
-                                      child: Container(
-                                        width: 2.5,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.white.withValues(alpha: 0.8),
-                                              blurRadius: 4,
-                                            ),
-                                          ],
+                                      left: (totalWidth * playFrac - 1).clamp(0.0, totalWidth - 2.5),
+                                      top: 22,
+                                      height: 74,
+                                      child: IgnorePointer(
+                                        child: Container(
+                                          width: 2.5,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(1),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.white.withValues(alpha: 0.9),
+                                                blurRadius: 4,
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
+
+                                  // Left Draggable Trim Handle
+                                  Positioned(
+                                    left: (startX - 16).clamp(-14.0, totalWidth - 20),
+                                    top: 0,
+                                    bottom: 0,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onHorizontalDragStart: (_) {
+                                        HapticFeedback.selectionClick();
+                                        setState(() => _isDraggingStart = true);
+                                      },
+                                      onHorizontalDragUpdate: (details) {
+                                        final deltaMs = (details.primaryDelta! / totalWidth) * _totalDurationMs;
+                                        final newStart = (_startMs + deltaMs).clamp(0.0, _endMs - 1000.0);
+                                        setState(() => _startMs = newStart);
+                                      },
+                                      onHorizontalDragEnd: (_) {
+                                        HapticFeedback.lightImpact();
+                                        setState(() => _isDraggingStart = false);
+                                        if (_isPlaying) {
+                                          _player.seek(Duration(milliseconds: _startMs.toInt()));
+                                        }
+                                      },
+                                      child: _WaveformTrimHandle(
+                                        isStart: true,
+                                        isDragging: _isDraggingStart,
+                                        timeLabel: _formatTime(_startMs),
+                                        isDark: isDark,
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Right Draggable Trim Handle
+                                  Positioned(
+                                    left: (endX - 16).clamp(0.0, totalWidth + 14),
+                                    top: 0,
+                                    bottom: 0,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onHorizontalDragStart: (_) {
+                                        HapticFeedback.selectionClick();
+                                        setState(() => _isDraggingEnd = true);
+                                      },
+                                      onHorizontalDragUpdate: (details) {
+                                        final deltaMs = (details.primaryDelta! / totalWidth) * _totalDurationMs;
+                                        final newEnd = (_endMs + deltaMs).clamp(_startMs + 1000.0, _totalDurationMs);
+                                        setState(() => _endMs = newEnd);
+                                      },
+                                      onHorizontalDragEnd: (_) {
+                                        HapticFeedback.lightImpact();
+                                        setState(() => _isDraggingEnd = false);
+                                      },
+                                      child: _WaveformTrimHandle(
+                                        isStart: false,
+                                        isDragging: _isDraggingEnd,
+                                        timeLabel: _formatTime(_endMs),
+                                        isDark: isDark,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               );
                             },
@@ -812,7 +1028,22 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
 
                         const SizedBox(height: 26),
 
-                        // 4. Apply Audio Actions (Clean, borderless studio action tiles)
+                        // 4. Fade Transitions (Fade-In & Fade-Out)
+                        _FadeTransitionControls(
+                          fadeInSec: _fadeInSec,
+                          fadeOutSec: _fadeOutSec,
+                          onFadeInChanged: (val) {
+                            setState(() => _fadeInSec = val);
+                          },
+                          onFadeOutChanged: (val) {
+                            setState(() => _fadeOutSec = val);
+                          },
+                          isDark: isDark,
+                        ),
+
+                        const SizedBox(height: 26),
+
+                        // 5. Apply Audio Actions (Clean, borderless studio action tiles)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: Text(
@@ -1120,6 +1351,333 @@ class _StudioActionCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Interactive draggable trim handle with grip pill and floating timestamp tooltip
+class _WaveformTrimHandle extends StatelessWidget {
+  final bool isStart;
+  final bool isDragging;
+  final String timeLabel;
+  final bool isDark;
+
+  const _WaveformTrimHandle({
+    required this.isStart,
+    required this.isDragging,
+    required this.timeLabel,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 32, // Large hit-test footprint for easy touch manipulation
+      child: Column(
+        children: [
+          // Floating timestamp badge
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 150),
+            opacity: isDragging ? 1.0 : 0.85,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: isDragging
+                    ? AppColors.neonLime
+                    : (isDark ? const Color(0xFF20222B) : const Color(0xFFE5E7EB)),
+                borderRadius: BorderRadius.circular(4),
+                boxShadow: isDragging
+                    ? [
+                        BoxShadow(
+                          color: AppColors.neonLime.withValues(alpha: 0.5),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Text(
+                timeLabel,
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                  color: isDragging
+                      ? const Color(0xFF111827)
+                      : (isDark ? Colors.white : const Color(0xFF1F2937)),
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          // Vertical guide line & Grab Handle Pill
+          Expanded(
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Vertical trim needle line
+                Container(
+                  width: 3,
+                  decoration: BoxDecoration(
+                    color: AppColors.neonLime,
+                    borderRadius: BorderRadius.circular(1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.neonLime.withValues(alpha: 0.6),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+                // Center Grip Pill with chevron indicator
+                AnimatedScale(
+                  scale: isDragging ? 1.15 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: Container(
+                    width: 22,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: AppColors.neonLime,
+                      borderRadius: BorderRadius.circular(7),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
+                        ),
+                        BoxShadow(
+                          color: AppColors.neonLime.withValues(alpha: 0.5),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      isStart ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
+                      size: 18,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Fade-In and Fade-Out selector controls with real-time preview feedback
+class _FadeTransitionControls extends StatelessWidget {
+  final int fadeInSec;
+  final int fadeOutSec;
+  final ValueChanged<int> onFadeInChanged;
+  final ValueChanged<int> onFadeOutChanged;
+  final bool isDark;
+
+  const _FadeTransitionControls({
+    required this.fadeInSec,
+    required this.fadeOutSec,
+    required this.onFadeInChanged,
+    required this.onFadeOutChanged,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textMuted = isDark ? Colors.white54 : const Color(0xFF8E92A0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'FADE TRANSITIONS',
+                style: AppTypography.caption.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: textMuted,
+                  letterSpacing: 1.1,
+                ),
+              ),
+              if (fadeInSec > 0 || fadeOutSec > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonLime.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Active preview',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? AppColors.neonLime : const Color(0xFF3E8016),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF16181F) : const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              // Fade In Row
+              Row(
+                children: [
+                  Icon(
+                    Icons.trending_up_rounded,
+                    size: 18,
+                    color: fadeInSec > 0 ? AppColors.neonLime : textMuted,
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      'Fade In',
+                      style: AppTypography.caption.copyWith(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [0, 1, 2, 3].map((sec) {
+                        final isSelected = fadeInSec == sec;
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: _FadePill(
+                            label: sec == 0 ? 'Off' : '${sec}s',
+                            isSelected: isSelected,
+                            isDark: isDark,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              onFadeInChanged(sec);
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Divider(
+                height: 1,
+                color: isDark ? const Color(0xFF262833) : const Color(0xFFE5E7EB),
+              ),
+              const SizedBox(height: 12),
+              // Fade Out Row
+              Row(
+                children: [
+                  Icon(
+                    Icons.trending_down_rounded,
+                    size: 18,
+                    color: fadeOutSec > 0 ? AppColors.neonLime : textMuted,
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      'Fade Out',
+                      style: AppTypography.caption.copyWith(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [0, 1, 2, 3].map((sec) {
+                        final isSelected = fadeOutSec == sec;
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: _FadePill(
+                            label: sec == 0 ? 'Off' : '${sec}s',
+                            isSelected: isSelected,
+                            isDark: isDark,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              onFadeOutChanged(sec);
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FadePill extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _FadePill({
+    required this.label,
+    required this.isSelected,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.neonLime
+              : (isDark ? const Color(0xFF222530) : const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.neonLime.withValues(alpha: 0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+            color: isSelected
+                ? const Color(0xFF111827)
+                : (isDark ? Colors.white70 : const Color(0xFF374151)),
+          ),
         ),
       ),
     );

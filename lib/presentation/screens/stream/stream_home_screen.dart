@@ -9,6 +9,8 @@ import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/screens/player/now_playing_screen.dart';
 import 'package:musify/presentation/screens/search/search_screen.dart';
 import 'package:musify/presentation/screens/settings/studio_equalizer_screen.dart';
+import 'package:musify/presentation/screens/stream/all_artists_screen.dart';
+import 'package:musify/presentation/screens/stream/all_movie_soundtracks_screen.dart';
 import 'package:musify/presentation/screens/stream/widgets/stream_cards.dart';
 import 'package:musify/presentation/screens/stream/widgets/stream_section_header.dart';
 import 'package:musify/presentation/screens/stream/widgets/stream_shimmer_skeleton.dart';
@@ -165,7 +167,9 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
                 floating: false,
                 elevation: 0,
                 scrolledUnderElevation: 0,
-                backgroundColor: theme.scaffoldBackgroundColor,
+                backgroundColor: isDark
+                    ? const Color(0xCC000000)
+                    : const Color(0xCCFFFFFF),
                 surfaceTintColor: Colors.transparent,
                 toolbarHeight: 70,
                 titleSpacing: 20,
@@ -392,9 +396,17 @@ class _PopularArtistsSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 16),
-        const StreamSectionHeader(
+        StreamSectionHeader(
           title: 'Popular Artists',
           subtitle: 'Top trending singers & producers',
+          actionLabel: 'See All',
+          onActionTap: () {
+            Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => const AllArtistsScreen(),
+              ),
+            );
+          },
         ),
         SizedBox(
           height: 148,
@@ -428,9 +440,17 @@ class _MovieSoundtracksSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 16),
-        const StreamSectionHeader(
+        StreamSectionHeader(
           title: 'Movie Soundtracks',
           subtitle: 'Original film albums & blockbuster hits',
+          actionLabel: 'See All',
+          onActionTap: () {
+            Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => const AllMovieSoundtracksScreen(),
+              ),
+            );
+          },
         ),
         SizedBox(
           height: 196,

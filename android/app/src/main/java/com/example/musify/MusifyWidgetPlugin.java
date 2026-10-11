@@ -39,6 +39,7 @@ public class MusifyWidgetPlugin implements FlutterPlugin, MethodChannel.MethodCa
             String artworkPath = call.argument("artworkPath");
             String artworkUrl = call.argument("artworkUrl");
             Boolean isPlaying = call.argument("isPlaying");
+            String source = call.argument("source");
 
             if (context != null) {
                 MusifyWidgetProvider.saveAndBroadcast(
@@ -47,7 +48,8 @@ public class MusifyWidgetPlugin implements FlutterPlugin, MethodChannel.MethodCa
                         artist != null ? artist : "",
                         artworkPath,
                         artworkUrl,
-                        isPlaying != null && isPlaying
+                        isPlaying != null && isPlaying,
+                        source != null ? source : "My Music"
                 );
                 result.success(true);
             } else {
@@ -58,7 +60,7 @@ public class MusifyWidgetPlugin implements FlutterPlugin, MethodChannel.MethodCa
         }
     }
 
-    public static void notifyWidgetAction(String action) {
+    public static boolean notifyWidgetAction(String action) {
         if (channel != null) {
             mainHandler.post(() -> {
                 try {
@@ -68,6 +70,8 @@ public class MusifyWidgetPlugin implements FlutterPlugin, MethodChannel.MethodCa
                 } catch (Exception ignored) {
                 }
             });
+            return true;
         }
+        return false;
     }
 }

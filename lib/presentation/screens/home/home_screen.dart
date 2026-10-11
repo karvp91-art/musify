@@ -21,6 +21,7 @@ import 'package:musify/presentation/widgets/create_playlist_modal.dart';
 import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/screens/settings/audio_settings_screen.dart';
 import 'package:musify/presentation/screens/player/now_playing_screen.dart';
+import 'package:musify/presentation/screens/playlist/import_playlist_screen.dart';
 import 'package:musify/services/online_artwork_enricher.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../folder/folder_detail_screen.dart';
@@ -42,7 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
   bool _isSelectionMode = false;
   final Set<String> _selectedTrackIds = {};
 
-  final List<String> _filters = const ['All', 'Audio', 'Folders', 'Playlists', 'Liked Songs', 'Downloaded'];
+  final List<String> _filters = const ['All','Audio','Playlists', 'Folders', 'Liked Songs', 'Downloaded'];
 
   @override
   bool get wantKeepAlive => true;
@@ -839,25 +840,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
                       letterSpacing: -0.3,
                     ),
                   ),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    ),
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: Text(
-                      'Create',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.link_rounded, size: 18),
+                        label: Text(
+                          'Import',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                          ),
+                        ),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const ImportPlaylistScreen(),
+                            ),
+                          );
+                        },
                       ),
-                    ),
-                    onPressed: () => _showNewPlaylistDialog(context, ref),
+                      const SizedBox(width: 4),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: Text(
+                          'Create',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
+                          ),
+                        ),
+                        onPressed: () => _showNewPlaylistDialog(context, ref),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 6),
             if (playlists.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(40),

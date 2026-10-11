@@ -24,7 +24,9 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
@@ -37,6 +39,15 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
     private MethodChannel channel;
     private Context context;
     private Activity activity;
+    private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    private void runOnMain(Runnable r) {
+        if (activity != null) {
+            activity.runOnUiThread(r);
+        } else {
+            mainHandler.post(r);
+        }
+    }
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPlugin.FlutterPluginBinding binding) {
@@ -101,6 +112,10 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
                 handleTrimAudio(call, result);
                 break;
 
+            case "extractWaveform":
+                handleExtractWaveform(call, result);
+                break;
+
             case "setRingtone":
                 handleSetRingtone(call, result);
                 break;
@@ -111,11 +126,101 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
         }
     }
 
+    private void handleExtractWaveform(MethodCall call, MethodChannel.Result result) {
+        String inputPath = call.argument("inputPath");
+        Integer sampleCountArg = call.argument("samples");
+        final int targetSamples = (sampleCountArg != null && sampleCountArg > 0) ? sampleCountArg : 64;
+
+        if (inputPath == null) {
+            result.error("INVALID_ARGS", "Missing inputPath", null);
+            return;
+        }
+
+        new Thread(() -> {
+            MediaExtractor extractor = null;
+            try {
+                File file = new File(inputPath);
+                if (!file.exists()) {
+                    runOnMain(() -> result.error("FILE_NOT_FOUND", "Input file not found", null));
+                    return;
+                }
+
+                extractor = new MediaExtractor();
+                extractor.setDataSource(file.getAbsolutePath());
+
+                int audioTrackIndex = -1;
+                long durationUs = 0;
+                for (int i = 0; i < extractor.getTrackCount(); i++) {
+                    MediaFormat f = extractor.getTrackFormat(i);
+                    String mime = f.getString(MediaFormat.KEY_MIME);
+                    if (mime != null && mime.startsWith("audio/")) {
+                        audioTrackIndex = i;
+                        if (f.containsKey(MediaFormat.KEY_DURATION)) {
+                            durationUs = f.getLong(MediaFormat.KEY_DURATION);
+                        }
+                        break;
+                    }
+                }
+
+                if (audioTrackIndex < 0 || durationUs <= 0) {
+                    runOnMain(() -> result.success(null));
+                    return;
+                }
+
+                extractor.selectTrack(audioTrackIndex);
+
+                long intervalUs = durationUs / targetSamples;
+                double[] amplitudes = new double[targetSamples];
+                ByteBuffer buffer = ByteBuffer.allocateDirect(16384);
+
+                double maxPeak = 0.0;
+                for (int i = 0; i < targetSamples; i++) {
+                    long targetTimeUs = i * intervalUs;
+                    extractor.seekTo(targetTimeUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+                    int sampleSize = extractor.readSampleData(buffer, 0);
+
+                    double amp = 0.0;
+                    if (sampleSize > 0) {
+                        buffer.rewind();
+                        int count = Math.min(sampleSize / 2, 256);
+                        long sumSq = 0;
+                        for (int s = 0; s < count; s++) {
+                            short val = buffer.getShort();
+                            sumSq += (long) val * val;
+                        }
+                        amp = Math.sqrt((double) sumSq / Math.max(1, count));
+                    }
+                    amplitudes[i] = amp;
+                    if (amp > maxPeak) {
+                        maxPeak = amp;
+                    }
+                }
+
+                List<Double> normalized = new ArrayList<>(targetSamples);
+                for (double a : amplitudes) {
+                    double norm = maxPeak > 0 ? (a / maxPeak) : 0.4;
+                    norm = Math.max(0.18, Math.min(1.0, norm));
+                    normalized.add(norm);
+                }
+
+                runOnMain(() -> result.success(normalized));
+            } catch (Exception e) {
+                runOnMain(() -> result.success(null));
+            } finally {
+                if (extractor != null) {
+                    try { extractor.release(); } catch (Exception ignored) {}
+                }
+            }
+        }).start();
+    }
+
     private void handleTrimAudio(MethodCall call, MethodChannel.Result result) {
         String inputPath = call.argument("inputPath");
         String outputPath = call.argument("outputPath");
         Number startMsNum = call.argument("startMs");
         Number endMsNum = call.argument("endMs");
+        Number fadeInMsNum = call.argument("fadeInMs");
+        Number fadeOutMsNum = call.argument("fadeOutMs");
 
         if (inputPath == null || outputPath == null || startMsNum == null || endMsNum == null) {
             result.error("INVALID_ARGS", "Missing required arguments for trimAudio", null);
@@ -124,12 +229,14 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
 
         long startUs = startMsNum.longValue() * 1000L;
         long endUs = endMsNum.longValue() * 1000L;
+        long fadeInMs = fadeInMsNum != null ? fadeInMsNum.longValue() : 0L;
+        long fadeOutMs = fadeOutMsNum != null ? fadeOutMsNum.longValue() : 0L;
 
         new Thread(() -> {
             try {
                 File inputFile = new File(inputPath);
                 if (!inputFile.exists()) {
-                    activity.runOnUiThread(() -> result.error("FILE_NOT_FOUND", "Input file not found", null));
+                    runOnMain(() -> result.error("FILE_NOT_FOUND", "Input file not found", null));
                     return;
                 }
 
@@ -151,22 +258,18 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
                 }
 
                 final boolean finalSuccess = success;
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (finalSuccess) {
-                            Map<String, Object> res = new HashMap<>();
-                            res.put("success", true);
-                            res.put("outputPath", outputPath);
-                            result.success(res);
-                        } else {
-                            result.error("TRIM_FAILED", "Failed to trim audio", null);
-                        }
-                    });
-                }
+                runOnMain(() -> {
+                    if (finalSuccess) {
+                        Map<String, Object> res = new HashMap<>();
+                        res.put("success", true);
+                        res.put("outputPath", outputPath);
+                        result.success(res);
+                    } else {
+                        result.error("TRIM_FAILED", "Failed to trim audio", null);
+                    }
+                });
             } catch (Exception e) {
-                if (activity != null) {
-                    activity.runOnUiThread(() -> result.error("TRIM_ERROR", e.getMessage(), null));
-                }
+                runOnMain(() -> result.error("TRIM_ERROR", e.getMessage(), null));
             }
         }).start();
     }

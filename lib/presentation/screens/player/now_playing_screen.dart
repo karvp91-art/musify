@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/core/theme/app_colors.dart';
 import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/domain/models/lyrics.dart';
+import 'dart:ui';
+import 'package:musify/core/shaders/shader_service.dart';
 import 'package:musify/domain/models/playback_state.dart';
 import 'package:musify/domain/models/track.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
@@ -2190,31 +2192,32 @@ class _SlidingLyricsWidgetState extends ConsumerState<_SlidingLyricsWidget> {
               itemBuilder: (context, index) {
                 final line = lyrics.lines[index];
                 final isActive = index == activeIndex;
+                final nextTime = (index + 1 < lyrics.lines.length)
+                    ? lyrics.lines[index + 1].timestamp
+                    : null;
 
                 return Center(
                   child: AnimatedScale(
                     scale: isActive ? 1.0 : 0.9,
                     duration: _kState,
                     curve: _kEmph,
-                    child: AnimatedDefaultTextStyle(
-                      duration: _kState,
-                      curve: _kEmph,
-                      // Only color animates here, so this is repaint-only.
+                    child: _KaraokeLyricText(
+                      text: line.text,
+                      isActive: isActive,
+                      lineTimestamp: line.timestamp,
+                      nextTimestamp: nextTime,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                       style: AppTypography.style(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w700,
-                        color: isActive
-                            ? _ink(isDark)
-                            : _inkSoft(isDark).withValues(alpha: 0.40),
                         letterSpacing: -0.2,
                         height: 1.25,
                       ),
-                      child: Text(
-                        line.text,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
+                      activeColor: _ink(isDark),
+                      inactiveColor: _inkSoft(isDark).withValues(alpha: 0.40),
+                      glowColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
                     ),
                   ),
                 );
@@ -2384,22 +2387,23 @@ class _FullLyricsScrollViewState extends ConsumerState<_FullLyricsScrollView> {
                       alignment: Alignment.centerLeft,
                       duration: _kState,
                       curve: _kEmph,
-                      child: AnimatedDefaultTextStyle(
-                        duration: _kState,
-                        curve: _kEmph,
-                        // Constant size/weight: only color changes, so lines
-                        // never reflow while the highlight moves.
+                      child: _KaraokeLyricText(
+                        text: line.text,
+                        isActive: isActive,
+                        lineTimestamp: line.timestamp,
+                        nextTimestamp: (index + 1 < widget.lyrics.lines.length)
+                            ? widget.lyrics.lines[index + 1].timestamp
+                            : null,
+                        textAlign: TextAlign.left,
                         style: AppTypography.style(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
-                          color: isActive ? _ink(isDark) : dimColor,
                           height: 1.3,
                           letterSpacing: -0.4,
                         ),
-                        child: Text(
-                          line.text,
-                          textAlign: TextAlign.left,
-                        ),
+                        activeColor: _ink(isDark),
+                        inactiveColor: dimColor,
+                        glowColor: isDark ? AppColors.neonLime : AppColors.limeAccentDark,
                       ),
                     ),
                   ),
@@ -2462,6 +2466,162 @@ class _FullLyricsScrollViewState extends ConsumerState<_FullLyricsScrollView> {
   }
 }
 
+/// Real-time GPU Shader-powered karaoke lyric text renderer with glowing specular wavefront
+class _KaraokeLyricText extends ConsumerStatefulWidget {
+  final String text;
+  final TextStyle style;
+  final bool isActive;
+  final Duration lineTimestamp;
+  final Duration? nextTimestamp;
+  final TextAlign textAlign;
+  final int? maxLines;
+  final TextOverflow? overflow;
+  final Color activeColor;
+  final Color inactiveColor;
+  final Color glowColor;
+
+  const _KaraokeLyricText({
+    super.key,
+    required this.text,
+    required this.style,
+    required this.isActive,
+    required this.lineTimestamp,
+    this.nextTimestamp,
+    this.textAlign = TextAlign.left,
+    this.maxLines,
+    this.overflow,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.glowColor,
+  });
+
+  @override
+  ConsumerState<_KaraokeLyricText> createState() => _KaraokeLyricTextState();
+}
+
+class _KaraokeLyricTextState extends ConsumerState<_KaraokeLyricText>
+    with SingleTickerProviderStateMixin {
+  FragmentProgram? _wipeShader;
+  late final AnimationController _shimmerController;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+    if (widget.isActive) _shimmerController.repeat();
+    _loadShader();
+  }
+
+  Future<void> _loadShader() async {
+    final cached = ShaderService.instance.getCached(AppShaders.lyricsGlowWipe);
+    if (cached != null) {
+      if (mounted) setState(() => _wipeShader = cached);
+      return;
+    }
+    final program = await ShaderService.instance.getProgram(AppShaders.lyricsGlowWipe);
+    if (mounted && program != null) {
+      setState(() => _wipeShader = program);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _KaraokeLyricText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (widget.isActive && !_shimmerController.isAnimating) {
+        _shimmerController.repeat();
+      } else if (!widget.isActive) {
+        _shimmerController.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isActive || _wipeShader == null) {
+      return Text(
+        widget.text,
+        textAlign: widget.textAlign,
+        maxLines: widget.maxLines,
+        overflow: widget.overflow,
+        style: widget.style.copyWith(
+          color: widget.isActive ? widget.activeColor : widget.inactiveColor,
+        ),
+      );
+    }
+
+    final pos = ref.watch(playerStateStreamProvider.select((s) => s.value?.position ?? Duration.zero));
+    double progress = 1.0;
+    if (widget.nextTimestamp != null && widget.nextTimestamp! > widget.lineTimestamp) {
+      final total = (widget.nextTimestamp! - widget.lineTimestamp).inMilliseconds;
+      if (total > 0) {
+        final elapsed = (pos - widget.lineTimestamp).inMilliseconds;
+        progress = (elapsed / total).clamp(0.0, 1.0);
+      }
+    }
+
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) {
+            final shader = _wipeShader!.fragmentShader();
+            // 0, 1: uResolution
+            shader.setFloat(0, bounds.width);
+            shader.setFloat(1, bounds.height);
+
+            // 2: uProgress
+            shader.setFloat(2, progress);
+
+            // 3: uTime
+            shader.setFloat(3, _shimmerController.value * 6.28318);
+
+            // 4, 5, 6, 7: uActiveColor
+            shader.setFloat(4, widget.activeColor.r);
+            shader.setFloat(5, widget.activeColor.g);
+            shader.setFloat(6, widget.activeColor.b);
+            shader.setFloat(7, widget.activeColor.a);
+
+            // 8, 9, 10, 11: uInactiveColor
+            shader.setFloat(8, widget.inactiveColor.r);
+            shader.setFloat(9, widget.inactiveColor.g);
+            shader.setFloat(10, widget.inactiveColor.b);
+            shader.setFloat(11, widget.inactiveColor.a);
+
+            // 12, 13, 14, 15: uGlowColor
+            shader.setFloat(12, widget.glowColor.r);
+            shader.setFloat(13, widget.glowColor.g);
+            shader.setFloat(14, widget.glowColor.b);
+            shader.setFloat(15, widget.glowColor.a);
+
+            return shader;
+          },
+          child: child,
+        );
+      },
+      child: Text(
+        widget.text,
+        textAlign: widget.textAlign,
+        maxLines: widget.maxLines,
+        overflow: widget.overflow,
+        style: widget.style.copyWith(
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Seek bar (ORIGINAL, unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2518,6 +2678,7 @@ class _AmbientPaletteBackground extends ConsumerStatefulWidget {
 class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _drift;
+  FragmentProgram? _auraShader;
 
   @override
   void initState() {
@@ -2533,6 +2694,19 @@ class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackgr
         }
       }
     });
+    _loadAuraShader();
+  }
+
+  Future<void> _loadAuraShader() async {
+    final cached = ShaderService.instance.getCached(AppShaders.ambientMeshAura);
+    if (cached != null) {
+      if (mounted) setState(() => _auraShader = cached);
+      return;
+    }
+    final program = await ShaderService.instance.getProgram(AppShaders.ambientMeshAura);
+    if (mounted && program != null) {
+      setState(() => _auraShader = program);
+    }
   }
 
   @override
@@ -2559,11 +2733,33 @@ class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackgr
     final baseColor = isDark ? _kBaseDark : _kBaseLight;
     final backgroundColor = widget.backgroundColor;
 
+    // Analogous companion color for the secondary nebula current
+    final hsl = HSLColor.fromColor(backgroundColor);
+    final companion = hsl.withHue((hsl.hue + 38) % 360).toColor();
+
     return RepaintBoundary(
       child: AnimatedBuilder(
-        animation: widget.calm,
+        animation: Listenable.merge([widget.calm, _drift]),
         builder: (context, _) {
           final calm = widget.calm.value.clamp(0.0, 1.0);
+          final intensity = 1.0 - calm;
+
+          // If GPU aura shader is available and settled, render living fluid mesh
+          if (_auraShader != null && widget.settled) {
+            return CustomPaint(
+              size: Size.infinite,
+              painter: _AmbientMeshAuraPainter(
+                program: _auraShader!,
+                time: _drift.value * 18.0,
+                color1: backgroundColor,
+                color2: companion,
+                baseColor: baseColor,
+                intensity: intensity,
+              ),
+            );
+          }
+
+          // CPU Fallback:
           final tinted = _mix(backgroundColor, baseColor, 0.72 * calm);
 
           final staticBase = DecoratedBox(
@@ -2586,69 +2782,53 @@ class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackgr
             return staticBase;
           }
 
-          // Analogous companion color for the second blob
-          final hsl = HSLColor.fromColor(backgroundColor);
-          final companion = hsl.withHue((hsl.hue + 38) % 360).toColor();
           final blobA = _mix(backgroundColor, Colors.white, isDark ? 0.18 : 0.30)
               .withValues(alpha: isDark ? 0.34 : 0.40);
           final blobB = companion.withValues(alpha: isDark ? 0.26 : 0.30);
 
-          final blobAWidget = RepaintBoundary(
-            child: SizedBox(
-              width: 500,
-              height: 500,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: [blobA, blobA.withValues(alpha: 0.0)],
-                  ),
-                ),
-              ),
-            ),
-          );
-
-          final blobBWidget = RepaintBoundary(
-            child: SizedBox(
-              width: 440,
-              height: 440,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: [blobB, blobB.withValues(alpha: 0.0)],
-                  ),
-                ),
-              ),
-            ),
-          );
+          final a = _drift.value * 2 * math.pi;
+          final dxA = 100.0 * math.sin(a);
+          final dyA = -150.0 + 35.0 * math.cos(a);
+          final dxB = -110.0 * math.cos(a);
+          final dyB = -40.0 + 45.0 * math.sin(a);
 
           final living = Stack(
             fit: StackFit.expand,
             children: [
-              AnimatedBuilder(
-                animation: _drift,
-                builder: (context, _) {
-                  final a = _drift.value * 2 * math.pi;
-                  final dxA = 100.0 * math.sin(a);
-                  final dyA = -150.0 + 35.0 * math.cos(a);
-                  final dxB = -110.0 * math.cos(a);
-                  final dyB = -40.0 + 45.0 * math.sin(a);
-                  return Stack(
-                    fit: StackFit.expand,
-                    alignment: Alignment.center,
-                    children: [
-                      Transform.translate(
-                        offset: Offset(dxA, dyA),
-                        child: blobAWidget,
+              Stack(
+                fit: StackFit.expand,
+                alignment: Alignment.center,
+                children: [
+                  Transform.translate(
+                    offset: Offset(dxA, dyA),
+                    child: Center(
+                      child: Container(
+                        width: 500,
+                        height: 500,
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [blobA, blobA.withValues(alpha: 0.0)],
+                          ),
+                        ),
                       ),
-                      Transform.translate(
-                        offset: Offset(dxB, dyB),
-                        child: blobBWidget,
+                    ),
+                  ),
+                  Transform.translate(
+                    offset: Offset(dxB, dyB),
+                    child: Center(
+                      child: Container(
+                        width: 440,
+                        height: 440,
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [blobB, blobB.withValues(alpha: 0.0)],
+                          ),
+                        ),
                       ),
-                    ],
-                  );
-                },
+                    ),
+                  ),
+                ],
               ),
-              // Soft bloom behind the artwork
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
@@ -2668,21 +2848,81 @@ class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackgr
             fit: StackFit.expand,
             children: [
               staticBase,
-              // Fades in once on mount, and out as a sheet calms the page.
               Opacity(
-                opacity: 1.0 - calm,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 700),
-                  curve: Curves.easeOut,
-                  builder: (context, v, child) => Opacity(opacity: v, child: child),
-                  child: living,
-                ),
+                opacity: intensity,
+                child: living,
               ),
             ],
           );
         },
       ),
     );
+  }
+}
+
+class _AmbientMeshAuraPainter extends CustomPainter {
+  final FragmentProgram program;
+  final double time;
+  final Color color1;
+  final Color color2;
+  final Color baseColor;
+  final double intensity;
+
+  _AmbientMeshAuraPainter({
+    required this.program,
+    required this.time,
+    required this.color1,
+    required this.color2,
+    required this.baseColor,
+    required this.intensity,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    final shader = program.fragmentShader();
+
+    // 0, 1: uResolution
+    shader.setFloat(0, size.width);
+    shader.setFloat(1, size.height);
+
+    // 2: uTime
+    shader.setFloat(2, time);
+
+    // 3, 4, 5, 6: uColor1
+    shader.setFloat(3, color1.r);
+    shader.setFloat(4, color1.g);
+    shader.setFloat(5, color1.b);
+    shader.setFloat(6, color1.a);
+
+    // 7, 8, 9, 10: uColor2
+    shader.setFloat(7, color2.r);
+    shader.setFloat(8, color2.g);
+    shader.setFloat(9, color2.b);
+    shader.setFloat(10, color2.a);
+
+    // 11, 12, 13, 14: uColorBase
+    shader.setFloat(11, baseColor.r);
+    shader.setFloat(12, baseColor.g);
+    shader.setFloat(13, baseColor.b);
+    shader.setFloat(14, baseColor.a);
+
+    // 15: uIntensity
+    shader.setFloat(15, intensity.clamp(0.0, 1.0));
+
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..shader = shader,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _AmbientMeshAuraPainter oldDelegate) {
+    return oldDelegate.time != time ||
+        oldDelegate.color1 != color1 ||
+        oldDelegate.color2 != color2 ||
+        oldDelegate.baseColor != baseColor ||
+        oldDelegate.intensity != intensity;
   }
 }

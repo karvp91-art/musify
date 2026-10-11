@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/domain/models/track.dart';
@@ -81,8 +81,8 @@ void main() {
     // 2. Status & percentage matching reference image
     expect(find.text('Downloading • 62%'), findsOneWidget);
 
-    // 3. Pause button icon matching reference image
-    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    // 3. Dismiss/cancel action button icon
+    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
   });
 
   testWidgets('DownloadDynamicIsland renders completed state', (tester) async {
@@ -111,6 +111,7 @@ void main() {
 
     expect(find.text('Victory Lap'), findsOneWidget);
     expect(find.text('Downloaded • Ready offline'), findsOneWidget);
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    // Artwork status badge + action button check icon
+    expect(find.byIcon(Icons.check_rounded), findsNWidgets(2));
   });
 }

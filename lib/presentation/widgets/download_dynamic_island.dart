@@ -7,6 +7,7 @@ import 'package:musify/core/theme/app_typography.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
+import 'package:musify/core/shaders/shader_service.dart';
 
 /// Ultra-refined Apple Dynamic Island floating status platter for track downloads.
 /// Features liquid-glass optics, spring physics, real-time progress interpolation,
@@ -355,8 +356,9 @@ class _AnimatedDownloadPulse extends StatelessWidget {
   }
 }
 
-/// Dynamic interpolated progress bar with smooth easing and specular glow head
-class _DynamicProgressBar extends StatelessWidget {
+/// Dynamic interpolated progress bar powered by GPU Liquid Wave Fragment Shader
+/// with automatic CPU fallback.
+class _DynamicProgressBar extends StatefulWidget {
   final double progress;
   final bool isCompleted;
   final bool isDark;
@@ -368,10 +370,63 @@ class _DynamicProgressBar extends StatelessWidget {
   });
 
   @override
+  State<_DynamicProgressBar> createState() => _DynamicProgressBarState();
+}
+
+class _DynamicProgressBarState extends State<_DynamicProgressBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _waveController;
+  FragmentProgram? _program;
+
+  @override
+  void initState() {
+    super.initState();
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    );
+
+    if (widget.progress > 0 && !widget.isCompleted) {
+      _waveController.repeat();
+    }
+
+    _loadShader();
+  }
+
+  Future<void> _loadShader() async {
+    final cached = ShaderService.instance.getCached(AppShaders.liquidWaveProgress);
+    if (cached != null) {
+      if (mounted) setState(() => _program = cached);
+      return;
+    }
+
+    final program = await ShaderService.instance.getProgram(AppShaders.liquidWaveProgress);
+    if (mounted && program != null) {
+      setState(() => _program = program);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DynamicProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isCompleted) {
+      _waveController.stop();
+    } else if (widget.progress > 0 && !_waveController.isAnimating) {
+      _waveController.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _waveController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final clampedProgress = progress.clamp(0.0, 1.0);
+    final clampedProgress = widget.progress.clamp(0.0, 1.0);
     final activeGradient = LinearGradient(
-      colors: isDark
+      colors: widget.isDark
           ? [
               AppColors.neonLimeDim,
               AppColors.neonLime,
@@ -394,19 +449,58 @@ class _DynamicProgressBar extends StatelessWidget {
               height: 4.0,
               width: barWidth,
               decoration: BoxDecoration(
-                color: isDark
+                color: widget.isDark
                     ? Colors.white.withValues(alpha: 0.12)
                     : const Color(0xFFE2E6EE),
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
 
-            // Smooth animated active progress bar with easeOutCubic curve
+            // Smooth animated active progress bar
             TweenAnimationBuilder<double>(
               tween: Tween<double>(begin: 0.0, end: clampedProgress),
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOutCubic,
               builder: (context, value, _) {
+                // If GPU shader is compiled and ready, render liquid wave physics
+                if (_program != null) {
+                  return AnimatedBuilder(
+                    animation: _waveController,
+                    builder: (context, _) {
+                      return Container(
+                        height: 4.0,
+                        width: barWidth,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(3),
+                          boxShadow: widget.isCompleted || value > 0.05
+                              ? [
+                                  BoxShadow(
+                                    color: (widget.isDark
+                                            ? AppColors.neonLime
+                                            : const Color(0xFF84CC16))
+                                        .withValues(alpha: widget.isDark ? 0.40 : 0.22),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: CustomPaint(
+                          size: Size(barWidth, 4.0),
+                          painter: _LiquidWavePainter(
+                            program: _program!,
+                            progress: value,
+                            time: _waveController.value * 6.28318,
+                            isDark: widget.isDark,
+                            isCompleted: widget.isCompleted,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }
+
+                // CPU Fallback for headless tests and unsupported platforms
                 final currentWidth = (barWidth * value).clamp(0.0, barWidth);
                 return Container(
                   height: 4.0,
@@ -414,11 +508,11 @@ class _DynamicProgressBar extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: activeGradient,
                     borderRadius: BorderRadius.circular(3),
-                    boxShadow: isCompleted || value > 0.05
+                    boxShadow: widget.isCompleted || value > 0.05
                         ? [
                             BoxShadow(
-                              color: (isDark ? AppColors.neonLime : const Color(0xFF84CC16))
-                                  .withValues(alpha: isDark ? 0.40 : 0.22),
+                              color: (widget.isDark ? AppColors.neonLime : const Color(0xFF84CC16))
+                                  .withValues(alpha: widget.isDark ? 0.40 : 0.22),
                               blurRadius: 4,
                               offset: const Offset(0, 1),
                             ),
@@ -434,6 +528,77 @@ class _DynamicProgressBar extends StatelessWidget {
     );
   }
 }
+
+class _LiquidWavePainter extends CustomPainter {
+  final FragmentProgram program;
+  final double progress;
+  final double time;
+  final bool isDark;
+  final bool isCompleted;
+
+  _LiquidWavePainter({
+    required this.program,
+    required this.progress,
+    required this.time,
+    required this.isDark,
+    required this.isCompleted,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0 || progress <= 0) return;
+
+    final shader = program.fragmentShader();
+
+    // Uniform 0, 1: uResolution
+    shader.setFloat(0, size.width);
+    shader.setFloat(1, size.height);
+
+    // Uniform 2: uProgress
+    shader.setFloat(2, progress.clamp(0.0, 1.0));
+
+    // Uniform 3: uTime
+    shader.setFloat(3, time);
+
+    // Colors
+    final baseColor = isDark ? AppColors.neonLimeDim : const Color(0xFF84CC16);
+    final glowColor = isDark ? AppColors.neonLime : AppColors.limeAccentDark;
+
+    // Uniform 4, 5, 6, 7: uColor (vec4)
+    shader.setFloat(4, baseColor.r);
+    shader.setFloat(5, baseColor.g);
+    shader.setFloat(6, baseColor.b);
+    shader.setFloat(7, baseColor.a);
+
+    // Uniform 8, 9, 10, 11: uGlowColor (vec4)
+    shader.setFloat(8, glowColor.r);
+    shader.setFloat(9, glowColor.g);
+    shader.setFloat(10, glowColor.b);
+    shader.setFloat(11, glowColor.a);
+
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(3),
+    );
+
+    canvas.save();
+    canvas.clipRRect(rrect);
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..shader = shader,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiquidWavePainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.time != time ||
+        oldDelegate.isDark != isDark ||
+        oldDelegate.isCompleted != isCompleted;
+  }
+}
+
 
 /// Interactive right action button with tactile spring scale feedback
 class _IslandActionButton extends StatefulWidget {
