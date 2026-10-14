@@ -4,8 +4,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:musify/domain/models/track_sort_option.dart';
 import 'package:musify/presentation/providers/audio_providers.dart';
 
-class TrackSortDropdown extends ConsumerWidget {
-  const TrackSortDropdown({super.key});
+class TrackSortDropdown extends ConsumerStatefulWidget {
+  final double size;
+  final Color? background;
+
+  const TrackSortDropdown({
+    super.key,
+    this.size = 46,
+    this.background,
+  });
+
+  @override
+  ConsumerState<TrackSortDropdown> createState() => _TrackSortDropdownState();
+}
+
+class _TrackSortDropdownState extends ConsumerState<TrackSortDropdown> {
+  bool _pressed = false;
 
   Future<void> _showSortMenu(
     BuildContext context,
@@ -109,44 +123,54 @@ class TrackSortDropdown extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final currentSort = ref.watch(localTrackSortOptionProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final primaryColor = theme.colorScheme.primary;
+    final bg = widget.background ??
+        (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2));
     final defaultIconColor =
-        isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028);
+        isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028);
     final isNonDefault = currentSort != TrackSortOption.recentlyAdded;
 
     return Tooltip(
       message: 'Sort tracks: ${currentSort.label}',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
         onTap: () {
           HapticFeedback.selectionClick();
           _showSortMenu(context, ref, currentSort);
         },
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
-            boxShadow: isNonDefault
-                ? [
-                    BoxShadow(
-                      color: primaryColor.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : null,
-          ),
-          alignment: Alignment.center,
-          child: Icon(
-            Icons.swap_vert_rounded,
-            size: 20,
-            color: isNonDefault ? primaryColor : defaultIconColor,
+        child: AnimatedScale(
+          scale: _pressed ? 0.90 : 1.0,
+          duration: const Duration(milliseconds: 110),
+          curve: Curves.easeOutCubic,
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: bg,
+              boxShadow: isNonDefault
+                  ? [
+                      BoxShadow(
+                        color: primaryColor.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.swap_vert_rounded,
+              size: widget.size * 0.48,
+              color: isNonDefault ? primaryColor : defaultIconColor,
+            ),
           ),
         ),
       ),

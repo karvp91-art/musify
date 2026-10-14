@@ -93,7 +93,7 @@ class TrackListTile extends ConsumerWidget {
               ? (isDark
                   ? const Color(0xFF84CC16).withValues(alpha: 0.12)
                   : const Color(0xFFF2F8EA))
-              : theme.scaffoldBackgroundColor,
+              : Colors.transparent,
         ),
         child: Row(
           children: [

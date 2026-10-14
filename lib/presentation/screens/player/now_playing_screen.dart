@@ -1390,7 +1390,9 @@ class _NowPlayingTopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final buttonIconColor = palette.iconColor;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final buttonIconColor = _ink(isDark);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
@@ -1417,14 +1419,14 @@ class _NowPlayingTopBar extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _EqBars(size: 13, color: palette.titleColor.withValues(alpha: 0.9), bars: 3),
+                  _EqBars(size: 13, color: palette.backgroundColor, bars: 3),
                   const SizedBox(width: 8),
                   Text(
                     'Now playing',
                     style: AppTypography.style(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w700,
-                      color: palette.titleColor,
+                      color: _ink(isDark),
                       letterSpacing: -0.1,
                     ),
                   ),
@@ -1444,7 +1446,7 @@ class _NowPlayingTopBar extends ConsumerWidget {
                     builder: (context, ref, _) {
                       final isEqEnabled = ref.watch(equalizerProvider.select((e) => e.isEnabled));
                       final target = isEqEnabled
-                          ? (palette.isLight ? const Color(0xFF0D9488) : AppColors.neonLime)
+                          ? _toggleAccent(isDark)
                           : buttonIconColor.withValues(alpha: 0.85);
                       // Color glides instead of snapping when EQ toggles.
                       return TweenAnimationBuilder<Color?>(
@@ -2733,9 +2735,12 @@ class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackgr
     final baseColor = isDark ? _kBaseDark : _kBaseLight;
     final backgroundColor = widget.backgroundColor;
 
-    // Analogous companion color for the secondary nebula current
+    // Harmonic depth companion color maintaining the exact authentic palette hue as MiniPlayer
     final hsl = HSLColor.fromColor(backgroundColor);
-    final companion = hsl.withHue((hsl.hue + 38) % 360).toColor();
+    final companion = hsl
+        .withSaturation((hsl.saturation * 1.05).clamp(0.0, 1.0))
+        .withLightness((hsl.lightness * (isDark ? 0.88 : 0.94)).clamp(0.0, 1.0))
+        .toColor();
 
     return RepaintBoundary(
       child: AnimatedBuilder(
@@ -2782,9 +2787,9 @@ class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackgr
             return staticBase;
           }
 
-          final blobA = _mix(backgroundColor, Colors.white, isDark ? 0.18 : 0.30)
-              .withValues(alpha: isDark ? 0.34 : 0.40);
-          final blobB = companion.withValues(alpha: isDark ? 0.26 : 0.30);
+          // Authentic pure palette color - preserve saturation without milky white wash
+          final blobA = backgroundColor.withValues(alpha: isDark ? 0.42 : 0.38);
+          final blobB = companion.withValues(alpha: isDark ? 0.30 : 0.26);
 
           final a = _drift.value * 2 * math.pi;
           final dxA = 100.0 * math.sin(a);
@@ -2829,14 +2834,15 @@ class _AmbientPaletteBackgroundState extends ConsumerState<_AmbientPaletteBackgr
                   ),
                 ],
               ),
+              // Soft bloom behind the artwork in the authentic palette tone
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     center: const Alignment(0, -0.35),
                     radius: 0.85,
                     colors: [
-                      Colors.white.withValues(alpha: isDark ? 0.06 : 0.18),
-                      Colors.white.withValues(alpha: 0.0),
+                      backgroundColor.withValues(alpha: isDark ? 0.14 : 0.10),
+                      backgroundColor.withValues(alpha: 0.0),
                     ],
                   ),
                 ),

@@ -9,6 +9,7 @@ import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
+import android.media.MediaScannerConnection;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -118,6 +119,21 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
 
             case "setRingtone":
                 handleSetRingtone(call, result);
+                break;
+
+            case "scanFile":
+                String scanPath = call.argument("filePath");
+                if (scanPath != null && context != null) {
+                    try {
+                        Context appCtx = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+                        MediaScannerConnection.scanFile(appCtx, new String[]{scanPath}, null, null);
+                        result.success(true);
+                    } catch (Exception e) {
+                        result.success(false);
+                    }
+                } else {
+                    result.success(false);
+                }
                 break;
 
             default:
@@ -258,6 +274,12 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
                 }
 
                 final boolean finalSuccess = success;
+                if (finalSuccess && context != null) {
+                    try {
+                        Context appCtx = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+                        MediaScannerConnection.scanFile(appCtx, new String[]{outputPath}, null, null);
+                    } catch (Exception ignored) {}
+                }
                 runOnMain(() -> {
                     if (finalSuccess) {
                         Map<String, Object> res = new HashMap<>();

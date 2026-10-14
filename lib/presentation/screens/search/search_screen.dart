@@ -23,6 +23,9 @@ import 'package:musify/presentation/widgets/offline_state_view.dart';
 import 'package:musify/presentation/widgets/shimmer_skeleton.dart';
 import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/track_list_tile.dart';
+import 'package:musify/presentation/widgets/theme_selection_bottom_sheet.dart';
+
+Color _mix(Color a, Color b, double t) => Color.lerp(a, b, t) ?? a;
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -48,6 +51,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   @override
   bool get wantKeepAlive => true;
+
+  // Theme helpers
+  Color _surface(bool isDark) => isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
+  Color _limeText(bool isDark) => isDark ? AppColors.neonLime : AppColors.limeAccentDark;
+  Color? _lastWashAccent;
 
   // Multi-Selection State
   bool _isSelectionMode = false;
@@ -447,53 +455,60 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   Widget _buildSelectionHeader(ThemeData theme, List<Track> currentVisibleTracks) {
     final isDark = theme.brightness == Brightness.dark;
+    final circleBg =
+        isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.07);
     final allSelected = currentVisibleTracks.isNotEmpty &&
         currentVisibleTracks.every((t) => _selectedTrackIds.contains(t.id));
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
       child: Row(
         children: [
           _GlassCircleButton(
             icon: Icons.close_rounded,
-            size: 40,
-            iconSize: 20,
+            size: 42,
+            background: circleBg,
             onTap: () {
               HapticFeedback.selectionClick();
               _exitSelectionMode();
             },
           ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              '${_selectedTrackIds.length} selected',
-              style: AppTypography.headlineSmall.copyWith(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
+            child: Center(
+              child: Text(
+                '${_selectedTrackIds.length} selected',
+                style: AppTypography.headlineSmall.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: theme.colorScheme.onSurface,
+                  letterSpacing: -0.4,
+                ),
               ),
             ),
           ),
-          _GlassCircleButton(
-            icon: allSelected ? Icons.check_box_rounded : Icons.checklist_rounded,
-            size: 40,
-            iconSize: 20,
-            iconColor: allSelected
-                ? (isDark ? AppColors.neonLime : const Color(0xFF3B7D14))
-                : null,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() {
-                if (allSelected) {
-                  _selectedTrackIds.clear();
-                } else {
-                  _selectedTrackIds.addAll(currentVisibleTracks.map((t) => t.id));
-                }
-              });
-            },
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _GlassCircleButton(
+                icon: allSelected ? Icons.check_box_rounded : Icons.checklist_rounded,
+                size: 42,
+                background: circleBg,
+                iconColor: allSelected ? _limeText(isDark) : null,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    if (allSelected) {
+                      _selectedTrackIds.clear();
+                    } else {
+                      _selectedTrackIds.addAll(currentVisibleTracks.map((t) => t.id));
+                    }
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              _buildMoreSelectionMenu(context, currentVisibleTracks, isDark),
+            ],
           ),
-          const SizedBox(width: 8),
-          _buildMoreSelectionMenu(context, currentVisibleTracks, isDark),
         ],
       ),
     );
@@ -504,19 +519,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     List<Track> currentVisibleTracks,
     bool isDark,
   ) {
+    final circleBg =
+        isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.07);
     final allSelected = currentVisibleTracks.isNotEmpty &&
         currentVisibleTracks.every((t) => _selectedTrackIds.contains(t.id));
 
     return Theme(
       data: Theme.of(context).copyWith(
         popupMenuTheme: PopupMenuThemeData(
-          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+          color: _surface(isDark),
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             side: BorderSide(
               color: isDark ? const Color(0xFF262A36) : const Color(0xFFE5E7EB),
-              width: 1,
             ),
           ),
           elevation: 10,
@@ -525,17 +541,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       child: PopupMenuButton<String>(
         padding: EdgeInsets.zero,
         icon: Container(
-          width: 40,
-          height: 40,
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+            color: circleBg,
           ),
           alignment: Alignment.center,
           child: Icon(
             Icons.more_vert_rounded,
-            size: 20,
-            color: isDark ? Colors.white.withValues(alpha: 0.85) : const Color(0xFF1E2028),
+            size: 42 * 0.48,
+            color: isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028),
           ),
         ),
         onSelected: (value) {
@@ -678,20 +694,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       child: Container(
         margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
         height: 72,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: AppColors.neonLime,
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.20),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
+              color: AppColors.neonLime.withValues(alpha: 0.30),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Row(
           children: [
+            if (selectedTracks.isNotEmpty) ...[
+              _buildStackedThumbnails(selectedTracks),
+              const SizedBox(width: 10),
+            ],
             Expanded(
               child: Text(
                 '${selectedTracks.length} ${selectedTracks.length == 1 ? "song" : "songs"} selected',
@@ -704,20 +729,33 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                 ),
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.playlist_play_rounded, color: Color(0xFF111827), size: 24),
-              onPressed: () => _handleBatchPlayNext(selectedTracks),
-              tooltip: 'Play Next',
-            ),
-            IconButton(
-              icon: const Icon(Icons.queue_music_rounded, color: Color(0xFF111827), size: 24),
-              onPressed: () => _handleBatchAddToQueue(selectedTracks),
-              tooltip: 'Add to Queue',
-            ),
-            IconButton(
-              icon: const Icon(Icons.playlist_add_rounded, color: Color(0xFF111827), size: 24),
-              onPressed: () => _handleBatchAddToPlaylist(context, selectedTracks),
-              tooltip: 'Add to Playlist',
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildCapsuleActionItem(
+                  icon: Icons.playlist_play_rounded,
+                  label: 'Play\nnext',
+                  onTap: () => _handleBatchPlayNext(selectedTracks),
+                ),
+                const SizedBox(width: 14),
+                _buildCapsuleActionItem(
+                  icon: Icons.queue_music_rounded,
+                  label: 'Add to\nqueue',
+                  onTap: () => _handleBatchAddToQueue(selectedTracks),
+                ),
+                const SizedBox(width: 14),
+                _buildCapsuleActionItem(
+                  icon: Icons.playlist_add_rounded,
+                  label: 'Add to\nplaylist',
+                  onTap: () => _handleBatchAddToPlaylist(context, selectedTracks),
+                ),
+                const SizedBox(width: 14),
+                _buildCapsuleActionItem(
+                  icon: Icons.file_download_outlined,
+                  label: 'Download',
+                  onTap: () => _handleBatchDownload(selectedTracks),
+                ),
+              ],
             ),
           ],
         ),
@@ -725,19 +763,113 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  // --- Production-Grade Search Input Bar with Back Button ---
-  Widget _buildSearchBar(ThemeData theme, bool isDark) {
+  Widget _buildStackedThumbnails(List<Track> selectedTracks) {
+    final displayTracks = selectedTracks.take(3).toList();
+
+    return SizedBox(
+      width: 50,
+      height: 42,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          if (displayTracks.length >= 3)
+            Positioned(
+              left: 0,
+              child: Transform.rotate(angle: -0.20, child: _buildMiniArt(displayTracks[2])),
+            ),
+          if (displayTracks.length >= 2)
+            Positioned(
+              left: 6,
+              child: Transform.rotate(angle: 0.16, child: _buildMiniArt(displayTracks[1])),
+            ),
+          Positioned(
+            left: displayTracks.length > 1 ? 3 : 6,
+            child: _buildMiniArt(displayTracks[0], isFront: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniArt(Track track, {bool isFront = false}) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.black.withValues(alpha: isFront ? 0.40 : 0.20),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: TrackArtwork(
+          artworkUrl: track.artworkUrl,
+          seedKey: track.title,
+          size: 36,
+          borderRadius: BorderRadius.circular(7),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCapsuleActionItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 21, color: const Color(0xFF111827)),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: AppTypography.style(
+              color: const Color(0xFF111827),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Prominent Header matching HomeScreen & StreamHomeScreen ---
+  Widget _buildTopHeader(ThemeData theme, bool isDark) {
     final canPop = Navigator.of(context).canPop();
+    final circleBg =
+        isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.07);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
       child: Row(
         children: [
           if (canPop) ...[
             _GlassCircleButton(
               icon: Icons.chevron_left_rounded,
-              size: 44,
-              iconSize: 28,
+              size: 46,
+              background: circleBg,
+              iconSize: 26,
               onTap: () {
                 HapticFeedback.selectionClick();
                 Navigator.of(context).pop();
@@ -746,16 +878,83 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             const SizedBox(width: 10),
           ],
           Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Search',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.headlineLarge.copyWith(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 30,
+                    height: 1.1,
+                    color: theme.colorScheme.onSurface,
+                    letterSpacing: -1.0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Discover songs, artists & playlists',
+                  style: AppTypography.bodySmall.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _GlassCircleButton(
+            icon: isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+            size: 46,
+            background: circleBg,
+            iconColor: isDark ? AppColors.neonLime : AppColors.neonLimeDim,
+            onTap: () {
+              ref.read(themeModeProvider.notifier).toggleTheme();
+            },
+            onLongPress: () {
+              showThemeSelectionModal(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Production-Grade Search Input Bar matching HomeScreen ---
+  Widget _buildSearchBar(ThemeData theme, bool isDark) {
+    final canPop = Navigator.of(context).canPop();
+    final isExpanded = _searchController.text.trim().isNotEmpty;
+    final circleBg =
+        isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.07);
+    final iconColor =
+        isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+      child: Row(
+        children: [
+          if (canPop && isExpanded) ...[
+            _GlassCircleButton(
+              icon: Icons.chevron_left_rounded,
+              size: 46,
+              background: circleBg,
+              iconSize: 26,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                Navigator.of(context).pop();
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
             child: Container(
               height: 48,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
+                color: circleBg,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : Colors.black.withValues(alpha: 0.05),
-                ),
               ),
               child: Row(
                 children: [
@@ -763,8 +962,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                     padding: const EdgeInsets.only(left: 14, right: 8),
                     child: Icon(
                       Icons.search_rounded,
-                      size: 22,
-                      color: isDark ? AppColors.neonLime : const Color(0xFF3B7D14),
+                      size: 21,
+                      color: iconColor,
                     ),
                   ),
                   Expanded(
@@ -781,15 +980,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                       },
                       style: AppTypography.bodyMedium.copyWith(
                         color: theme.colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w500,
                       ),
                       decoration: InputDecoration(
-                        hintText: 'Search songs, artists, albums...',
+                        hintText: 'Search songs, artists, albums, playlists',
                         hintStyle: AppTypography.bodySmall.copyWith(
-                          color: isDark ? Colors.white38 : Colors.black38,
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
                         ),
                         border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
                   ),
@@ -811,8 +1012,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                           padding: const EdgeInsets.all(12),
                           child: Icon(
                             Icons.close_rounded,
-                            size: 18,
-                            color: isDark ? Colors.white60 : Colors.black54,
+                            size: 19,
+                            color: iconColor,
                           ),
                         ),
                       );
@@ -827,7 +1028,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  // --- Filter Pills ---
+  // --- Filter Pills matching HomeScreen ---
   Widget _buildFilterPills(
     List<String> items,
     String selectedItem,
@@ -835,42 +1036,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     ThemeData theme,
     bool isDark,
   ) {
-    final selectedBg = AppColors.neonLime;
-    final unselectedBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
-    final unselectedTextColor =
-        isDark ? Colors.white.withValues(alpha: 0.80) : const Color(0xFF4B5563);
-
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      physics: const ClampingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
       child: Row(
         children: items.map((item) {
           final isSelected = item == selectedItem;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                onSelected(item);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSelected ? selectedBg : unselectedBg,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  item,
-                  style: AppTypography.bodySmall.copyWith(
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? Colors.black : unselectedTextColor,
-                  ),
-                ),
-              ),
+            child: _GlassFilterChip(
+              label: item,
+              isSelected: isSelected,
+              onTap: () => onSelected(item),
             ),
           );
         }).toList(),
@@ -1170,11 +1348,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   Widget build(BuildContext context) {
     super.build(context);
     final theme = Theme.of(context);
-
     final isDark = theme.brightness == Brightness.dark;
+    final baseColor = isDark ? Colors.black : Colors.white;
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final bottomPadding = keyboardHeight > 0 ? keyboardHeight + 84.0 : 160.0;
     final visibleTracks = _getCurrentVisibleTracks();
+
+    // Wash color: artwork of the song playing now, else the top search result
+    final playingTrack = ref.watch(currentPlayingTrackProvider);
+    final topSearchResult = _searchResults.firstOrNull ?? _multiResult.songs.firstOrNull;
+    final washTrack = playingTrack ?? topSearchResult;
+
+    Color? washAccent;
+    if (washTrack != null) {
+      final paletteAsync = ref.watch(
+        trackPaletteProvider((track: washTrack, isDark: isDark)),
+      );
+      final palette = paletteAsync.value ??
+          PaletteService.instance.getCachedPalette(washTrack, isDark: isDark);
+      if (palette != null) {
+        _lastWashAccent = palette.backgroundColor;
+      }
+      washAccent = _lastWashAccent;
+    } else {
+      _lastWashAccent = null;
+    }
+    final hasPalette = washAccent != null;
+    final washColor = washAccent ?? AppColors.neonLime;
+    final washStrength = hasPalette ? (isDark ? 0.75 : 0.55) : (isDark ? 0.10 : 0.16);
+    final topColor = _mix(baseColor, washColor, washStrength);
+
+    final isSearchingQuery = _searchController.text.trim().isNotEmpty;
 
     return PopScope(
       canPop: !_isSelectionMode,
@@ -1186,20 +1390,51 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        backgroundColor: theme.scaffoldBackgroundColor,
+        backgroundColor: baseColor,
         bottomNavigationBar: _isSelectionMode && _selectedTrackIds.isNotEmpty
             ? _buildBatchActionBar(theme, visibleTracks)
             : null,
         body: Stack(
           children: [
+            // Atmospheric artwork wash that dissolves into the base background
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 520,
+              child: IgnorePointer(
+                child: TweenAnimationBuilder<Color?>(
+                  tween: ColorTween(end: topColor),
+                  duration: const Duration(milliseconds: 450),
+                  curve: Curves.easeInOutCubic,
+                  builder: (context, animatedTop, _) {
+                    final top = animatedTop ?? topColor;
+                    return DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: const [0.0, 0.45, 1.0],
+                          colors: [top, _mix(top, baseColor, 0.6), baseColor],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
             SafeArea(
               bottom: false,
               child: Column(
                 children: [
-                  // Top Bar: Selection Header or Search Input Bar
-                  _isSelectionMode
-                      ? _buildSelectionHeader(theme, visibleTracks)
-                      : _buildSearchBar(theme, isDark),
+                  // Top Bar: Selection Header, or Top Header + Search Bar
+                  if (_isSelectionMode)
+                    _buildSelectionHeader(theme, visibleTracks)
+                  else ...[
+                    if (!isSearchingQuery)
+                      _buildTopHeader(theme, isDark),
+                    _buildSearchBar(theme, isDark),
+                  ],
 
                   // Filter Chips (when active search query exists and not in selection mode)
                   if (!_isSelectionMode &&
@@ -1219,7 +1454,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                       children: [
                         _searchController.text.trim().length < 2
                             ? ListView(
-                                physics: const ClampingScrollPhysics(),
+                                physics: const BouncingScrollPhysics(),
                                 padding: EdgeInsets.only(bottom: bottomPadding),
                                 children: [
                                   // Recent Searches History Section
@@ -2281,45 +2516,147 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 }
 
-/// Borderless circular button matching HomeScreen and StreamHomeScreen style
-class _GlassCircleButton extends StatelessWidget {
+/// Interactive spring-scaling circular button matching HomeScreen
+/// Borderless circular/pill glass filter chip matching top bar & selection header actions.
+class _GlassFilterChip extends StatefulWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _GlassFilterChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  State<_GlassFilterChip> createState() => _GlassFilterChipState();
+}
+
+class _GlassFilterChipState extends State<_GlassFilterChip> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final circleBg =
+        isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.07);
+    final fg = isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      child: AnimatedScale(
+        scale: _pressed ? 0.90 : 1.0,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOutCubic,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: widget.isSelected ? AppColors.neonLime : circleBg,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: widget.isSelected
+                ? [
+                    BoxShadow(
+                      color: AppColors.neonLime.withValues(alpha: isDark ? 0.35 : 0.24),
+                      blurRadius: 5,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            widget.label,
+            style: AppTypography.bodySmall.copyWith(
+              fontSize: 13.5,
+              letterSpacing: -0.2,
+              fontWeight: widget.isSelected ? FontWeight.w800 : FontWeight.w600,
+              color: widget.isSelected ? const Color(0xFF111827) : fg,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Borderless circular button used for header actions and controls.
+class _GlassCircleButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
-  final double size;
-  final double iconSize;
+  final VoidCallback? onLongPress;
   final Color? iconColor;
+  final Color? background;
+  final double size;
+  final double? iconSize;
 
   const _GlassCircleButton({
     required this.icon,
     required this.onTap,
-    this.size = 44,
-    this.iconSize = 20,
+    this.onLongPress,
     this.iconColor,
+    this.background,
+    this.size = 46,
+    this.iconSize,
   });
 
   @override
+  State<_GlassCircleButton> createState() => _GlassCircleButtonState();
+}
+
+class _GlassCircleButtonState extends State<_GlassCircleButton> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final buttonBg = isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2);
-    final effectiveIconColor = iconColor ??
-        (isDark ? Colors.white.withValues(alpha: 0.90) : const Color(0xFF1E2028));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = widget.background ??
+        (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2));
+    final fg =
+        isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: buttonBg,
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          icon,
-          size: iconSize,
-          color: effectiveIconColor,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      onLongPress: widget.onLongPress != null
+          ? () {
+              HapticFeedback.heavyImpact();
+              widget.onLongPress!();
+            }
+          : null,
+      child: AnimatedScale(
+        scale: _pressed ? 0.90 : 1.0,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: bg,
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            widget.icon,
+            size: widget.iconSize ?? (widget.size * 0.48),
+            color: widget.iconColor ?? fg,
+          ),
         ),
       ),
     );

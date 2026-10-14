@@ -208,21 +208,37 @@ class LocalFilesScanner {
     final List<LocalTracksCompanion> collectedTracks = [];
     int scannedFilesCounter = 0;
 
-    // Load existing tracked file paths so we never insert a duplicate "local:..."
-    // record for a song that was already downloaded from YouTube or JioSaavn
+    // Load existing tracked file paths so we can instantly re-use cached metadata in 0ms
+    // without reading files or doing redundant platform channel queries
     final existingRows = await _db.select(_db.localTracks).get();
+    final existingTrackMap = <String, LocalTrack>{};
     final existingOnlinePaths = <String>{};
     final existingArtworks = <String, String>{};
     for (final row in existingRows) {
       if (row.filePath != null && row.filePath!.isNotEmpty) {
+        final norm = normalizeFilePath(row.filePath!);
+        existingTrackMap[norm] = row;
         if (row.source != AudioSourceType.local.name ||
             row.id.startsWith('youtube:') ||
             row.id.startsWith('saavn:')) {
-          existingOnlinePaths.add(normalizeFilePath(row.filePath!));
+          existingOnlinePaths.add(norm);
         }
       }
       if (row.artworkUrl != null && row.artworkUrl!.isNotEmpty) {
         existingArtworks[row.id] = row.artworkUrl!;
+      }
+    }
+
+    DateTime lastProgressReport = DateTime.now();
+    void reportProgress(String dirName) {
+      final now = DateTime.now();
+      if (now.difference(lastProgressReport).inMilliseconds >= 60) {
+        lastProgressReport = now;
+        onProgress?.call(ScanProgress(
+          filesScanned: scannedFilesCounter,
+          tracksFound: collectedTracks.length,
+          currentDirectory: dirName,
+        ));
       }
     }
 
@@ -240,7 +256,43 @@ class LocalFilesScanner {
           if (await file.exists()) {
             visitedFilePaths.add(normPath);
             scannedFilesCounter++;
-            final track = await _parseFileToTrack(file);
+
+            // FAST CACHE RE-USE: If file was already scanned and size matches, re-use in 0ms!
+            final existing = existingTrackMap[normPath];
+            if (existing != null && existing.durationMs > 0 && existing.fileSizeBytes == msFile.fileSizeBytes) {
+              collectedTracks.add(
+                LocalTracksCompanion(
+                  id: Value(existing.id),
+                  title: Value(existing.title),
+                  artistName: Value(existing.artistName),
+                  albumTitle: Value(existing.albumTitle),
+                  source: Value(existing.source),
+                  sourceId: Value(existing.sourceId),
+                  durationMs: Value(existing.durationMs),
+                  artworkUrl: Value(existing.artworkUrl),
+                  audioUrl: Value(existing.audioUrl),
+                  filePath: Value(existing.filePath),
+                  fileSizeBytes: Value(existing.fileSizeBytes),
+                  codec: Value(existing.codec),
+                  bitrate: Value(existing.bitrate),
+                  isLiked: Value(existing.isLiked),
+                  isDownloaded: Value(true),
+                  addedAt: Value(existing.addedAt),
+                ),
+              );
+              reportProgress(p.basename(file.parent.path));
+              continue;
+            }
+
+            final track = await _parseFileToTrack(
+              file,
+              preloadedMediaStore: MediaStoreMetadata(
+                title: msFile.title,
+                artist: msFile.artist,
+                album: msFile.album,
+                durationMs: msFile.durationMs > 0 ? msFile.durationMs : null,
+              ),
+            );
             if (track != null) {
               final effectiveArtwork = (track.artworkUrl != null && track.artworkUrl!.isNotEmpty)
                   ? track.artworkUrl
@@ -266,11 +318,7 @@ class LocalFilesScanner {
                   addedAt: Value(track.addedAt),
                 ),
               );
-              onProgress?.call(ScanProgress(
-                filesScanned: scannedFilesCounter,
-                tracksFound: collectedTracks.length,
-                currentDirectory: p.basename(file.parent.path),
-              ));
+              reportProgress(p.basename(file.parent.path));
             }
           }
         }
@@ -287,13 +335,10 @@ class LocalFilesScanner {
           visitedFilePaths: visitedFilePaths,
           existingOnlinePaths: existingOnlinePaths,
           existingArtworks: existingArtworks,
+          existingTrackMap: existingTrackMap,
           onFileScanned: (count, path) {
             scannedFilesCounter += count;
-            onProgress?.call(ScanProgress(
-              filesScanned: scannedFilesCounter,
-              tracksFound: collectedTracks.length,
-              currentDirectory: p.basename(path),
-            ));
+            reportProgress(p.basename(path));
           },
         );
       }
@@ -317,13 +362,10 @@ class LocalFilesScanner {
           visitedFilePaths: visitedFilePaths,
           existingOnlinePaths: existingOnlinePaths,
           existingArtworks: existingArtworks,
+          existingTrackMap: existingTrackMap,
           onFileScanned: (count, path) {
             scannedFilesCounter += count;
-            onProgress?.call(ScanProgress(
-              filesScanned: scannedFilesCounter,
-              tracksFound: collectedTracks.length,
-              currentDirectory: 'Musify Downloads',
-            ));
+            reportProgress('Musify Downloads');
           },
           markAsDownloaded: true,
         );
@@ -343,13 +385,10 @@ class LocalFilesScanner {
             visitedFilePaths: visitedFilePaths,
             existingOnlinePaths: existingOnlinePaths,
             existingArtworks: existingArtworks,
+            existingTrackMap: existingTrackMap,
             onFileScanned: (count, path) {
               scannedFilesCounter += count;
-              onProgress?.call(ScanProgress(
-                filesScanned: scannedFilesCounter,
-                tracksFound: collectedTracks.length,
-                currentDirectory: 'Musify Downloads',
-              ));
+              reportProgress('Musify Downloads');
             },
             markAsDownloaded: true,
           );
@@ -419,6 +458,7 @@ class LocalFilesScanner {
     Set<String>? existingOnlinePaths,
     Set<String>? visitedFilePaths,
     Map<String, String>? existingArtworks,
+    Map<String, LocalTrack>? existingTrackMap,
   }) async {
     final queue = Queue<Directory>()..add(root);
 
@@ -467,6 +507,33 @@ class LocalFilesScanner {
             final isSupported = supportedExtensions.contains(ext) ||
                 (markAsDownloaded && (ext == '.mp4' || ext == '.m4v'));
             if (isSupported) {
+              final stat = await entity.stat();
+              // Fast cache re-use in Phase 2
+              final existing = existingTrackMap?[normPath];
+              if (existing != null && existing.durationMs > 0 && existing.fileSizeBytes == stat.size) {
+                collectedTracks.add(
+                  LocalTracksCompanion(
+                    id: Value(existing.id),
+                    title: Value(existing.title),
+                    artistName: Value(existing.artistName),
+                    albumTitle: Value(existing.albumTitle),
+                    source: Value(existing.source),
+                    sourceId: Value(existing.sourceId),
+                    durationMs: Value(existing.durationMs),
+                    artworkUrl: Value(existing.artworkUrl),
+                    audioUrl: Value(existing.audioUrl),
+                    filePath: Value(existing.filePath),
+                    fileSizeBytes: Value(existing.fileSizeBytes),
+                    codec: Value(existing.codec),
+                    bitrate: Value(existing.bitrate),
+                    isLiked: Value(existing.isLiked),
+                    isDownloaded: Value(true),
+                    addedAt: Value(existing.addedAt),
+                  ),
+                );
+                continue;
+              }
+
               final track = await _parseFileToTrack(entity);
               if (track != null) {
                 final effectiveArtwork = (track.artworkUrl != null && track.artworkUrl!.isNotEmpty)
@@ -503,7 +570,10 @@ class LocalFilesScanner {
     }
   }
 
-  Future<Track?> _parseFileToTrack(File file) async {
+  Future<Track?> _parseFileToTrack(
+    File file, {
+    MediaStoreMetadata? preloadedMediaStore,
+  }) async {
     try {
       final fileName = p.basenameWithoutExtension(file.path);
       final parentFolder = p.basename(file.parent.path);
@@ -527,10 +597,19 @@ class LocalFilesScanner {
       }
 
       // ── Source 1: Embedded ID3 tags ──
-      final id3 = await AudioMetadataReader.readMetadata(file);
+      // Skip ID3 read if preloaded MediaStore already provides full metadata & duration
+      final bool hasFullMediaStore = preloadedMediaStore != null &&
+          preloadedMediaStore.title != null &&
+          preloadedMediaStore.title!.isNotEmpty &&
+          preloadedMediaStore.durationMs != null &&
+          preloadedMediaStore.durationMs! > 0;
+
+      final ParsedAudioMetadata? id3 = hasFullMediaStore
+          ? null
+          : await AudioMetadataReader.readMetadata(file);
 
       // ── Source 2: Android MediaStore (OS-level media scanner) ──
-      final mediaStore = await MediaStoreBridge.getMetadata(file.path);
+      final mediaStore = preloadedMediaStore ?? await MediaStoreBridge.getMetadata(file.path);
 
       // ── Source 3: Filename parsing ──
       final filenameParsed = AudioNameSanitizer.parseFileName(
@@ -685,8 +764,15 @@ class LocalFilesScanner {
 
       artworkPath ??= await AudioMetadataReader.findFolderArtwork(file);
 
-      // ── Resolve duration: prefer MediaStore > ID3 > WAV estimate ──
+      // ── Resolve duration: prefer MediaStore > ID3 > MP3 frame bitrate > WAV estimate ──
       int durationMs = mediaStore?.durationMs ?? id3?.durationMs ?? 0;
+      if (durationMs <= 0 && ext == 'mp3' && stat.size > 2048) {
+        final kbps = await AudioMetadataReader.readMp3Bitrate(file);
+        if (kbps != null && kbps > 0) {
+          final bytesPerSec = (kbps * 1000) ~/ 8;
+          durationMs = ((stat.size / bytesPerSec) * 1000).round();
+        }
+      }
       if (durationMs <= 0 && ext == 'wav' && stat.size > 44) {
         durationMs = (((stat.size - 44) / 176400) * 1000).round();
       }

@@ -17,6 +17,8 @@ import 'package:musify/presentation/widgets/track_artwork.dart';
 import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/widgets/loading_indicators.dart';
 import 'package:musify/services/ringtone_service.dart';
+import 'package:drift/drift.dart' hide Column;
+import 'package:musify/data/database/app_database.dart';
 
 class RingtoneEditorScreen extends ConsumerStatefulWidget {
   final Track track;
@@ -321,9 +323,40 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
     try {
       final trimmedPath = await _trimAudioFile();
       if (trimmedPath != null && mounted) {
+        await RingtoneService.scanFile(trimmedPath);
+        final fileName = File(trimmedPath).path.split(Platform.isWindows ? '\\' : '/').last;
+        final exactDurationMs = (_endMs - _startMs).toInt();
+
+        // Immediately insert or update in localTracks with exact duration so it never displays an inaccurate estimate
+        try {
+          final db = ref.read(databaseProvider);
+          final fileStat = await File(trimmedPath).stat();
+          await db.into(db.localTracks).insert(
+            LocalTracksCompanion(
+              id: Value('local:$trimmedPath'),
+              title: Value('${widget.track.title} (Clip)'),
+              artistName: Value(widget.track.artistName),
+              albumTitle: const Value('Musify'),
+              source: Value(AudioSourceType.local.name),
+              sourceId: Value(trimmedPath),
+              durationMs: Value(exactDurationMs),
+              artworkUrl: Value(widget.track.artworkUrl),
+              audioUrl: Value(trimmedPath),
+              filePath: Value(trimmedPath),
+              fileSizeBytes: Value(fileStat.size),
+              codec: Value(trimmedPath.endsWith('.m4a') ? 'm4a' : 'mp3'),
+              bitrate: const Value(320),
+              isLiked: const Value(false),
+              isDownloaded: const Value(true),
+              addedAt: Value(DateTime.now()),
+            ),
+            mode: InsertMode.insertOrReplace,
+          );
+        } catch (_) {}
+
         showSnackBar(
           context,
-          'Saved to: ${File(trimmedPath).path}',
+          'Saved to Music/Musify: $fileName',
           type: AppSnackBarType.success,
         );
       } else if (mounted) {

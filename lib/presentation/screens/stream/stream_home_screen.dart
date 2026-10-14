@@ -17,52 +17,75 @@ import 'package:musify/presentation/screens/stream/widgets/stream_shimmer_skelet
 import 'package:musify/presentation/widgets/offline_state_view.dart';
 import 'package:musify/presentation/widgets/theme_selection_bottom_sheet.dart';
 
-/// Borderless circular action button matching StudioEqualizerScreen header style
-class _CircleHeaderButton extends StatelessWidget {
+Color _mix(Color a, Color b, double t) => Color.lerp(a, b, t) ?? a;
+
+/// Borderless circular button used for header actions and controls.
+class _GlassCircleButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-  final double iconSize;
+  final double? iconSize;
   final Color? iconColor;
+  final Color? background;
+  final double size;
 
-  const _CircleHeaderButton({
+  const _GlassCircleButton({
     required this.icon,
     required this.onTap,
     this.onLongPress,
-    this.iconSize = 22,
+    this.iconSize,
     this.iconColor,
+    this.background,
+    this.size = 46,
   });
+
+  @override
+  State<_GlassCircleButton> createState() => _GlassCircleButtonState();
+}
+
+class _GlassCircleButtonState extends State<_GlassCircleButton> {
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final defaultIconColor =
-        isDark ? Colors.white.withValues(alpha: 0.9) : const Color(0xFF1E2028);
+    final bg = widget.background ??
+        (isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2));
+    final fg =
+        isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
       onTap: () {
         HapticFeedback.selectionClick();
-        onTap();
+        widget.onTap();
       },
-      onLongPress: onLongPress != null
+      onLongPress: widget.onLongPress != null
           ? () {
               HapticFeedback.heavyImpact();
-              onLongPress!();
+              widget.onLongPress!();
             }
           : null,
-      child: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isDark ? const Color(0xFF20222B) : const Color(0xFFECEEF2),
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          icon,
-          size: iconSize,
-          color: iconColor ?? defaultIconColor,
+      child: AnimatedScale(
+        scale: _pressed ? 0.90 : 1.0,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: bg,
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            widget.icon,
+            size: widget.iconSize ?? (widget.size * 0.48),
+            color: widget.iconColor ?? fg,
+          ),
         ),
       ),
     );
@@ -78,6 +101,8 @@ class StreamHomeScreen extends ConsumerStatefulWidget {
 
 class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
     with AutomaticKeepAliveClientMixin {
+  Color? _lastWashAccent;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -145,188 +170,243 @@ class _StreamHomeScreenState extends ConsumerState<StreamHomeScreen>
     super.build(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final baseColor = isDark ? Colors.black : Colors.white;
+    final onSurface = theme.colorScheme.onSurface;
     final homepageDataAsync = ref.watch(streamHomepageDataProvider);
 
+    // Wash color: artwork of the song playing now, else the most recent one.
+    final playingTrack = ref.watch(currentPlayingTrackProvider);
+    final recentFirst = ref.watch(recentlyPlayedTracksStreamProvider).value?.firstOrNull ??
+        homepageDataAsync.value?.recentlyPlayed.firstOrNull;
+    final washTrack = playingTrack ?? recentFirst;
+
+    Color? washAccent;
+    if (washTrack != null) {
+      final paletteAsync = ref.watch(
+        trackPaletteProvider((track: washTrack, isDark: isDark)),
+      );
+      final palette = paletteAsync.value ??
+          PaletteService.instance.getCachedPalette(washTrack, isDark: isDark);
+      if (palette != null) {
+        _lastWashAccent = palette.backgroundColor;
+      }
+      washAccent = _lastWashAccent;
+    } else {
+      _lastWashAccent = null;
+    }
+    final hasPalette = washAccent != null;
+    final washColor = washAccent ?? AppColors.neonLime;
+    // Same strength and falloff as PlaylistDetailScreen and HomeScreen
+    final washStrength = hasPalette ? (isDark ? 0.75 : 0.55) : (isDark ? 0.10 : 0.16);
+    final topColor = _mix(baseColor, washColor, washStrength);
+
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: SafeArea(
-        bottom: false,
-        child: RefreshIndicator(
-          color: AppColors.neonLime,
-          backgroundColor: isDark ? const Color(0xFF20222B) : Colors.white,
-          displacement: 20,
-          onRefresh: _handleRefresh,
-          child: CustomScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
+      backgroundColor: baseColor,
+      body: Stack(
+        children: [
+          // Color wash that dissolves into the page background
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 520,
+            child: IgnorePointer(
+              child: TweenAnimationBuilder<Color?>(
+                tween: ColorTween(end: topColor),
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeInOutCubic,
+                builder: (context, animatedTop, _) {
+                  final top = animatedTop ?? topColor;
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: const [0.0, 0.45, 1.0],
+                        colors: [top, _mix(top, baseColor, 0.6), baseColor],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
-            slivers: [
-              // 1. Sticky Pinned App Bar with Dynamic Greeting & Neon Accents
-              SliverAppBar(
-                pinned: true,
-                floating: false,
-                elevation: 0,
-                scrolledUnderElevation: 0,
-                backgroundColor: isDark
-                    ? const Color(0xCC000000)
-                    : const Color(0xCCFFFFFF),
-                surfaceTintColor: Colors.transparent,
-                toolbarHeight: 70,
-                titleSpacing: 20,
-                title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: _getGreeting(),
-                            style: AppTypography.headlineLarge.copyWith(
-                              fontSize: 23,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.2,
-                              color: isDark ? AppColors.neonLime : AppColors.neonLimeDim,
-                            ),
-                          ),
-                          TextSpan(
-                            text: '.',
-                            style: AppTypography.headlineLarge.copyWith(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                              color: isDark ? AppColors.neonLime : const Color(0xFF000000),
-                            ),
-                          ),
-                        ],
+          ),
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                // Clean header matching HomeScreen layout
+                _buildTopHeader(context, isDark, onSurface),
+                Expanded(
+                  child: RefreshIndicator(
+                    color: AppColors.neonLime,
+                    backgroundColor: isDark ? const Color(0xFF20222B) : Colors.white,
+                    displacement: 20,
+                    onRefresh: _handleRefresh,
+                    child: CustomScrollView(
+                      physics: const BouncingScrollPhysics(
+                        parent: AlwaysScrollableScrollPhysics(),
+                      ),
+                      slivers: [
+
+                  // Sections or loading state
+                  homepageDataAsync.when(
+                    loading: () => const SliverToBoxAdapter(
+                      child: StreamShimmerSkeleton(),
+                    ),
+                    error: (error, stack) => SliverToBoxAdapter(
+                      child: OfflineStateView(
+                        title: 'You\'re offline',
+                        message:
+                            'Connect to the internet to explore charts, new releases and trending hits.',
+                        onRetry: _handleRefresh,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Discover music & soundtracks',
-                      style: AppTypography.caption.copyWith(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: -0.1,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.55)
-                            : const Color(0xFF6B7280),
-                      ),
+                    data: (data) => SliverMainAxisGroup(
+                      slivers: [
+                        // Recently played
+                        SliverToBoxAdapter(
+                          child: RepaintBoundary(
+                            child: _RecentlyPlayedSection(
+                              fallbackTracks: data.recentlyPlayed,
+                              onPlayTrack: _playTrack,
+                            ),
+                          ),
+                        ),
+
+                        // Popular artists
+                        if (data.popularArtists.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: RepaintBoundary(
+                              child: _PopularArtistsSection(
+                                artists: data.popularArtists,
+                              ),
+                            ),
+                          ),
+
+                        // Movie soundtracks
+                        if (data.movieAlbums.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: RepaintBoundary(
+                              child: _MovieSoundtracksSection(
+                                albums: data.movieAlbums,
+                              ),
+                            ),
+                          ),
+
+                        // Top charts
+                        if (data.topCharts.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: RepaintBoundary(
+                              child: _TopChartsSection(
+                                charts: data.topCharts,
+                              ),
+                            ),
+                          ),
+
+                        // Editorial picks
+                        if (data.editorialPlaylists.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: RepaintBoundary(
+                              child: _EditorialPlaylistsSection(
+                                playlists: data.editorialPlaylists,
+                              ),
+                            ),
+                          ),
+
+                        // Space for the floating dock + mini player
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: 160),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                actions: [
-                  // Search Action Button
-                  _CircleHeaderButton(
-                    icon: Icons.search_rounded,
-                    iconSize: 21,
-                    onTap: () => _openSearchScreen(context),
                   ),
-                  const SizedBox(width: 8),
-                  // Theme Toggle Button (Tap: switch Light/Dark, Long Press: open Theme Picker)
-                  _CircleHeaderButton(
-                    icon: isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-                    iconSize: 20,
-                    iconColor: isDark ? AppColors.neonLime : AppColors.neonLimeDim,
-                    onTap: () {
-                      ref.read(themeModeProvider.notifier).toggleTheme();
-                    },
-                    onLongPress: () {
-                      showThemeSelectionModal(context);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  // Studio Equalizer Action Button
-                  _CircleHeaderButton(
-                    icon: Icons.tune_rounded,
-                    iconSize: 21,
-                    onTap: () => _openEqualizerScreen(context),
-                  ),
-                  const SizedBox(width: 16),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  ],
+),
+);
+}
 
-              // 2. Sections or Loading State
-              homepageDataAsync.when(
-                loading: () => const SliverToBoxAdapter(
-                  child: StreamShimmerSkeleton(),
-                ),
-                error: (error, stack) => SliverToBoxAdapter(
-                  child: OfflineStateView(
-                    title: 'Offline Mode',
-                    message:
-                        'Connect to the internet to explore stream charts, new releases, and trending hits.',
-                    onRetry: _handleRefresh,
+  Widget _buildTopHeader(BuildContext context, bool isDark, Color onSurface) {
+    final circleBg =
+        isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.07);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _getGreeting(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.headlineLarge.copyWith(
+                    fontSize: 28,
+                    height: 1.1,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.9,
+                    color: onSurface,
                   ),
                 ),
-                data: (data) => SliverMainAxisGroup(
-                  slivers: [
-                    // Section 1: Recently Played (Horizontal Carousel)
-                    SliverToBoxAdapter(
-                      child: RepaintBoundary(
-                        child: _RecentlyPlayedSection(
-                          fallbackTracks: data.recentlyPlayed,
-                          onPlayTrack: _playTrack,
-                        ),
-                      ),
-                    ),
-
-                    // Section 2: Popular Artists (Horizontal Carousel of Avatars)
-                    if (data.popularArtists.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: RepaintBoundary(
-                          child: _PopularArtistsSection(
-                            artists: data.popularArtists,
-                          ),
-                        ),
-                      ),
-
-                    // Section 3: Movie Soundtracks (Horizontal Carousel of Movie Albums)
-                    if (data.movieAlbums.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: RepaintBoundary(
-                          child: _MovieSoundtracksSection(
-                            albums: data.movieAlbums,
-                          ),
-                        ),
-                      ),
-
-                    // Section 4: Top Charts (Horizontal Carousel of Chart Cubes)
-                    if (data.topCharts.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: RepaintBoundary(
-                          child: _TopChartsSection(
-                            charts: data.topCharts,
-                          ),
-                        ),
-                      ),
-
-                    // Section 5: Editorial Picks / Made For You (Playlists Carousel)
-                    if (data.editorialPlaylists.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: RepaintBoundary(
-                          child: _EditorialPlaylistsSection(
-                            playlists: data.editorialPlaylists,
-                          ),
-                        ),
-                      ),
-
-                    // Bottom Spacing for Floating Dock + Mini Player
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: 160),
-                    ),
-                  ],
+                const SizedBox(height: 2),
+                Text(
+                  'Discover music and soundtracks',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.caption.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.1,
+                    color: onSurface.withValues(alpha: 0.55),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          _GlassCircleButton(
+            icon: Icons.search_rounded,
+            size: 46,
+            background: circleBg,
+            onTap: () => _openSearchScreen(context),
+          ),
+          const SizedBox(width: 8),
+          _GlassCircleButton(
+            icon: isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+            size: 46,
+            background: circleBg,
+            iconColor: isDark ? AppColors.neonLime : AppColors.neonLimeDim,
+            onTap: () {
+              ref.read(themeModeProvider.notifier).toggleTheme();
+            },
+            onLongPress: () {
+              showThemeSelectionModal(context);
+            },
+          ),
+          const SizedBox(width: 8),
+          _GlassCircleButton(
+            icon: Icons.tune_rounded,
+            size: 46,
+            background: circleBg,
+            onTap: () => _openEqualizerScreen(context),
+          ),
+        ],
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Isolated Section Components for Frame Rate and Paint Optimization
+// Isolated section components (keep repaints and rebuilds local)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RecentlyPlayedSection extends ConsumerWidget {
@@ -353,8 +433,8 @@ class _RecentlyPlayedSection extends ConsumerWidget {
       children: [
         const SizedBox(height: 8),
         const StreamSectionHeader(
-          title: 'Recently Played',
-          subtitle: 'Jump back into your history',
+          title: 'Recently played',
+          subtitle: 'Jump back in',
         ),
         SizedBox(
           height: 196,
@@ -395,11 +475,11 @@ class _PopularArtistsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         StreamSectionHeader(
-          title: 'Popular Artists',
-          subtitle: 'Top trending singers & producers',
-          actionLabel: 'See All',
+          title: 'Popular artists',
+          subtitle: 'Trending singers and producers',
+          actionLabel: 'See all',
           onActionTap: () {
             Navigator.of(context).push(
               CupertinoPageRoute(
@@ -439,11 +519,11 @@ class _MovieSoundtracksSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         StreamSectionHeader(
-          title: 'Movie Soundtracks',
-          subtitle: 'Original film albums & blockbuster hits',
-          actionLabel: 'See All',
+          title: 'Movie soundtracks',
+          subtitle: 'Film albums and blockbuster hits',
+          actionLabel: 'See all',
           onActionTap: () {
             Navigator.of(context).push(
               CupertinoPageRoute(
@@ -483,10 +563,10 @@ class _TopChartsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         const StreamSectionHeader(
-          title: 'Top Charts',
-          subtitle: 'Ranked playlists updated daily',
+          title: 'Top charts',
+          subtitle: 'Ranked playlists, updated daily',
         ),
         SizedBox(
           height: 196,
@@ -519,10 +599,10 @@ class _EditorialPlaylistsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         const StreamSectionHeader(
-          title: 'Editorial Picks',
-          subtitle: 'Handpicked mixes & collections',
+          title: 'Editorial picks',
+          subtitle: 'Handpicked mixes and collections',
         ),
         SizedBox(
           height: 196,

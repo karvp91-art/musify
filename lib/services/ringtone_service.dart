@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:musify/services/download_manager.dart';
 
 enum RingtoneType {
   ringtone(1, 'Phone Ringtone'),
@@ -108,15 +108,22 @@ class RingtoneService {
     }
   }
 
-  /// Prepares an export output path inside device storage / application cache.
+  /// Prepares an export output path inside public device storage (/storage/emulated/0/Music/Musify).
   static Future<String> getSuggestedOutputPath(String title, {String extension = 'mp3'}) async {
     final cleanTitle = title.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
-    final dir = await getApplicationDocumentsDirectory();
-    final ringtoneDir = Directory('${dir.path}/Ringtones');
-    if (!await ringtoneDir.exists()) {
-      await ringtoneDir.create(recursive: true);
-    }
+    final targetDir = await AudioDownloadManager.getMusifyDownloadsDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    return '${ringtoneDir.path}/${cleanTitle}_ringtone_$timestamp.$extension';
+    return '${targetDir.path}/${cleanTitle}_clip_$timestamp.$extension';
+  }
+
+  /// Explicitly requests Android's MediaScanner to index an audio file.
+  static Future<bool> scanFile(String filePath) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final res = await _channel.invokeMethod<bool>('scanFile', {'filePath': filePath});
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 }

@@ -39,6 +39,9 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   final _trackPlayedController = StreamController<Track>.broadcast();
   Stream<Track> get trackPlayedStream => _trackPlayedController.stream;
 
+  final _trackDurationDiscoveredController = StreamController<({String trackId, int durationMs})>.broadcast();
+  Stream<({String trackId, int durationMs})> get trackDurationDiscoveredStream => _trackDurationDiscoveredController.stream;
+
   late AppRepeatMode _repeatMode;
   late bool _isShuffle;
 
@@ -248,8 +251,11 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (!identical(player, _activePlayer)) return;
       if (duration == null || duration <= Duration.zero) return;
       final current = mediaItem.value;
-      if (current != null && current.duration != duration) {
-        mediaItem.add(current.copyWith(duration: duration));
+      if (current != null) {
+        if (current.duration != duration) {
+          mediaItem.add(current.copyWith(duration: duration));
+        }
+        _trackDurationDiscoveredController.add((trackId: current.id, durationMs: duration.inMilliseconds));
       }
     }));
   }

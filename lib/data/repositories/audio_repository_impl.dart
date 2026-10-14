@@ -308,6 +308,15 @@ class AudioRepositoryImpl implements AudioRepository {
   }
 
   @override
+  Future<void> updateTrackDuration(String trackId, int durationMs) async {
+    await (_db.update(_db.localTracks)..where((tbl) => tbl.id.equals(trackId))).write(
+      LocalTracksCompanion(
+        durationMs: Value(durationMs),
+      ),
+    );
+  }
+
+  @override
   Future<List<Track>> getLikedTracks() async {
     final query = _db.select(_db.localTracks)
       ..where((tbl) => tbl.isLiked.equals(true))

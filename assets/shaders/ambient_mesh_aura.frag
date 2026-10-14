@@ -84,11 +84,11 @@ void main() {
     float verticalMask = smoothstep(0.92, 0.22, uv.y);
     float fieldIntensity = clamp((m1 * 1.1 + m2 * 1.0 + m3 * 0.7) * verticalMask * uIntensity, 0.0, 1.0);
 
-    vec3 finalRgb = mix(uColorBase.rgb, fluidColor, fieldIntensity * 0.70);
+    vec3 finalRgb = mix(uColorBase.rgb, fluidColor, fieldIntensity * 0.85);
 
-    // Subtle atmospheric top glow
-    float topGlow = exp(-uv.y * 3.0) * 0.14 * uIntensity;
-    finalRgb += uColor1.rgb * topGlow;
+    // Subtle atmospheric top glow blended into dominant color without additive bleaching
+    float topGlow = exp(-uv.y * 3.2) * 0.22 * uIntensity;
+    finalRgb = mix(finalRgb, uColor1.rgb, clamp(topGlow, 0.0, 0.45));
 
     fragColor = vec4(clamp(finalRgb, 0.0, 1.0), 1.0);
 }

@@ -91,6 +91,8 @@ class AudioMetadataReader {
     String? album;
     Uint8List? artworkBytes;
 
+    int? durationMs;
+
     int offset = 0;
     while (offset + 10 <= data.length) {
       // If frame ID starts with 0, padding reached
@@ -126,6 +128,9 @@ class AudioMetadataReader {
         artist = _decodeFrameText(framePayload);
       } else if (frameId == 'TALB') {
         album = _decodeFrameText(framePayload);
+      } else if (frameId == 'TLEN') {
+        final lenStr = _decodeFrameText(framePayload);
+        durationMs = int.tryParse(lenStr);
       } else if (frameId == 'APIC' || frameId == 'PIC') {
         artworkBytes = _extractApicImage(framePayload);
       }
@@ -135,8 +140,35 @@ class AudioMetadataReader {
       title: title?.isNotEmpty == true ? title : null,
       artist: artist?.isNotEmpty == true ? artist : null,
       album: album?.isNotEmpty == true ? album : null,
+      durationMs: durationMs,
       artworkBytes: artworkBytes,
     );
+  }
+
+  /// Fast check of the first MPEG audio frame sync to read the true encoded bitrate (kbps)
+  static Future<int?> readMp3Bitrate(File file) async {
+    try {
+      final raf = await file.open(mode: FileMode.read);
+      try {
+        final length = await raf.length();
+        if (length < 128) return null;
+        final bytes = await raf.read(8192);
+        for (int i = 0; i + 3 < bytes.length; i++) {
+          if (bytes[i] == 0xFF && (bytes[i + 1] & 0xE0) == 0xE0) {
+            final version = (bytes[i + 1] >> 3) & 0x03;
+            final layer = (bytes[i + 1] >> 1) & 0x03;
+            final bitrateIdx = (bytes[i + 2] >> 4) & 0x0F;
+            if (bitrateIdx > 0 && bitrateIdx < 15 && version == 3 && layer == 1) {
+              const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+              return bitrates[bitrateIdx];
+            }
+          }
+        }
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Extracts raw JPEG / PNG binary image from APIC frame payload

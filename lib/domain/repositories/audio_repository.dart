@@ -10,6 +10,7 @@ abstract class AudioRepository {
   Future<bool> deleteTrack(Track track);
   Future<void> updateTrackMetadata(String trackId, {String? title, String? artistName, String? albumTitle});
   Future<void> updateTrackArtwork(String trackId, String artworkUrl);
+  Future<void> updateTrackDuration(String trackId, int durationMs);
   Future<List<Track>> getLikedTracks();
   Future<void> toggleLike(Track track);
   Future<bool> isTrackLiked(String trackId);

@@ -75,7 +75,13 @@ final audioRepositoryProvider = Provider<AudioRepository>((ref) {
   final sub = handler.trackPlayedStream.listen((track) {
     repo.recordTrackPlay(track);
   });
-  ref.onDispose(() => sub.cancel());
+  final durationSub = handler.trackDurationDiscoveredStream.listen((data) {
+    repo.updateTrackDuration(data.trackId, data.durationMs);
+  });
+  ref.onDispose(() {
+    sub.cancel();
+    durationSub.cancel();
+  });
   return repo;
 });
 
