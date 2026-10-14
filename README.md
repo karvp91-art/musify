@@ -77,7 +77,7 @@
 
 | 📱 Target | ⚡ Current Version | 📦 Package | ⬇️ 1-Click Direct Download |
 | :---: | :---: | :---: | :---: |
-| **Android 8.0+** <br/> *(Phone & Tablet)* | **v1.0.0** <br/> *(Latest Stable)* | `Musify.apk` <br/> *(Universal Build)* | <a href="https://github.com/karvp91-art/musify/releases/latest/download/Musify.apk"><img src="https://img.shields.io/badge/DIRECT_DOWNLOAD-APK-84CC16?style=for-the-badge&logo=android&logoColor=000000" height="36" alt="Direct Download APK"/></a> |
+| **Android 8.0+** <br/> *(Phone & Tablet)* | **v1.0.1** <br/> *(Latest Stable)* | `Musify.apk` <br/> *(Universal Build)* | <a href="https://github.com/karvp91-art/musify/releases/latest/download/Musify.apk"><img src="https://img.shields.io/badge/DIRECT_DOWNLOAD-APK-84CC16?style=for-the-badge&logo=android&logoColor=000000" height="36" alt="Direct Download APK"/></a> |
 
 <br/>
 
