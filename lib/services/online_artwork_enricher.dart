@@ -217,9 +217,9 @@ class OnlineArtworkEnricher {
           candDurationMs: durationMs,
         );
 
-        final isDurationMatch = track.durationMs != null &&
+        final isDurationMatch = track.durationMs > 0 &&
             durationMs != null &&
-            (track.durationMs! - durationMs).abs() <= 6000;
+            (track.durationMs - durationMs).abs() <= 6000;
 
         candidates.add(
           ArtworkCandidate(
@@ -283,9 +283,9 @@ class OnlineArtworkEnricher {
           candDurationMs: durationMs,
         );
 
-        final isDurationMatch = track.durationMs != null &&
+        final isDurationMatch = track.durationMs > 0 &&
             durationMs != null &&
-            (track.durationMs! - durationMs).abs() <= 6000;
+            (track.durationMs - durationMs).abs() <= 6000;
 
         candidates.add(
           ArtworkCandidate(
@@ -357,9 +357,9 @@ class OnlineArtworkEnricher {
           candDurationMs: durationMs,
         );
 
-        final isDurationMatch = track.durationMs != null &&
+        final isDurationMatch = track.durationMs > 0 &&
             durationMs != null &&
-            (track.durationMs! - durationMs).abs() <= 6000;
+            (track.durationMs - durationMs).abs() <= 6000;
 
         candidates.add(
           ArtworkCandidate(

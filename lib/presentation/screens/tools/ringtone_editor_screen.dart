@@ -355,11 +355,13 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
           );
         } catch (_) {}
 
-        showSnackBar(
-          context,
-          'Saved to Music/Musify: $fileName',
-          type: AppSnackBarType.success,
-        );
+        if (mounted) {
+          showSnackBar(
+            context,
+            'Saved to Music/Musify: $fileName',
+            type: AppSnackBarType.success,
+          );
+        }
       } else if (mounted) {
         showSnackBar(context, 'Failed to save trimmed audio file', type: AppSnackBarType.error);
       }
