@@ -131,6 +131,13 @@ class AudioNameSanitizer {
     if (lower.isEmpty ||
         lower == 'unknown' ||
         lower == 'unknown artist' ||
+        lower == '<unknown>' ||
+        lower == '<unknown artist>' ||
+        lower == 'various artists' ||
+        lower == 'various' ||
+        lower == 'artist' ||
+        lower == 'music' ||
+        lower == 'untitled' ||
         lower == 'soundtrack' ||
         lower == 'audio' ||
         lower == 'track' ||
@@ -294,6 +301,7 @@ class AudioNameSanitizer {
     required String title,
     required String artist,
     String? album,
+    int depth = 0,
   }) {
     var cleanT = cleanText(title);
     var cleanA = cleanText(artist);
@@ -307,8 +315,8 @@ class AudioNameSanitizer {
     }
 
     // 1. If title contains a separator and artist is empty, parse from title
-    if (cleanT.isNotEmpty && hasSeparator(cleanT) && cleanA.isEmpty) {
-      final parsed = parseFileName(cleanT, fallbackAlbum: cleanAlb);
+    if (cleanT.isNotEmpty && hasSeparator(cleanT) && cleanA.isEmpty && depth < 2) {
+      final parsed = parseFileName(cleanT, fallbackAlbum: cleanAlb, depth: depth + 1);
       cleanT = parsed.title;
       cleanA = parsed.artist;
       if (parsed.album != null && (cleanAlb == null || cleanAlb.isEmpty || cleanAlb == 'Local Audio')) {
@@ -392,6 +400,7 @@ class AudioNameSanitizer {
     String? folderName,
     String? fallbackArtist,
     String? fallbackAlbum,
+    int depth = 0,
   }) {
     var baseName = cleanText(rawFileName);
 
@@ -494,7 +503,16 @@ class AudioNameSanitizer {
       }
     }
 
-    return disambiguateTitleAndArtist(
+    if (depth < 2) {
+      return disambiguateTitleAndArtist(
+        title: title,
+        artist: artist,
+        album: album,
+        depth: depth + 1,
+      );
+    }
+
+    return SanitizedTrackInfo(
       title: title,
       artist: artist,
       album: album,

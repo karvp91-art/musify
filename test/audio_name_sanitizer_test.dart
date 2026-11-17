@@ -69,6 +69,12 @@ void main() {
       expect(AudioNameSanitizer.isJunkArtist('PagalWorld.com'), isTrue);
       expect(AudioNameSanitizer.isJunkArtist('www.Songs.pk'), isTrue);
       expect(AudioNameSanitizer.isJunkArtist('Unknown Artist'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('<unknown>'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('<unknown artist>'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('various artists'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('various'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('music'), isTrue);
+      expect(AudioNameSanitizer.isJunkArtist('untitled'), isTrue);
       expect(AudioNameSanitizer.isJunkArtist('Atif Aslam'), isFalse);
     });
 

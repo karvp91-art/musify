@@ -1154,6 +1154,25 @@ class MusifyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _emitState();
   }
 
+  void updateTrackMetadata(Track updatedTrack) {
+    bool playlistUpdated = false;
+    for (int i = 0; i < _playlist.length; i++) {
+      if (_playlist[i].id == updatedTrack.id) {
+        _playlist[i] = updatedTrack;
+        playlistUpdated = true;
+      }
+    }
+    if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
+      if (_playlist[_currentIndex].id == updatedTrack.id) {
+        mediaItem.add(_trackToMediaItem(updatedTrack));
+        _emitState();
+      }
+    }
+    if (playlistUpdated) {
+      queue.add(_playlist.map(_trackToMediaItem).toList());
+    }
+  }
+
   Future<void> dispose() async {
     _activeGen++;
     _deckGen++;

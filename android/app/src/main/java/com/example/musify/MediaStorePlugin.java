@@ -92,10 +92,10 @@ public class MediaStorePlugin implements FlutterPlugin, MethodChannel.MethodCall
                 if (title != null && !title.isEmpty()) {
                     metadata.put("title", title);
                 }
-                if (artist != null && !artist.isEmpty() && !"<unknown>".equals(artist)) {
+                if (artist != null && !artist.isEmpty() && !"<unknown>".equalsIgnoreCase(artist)) {
                     metadata.put("artist", artist);
                 }
-                if (album != null && !album.isEmpty() && !"<unknown>".equals(album)) {
+                if (album != null && !album.isEmpty() && !"<unknown>".equalsIgnoreCase(album)) {
                     metadata.put("album", album);
                 }
                 if (duration > 0) {
@@ -163,9 +163,21 @@ public class MediaStorePlugin implements FlutterPlugin, MethodChannel.MethodCall
 
                     Map<String, Object> map = new HashMap<>();
                     map.put("filePath", data);
-                    map.put("title", getStringColumn(cursor, MediaStore.Audio.Media.TITLE));
-                    map.put("artist", getStringColumn(cursor, MediaStore.Audio.Media.ARTIST));
-                    map.put("album", getStringColumn(cursor, MediaStore.Audio.Media.ALBUM));
+
+                    String title = getStringColumn(cursor, MediaStore.Audio.Media.TITLE);
+                    String artist = getStringColumn(cursor, MediaStore.Audio.Media.ARTIST);
+                    String album = getStringColumn(cursor, MediaStore.Audio.Media.ALBUM);
+
+                    if (title != null && !title.isEmpty()) {
+                        map.put("title", title);
+                    }
+                    if (artist != null && !artist.isEmpty() && !"<unknown>".equalsIgnoreCase(artist)) {
+                        map.put("artist", artist);
+                    }
+                    if (album != null && !album.isEmpty() && !"<unknown>".equalsIgnoreCase(album)) {
+                        map.put("album", album);
+                    }
+
                     map.put("durationMs", getLongColumn(cursor, MediaStore.Audio.Media.DURATION));
                     map.put("fileSizeBytes", getLongColumn(cursor, MediaStore.Audio.Media.SIZE));
                     map.put("dateModified", getLongColumn(cursor, MediaStore.Audio.Media.DATE_MODIFIED));

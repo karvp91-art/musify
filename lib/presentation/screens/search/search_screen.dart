@@ -142,8 +142,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
     try {
       final nextPage = _searchPage + 1;
-      final saavn = ref.read(saavnAdapterProvider);
-      final newTracks = await saavn.search(query, page: nextPage, limit: 25);
+      List<Track> newTracks = [];
+
+      if (_selectedFilter == 'YouTube') {
+        final youtube = ref.read(youtubeAdapterProvider);
+        newTracks = await youtube.search(query, limit: 20);
+        final existingYtIds = _searchResults
+            .where((t) => t.source == AudioSourceType.youtube)
+            .map((t) => t.id)
+            .toSet();
+        newTracks = newTracks.where((t) => !existingYtIds.contains(t.id)).toList();
+      } else {
+        final saavn = ref.read(saavnAdapterProvider);
+        newTracks = await saavn.search(query, page: nextPage, limit: 25);
+      }
 
       if (!mounted) return;
 
@@ -200,6 +212,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     super.dispose();
   }
 
+  void _cacheResults(String cacheKey, SearchMultiResult multi, List<Track> songs) {
+    if (_searchCache.length >= 60) {
+      _searchCache.remove(_searchCache.keys.first);
+    }
+    _searchCache[cacheKey] = (
+      multi: multi,
+      songs: songs,
+      timestamp: DateTime.now(),
+    );
+  }
+
   void _performSearch(String query, {bool addToHistory = true}) async {
     _debounceTimer?.cancel();
     _historyTimer?.cancel();
@@ -220,7 +243,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       ref.read(searchHistoryProvider.notifier).addQuery(trimmed);
     }
 
-    final cacheKey = trimmed.toLowerCase();
+    final isOffline = ref.read(isOfflineProvider);
+    final cacheKey = '$trimmed|${isOffline ? "offline" : "online"}';
     final cached = _searchCache[cacheKey];
 
     // If cached in memory, show immediately with zero UI delay
@@ -242,7 +266,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final token = ++_searchToken;
 
     // Fast-path: When offline, search device's downloaded & local audio library directly
-    final isOffline = ref.read(isOfflineProvider);
     if (isOffline) {
       try {
         final localTracks = await ref.read(audioRepositoryProvider).searchTracks(trimmed);
@@ -252,6 +275,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           _searchResults = localTracks;
           _isSearching = false;
         });
+        _cacheResults(cacheKey, _multiResult, _searchResults);
         return;
       } catch (_) {
         if (token == _searchToken && mounted) {
@@ -261,45 +285,61 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       }
     }
 
+    // Online Search:
+    // 1. Instantly query local tracks (<5ms)
+    // 2. Query JioSaavn multi-search (<250ms)
+    // 3. Immediately display combined fast results so UI has zero perceptible delay
+    // 4. Concurrently stream YouTube results in background without freezing the screen
     try {
       final saavn = ref.read(saavnAdapterProvider);
-      final router = ref.read(sourceRouterProvider);
+      final youtube = ref.read(youtubeAdapterProvider);
+      final repo = ref.read(audioRepositoryProvider);
 
-      final multiFuture = saavn.searchMulti(trimmed).catchError((_) => const SearchMultiResult());
-      final routerFuture = router.searchAll(trimmed, includeLocal: false).catchError((_) => <Track>[]);
+      final localFuture = repo.searchTracks(trimmed).catchError((_) => <Track>[]);
+      final saavnFuture = saavn.searchMulti(trimmed).catchError((_) => const SearchMultiResult());
 
-      final results = await Future.wait([multiFuture, routerFuture]);
-      final multi = results[0] as SearchMultiResult;
-      final onlineTracks = results[1] as List<Track>;
-
+      final fastResults = await Future.wait([localFuture, saavnFuture]);
       if (token != _searchToken || !mounted) return;
 
-      // Smart deduplication across sources (prioritizing full online search tracks with complete 320k streams)
-      final List<Track> combinedSongs = [...onlineTracks];
+      final localTracks = fastResults[0] as List<Track>;
+      final multi = fastResults[1] as SearchMultiResult;
+
+      // Deduplicate local tracks and JioSaavn multi songs
+      final List<Track> immediateTracks = [...localTracks];
+      final seenSignatures = localTracks.map((t) =>
+          '${SaavnSourceAdapter.normalizeSongTitle(t.title)}|${t.artistName.toLowerCase().trim()}').toSet();
+
       for (final t in multi.songs) {
-        final isDupe = combinedSongs.any((e) =>
-            e.id == t.id ||
-            (SaavnSourceAdapter.normalizeSongTitle(e.title) == SaavnSourceAdapter.normalizeSongTitle(t.title) &&
-                e.artistName.toLowerCase().trim() == t.artistName.toLowerCase().trim()));
-        if (!isDupe) {
-          combinedSongs.add(t);
+        final sig = '${SaavnSourceAdapter.normalizeSongTitle(t.title)}|${t.artistName.toLowerCase().trim()}';
+        if (seenSignatures.add(sig)) {
+          immediateTracks.add(t);
         }
       }
 
-      if (_searchCache.length >= 60) {
-        _searchCache.remove(_searchCache.keys.first);
-      }
-      _searchCache[cacheKey] = (
-        multi: multi,
-        songs: combinedSongs,
-        timestamp: DateTime.now(),
-      );
-
       setState(() {
         _multiResult = multi;
-        _searchResults = combinedSongs;
+        _searchResults = immediateTracks;
         _isSearching = false;
       });
+      _cacheResults(cacheKey, multi, immediateTracks);
+
+      // Background stream YouTube tracks without blocking user interaction
+      youtube.search(trimmed, limit: 20).then((ytTracks) {
+        if (token != _searchToken || !mounted) return;
+        if (ytTracks.isNotEmpty) {
+          final List<Track> updated = [..._searchResults];
+          final existingIds = updated.map((t) => t.id).toSet();
+          for (final ytTrack in ytTracks) {
+            if (existingIds.add(ytTrack.id)) {
+              updated.add(ytTrack);
+            }
+          }
+          setState(() {
+            _searchResults = updated;
+          });
+          _cacheResults(cacheKey, _multiResult, updated);
+        }
+      }).catchError((_) {});
     } catch (_) {
       if (token == _searchToken && mounted) {
         setState(() => _isSearching = false);
@@ -333,7 +373,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       return;
     }
 
-    final cacheKey = trimmed.toLowerCase();
+    final isOffline = ref.read(isOfflineProvider);
+    final cacheKey = '$trimmed|${isOffline ? "offline" : "online"}';
     final cached = _searchCache[cacheKey];
     if (cached != null) {
       setState(() {
@@ -350,26 +391,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       _performSearch(trimmed, addToHistory: false);
     });
-
-    if (trimmed.length >= 3) {
-      _historyTimer = Timer(const Duration(milliseconds: 1500), () {
-        ref.read(searchHistoryProvider.notifier).addQuery(trimmed);
-      });
-    }
   }
 
   List<Track> _getFilteredResults() {
-    final onlineResults = _searchResults.where((t) => t.source != AudioSourceType.local).toList();
-    if (_selectedFilter == 'All' || _selectedFilter == 'Songs') {
-      return onlineResults;
+    if (_selectedFilter == 'All') {
+      return _searchResults;
+    }
+    if (_selectedFilter == 'Songs') {
+      // Return high-quality tracks (Local, Downloaded, and JioSaavn)
+      return _searchResults.where((t) => t.source != AudioSourceType.youtube).toList();
     }
     if (_selectedFilter == 'YouTube') {
-      return onlineResults.where((t) => t.source == AudioSourceType.youtube).toList();
+      return _searchResults.where((t) => t.source == AudioSourceType.youtube).toList();
     }
-    if (_selectedFilter == 'Artists' || _selectedFilter == 'Albums' || _selectedFilter == 'Playlists') {
-      return onlineResults;
-    }
-    return onlineResults;
+    return _searchResults;
   }
 
   void _handleBatchPlayNext(List<Track> selectedTracks) {
@@ -933,23 +968,33 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         isDark ? Colors.white.withValues(alpha: 0.88) : const Color(0xFF1E2028);
 
     return Padding(
+      key: const ValueKey('search_bar_padding_box'),
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
       child: Row(
         children: [
-          if (canPop && isExpanded) ...[
-            _GlassCircleButton(
-              icon: Icons.chevron_left_rounded,
-              size: 46,
-              background: circleBg,
-              iconSize: 26,
-              onTap: () {
-                HapticFeedback.selectionClick();
-                Navigator.of(context).pop();
-              },
-            ),
-            const SizedBox(width: 8),
-          ],
+          AnimatedSize(
+            key: const ValueKey('search_back_button_anim'),
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOutCubic,
+            child: (canPop && isExpanded)
+                ? Padding(
+                    key: const ValueKey('search_back_button_padding'),
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _GlassCircleButton(
+                      icon: Icons.chevron_left_rounded,
+                      size: 46,
+                      background: circleBg,
+                      iconSize: 26,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('search_back_button_empty')),
+          ),
           Expanded(
+            key: const ValueKey('search_input_expanded'),
             child: Container(
               height: 48,
               decoration: BoxDecoration(
@@ -968,6 +1013,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   ),
                   Expanded(
                     child: TextField(
+                      key: const ValueKey('search_text_field_active'),
                       focusNode: _searchFocusNode,
                       controller: _searchController,
                       textInputAction: TextInputAction.search,
@@ -1007,6 +1053,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                           _historyTimer?.cancel();
                           _searchController.clear();
                           _onSearchChanged('');
+                          _searchFocusNode.requestFocus();
                         },
                         child: Padding(
                           padding: const EdgeInsets.all(12),
@@ -1431,9 +1478,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   if (_isSelectionMode)
                     _buildSelectionHeader(theme, visibleTracks)
                   else ...[
-                    if (!isSearchingQuery)
-                      _buildTopHeader(theme, isDark),
-                    _buildSearchBar(theme, isDark),
+                    AnimatedSize(
+                      key: const ValueKey('search_header_anim_size'),
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeInOutCubic,
+                      child: !isSearchingQuery
+                          ? KeyedSubtree(
+                              key: const ValueKey('search_top_header_box'),
+                              child: _buildTopHeader(theme, isDark),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('search_header_empty')),
+                    ),
+                    KeyedSubtree(
+                      key: const ValueKey('search_bar_stable_box'),
+                      child: _buildSearchBar(theme, isDark),
+                    ),
                   ],
 
                   // Filter Chips (when active search query exists and not in selection mode)
@@ -1582,7 +1641,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     }
 
     final filteredResults = _getFilteredResults();
-    if (filteredResults.isEmpty && _multiResult.isEmpty) {
+    if (filteredResults.isEmpty) {
       if (isActivelySearching) {
         return _buildSearchLoadingState(theme, isDark);
       }
@@ -1594,7 +1653,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           onRetry: () => _performSearch(_searchController.text.trim()),
         );
       }
-      return _buildEmptyState(theme, 'No results found for "${_searchController.text.trim()}"');
+      return _buildEmptyState(
+        theme,
+        _selectedFilter == 'YouTube'
+            ? 'No YouTube results found for "${_searchController.text.trim()}"'
+            : 'No songs found for "${_searchController.text.trim()}"',
+      );
     }
 
     return _buildTracksListView(filteredResults, theme, isDark, bottomPadding);

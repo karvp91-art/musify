@@ -24,6 +24,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -142,6 +143,40 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
         }
     }
 
+    private static final int[][] MP3_BITRATES_V1 = {
+        {0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448}, // Layer I
+        {0, 32, 48, 56, 64,  80,  96, 112, 128, 160, 192, 224, 256, 320, 384}, // Layer II
+        {0, 32, 40, 48, 56,  64,  80,  96, 112, 128, 160, 192, 224, 256, 320}, // Layer III
+    };
+    private static final int[][] MP3_BITRATES_V2 = {
+        {0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256},    // Layer I
+        {0, 8,  16, 24, 32, 40, 48,  56,  64,  80,  96, 112, 128, 144, 160},    // Layer II
+        {0, 8,  16, 24, 32, 40, 48,  56,  64,  80,  96, 112, 128, 144, 160},    // Layer III
+    };
+    private static final int[][] MP3_SAMPLE_RATES = {
+        {44100, 48000, 32000}, // MPEG1 (version=3)
+        {22050, 24000, 16000}, // MPEG2 (version=2)
+        {11025, 12000,  8000}, // MPEG2.5 (version=0)
+    };
+
+    private static int getMp3Bitrate(int version, int layer, int index) {
+        if (index <= 0 || index >= 15) return 0;
+        int layerIdx = 3 - layer; // layer: 3=I, 2=II, 1=III -> 0=I, 1=II, 2=III
+        if (layerIdx < 0 || layerIdx > 2) return 0;
+        if (version == 3) {
+            return MP3_BITRATES_V1[layerIdx][index];
+        } else {
+            return MP3_BITRATES_V2[layerIdx][index];
+        }
+    }
+
+    private static int getMp3SampleRate(int version, int index) {
+        if (index < 0 || index > 2) return 0;
+        int verIdx = (version == 3) ? 0 : (version == 2) ? 1 : (version == 0) ? 2 : -1;
+        if (verIdx < 0) return 0;
+        return MP3_SAMPLE_RATES[verIdx][index];
+    }
+
     private void handleExtractWaveform(MethodCall call, MethodChannel.Result result) {
         String inputPath = call.argument("inputPath");
         Integer sampleCountArg = call.argument("samples");
@@ -154,6 +189,7 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
 
         new Thread(() -> {
             MediaExtractor extractor = null;
+            MediaCodec codec = null;
             try {
                 File file = new File(inputPath);
                 if (!file.exists()) {
@@ -165,12 +201,14 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
                 extractor.setDataSource(file.getAbsolutePath());
 
                 int audioTrackIndex = -1;
+                MediaFormat format = null;
                 long durationUs = 0;
                 for (int i = 0; i < extractor.getTrackCount(); i++) {
                     MediaFormat f = extractor.getTrackFormat(i);
                     String mime = f.getString(MediaFormat.KEY_MIME);
                     if (mime != null && mime.startsWith("audio/")) {
                         audioTrackIndex = i;
+                        format = f;
                         if (f.containsKey(MediaFormat.KEY_DURATION)) {
                             durationUs = f.getLong(MediaFormat.KEY_DURATION);
                         }
@@ -178,34 +216,62 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
                     }
                 }
 
-                if (audioTrackIndex < 0 || durationUs <= 0) {
+                if (audioTrackIndex < 0 || durationUs <= 0 || format == null) {
                     runOnMain(() -> result.success(null));
                     return;
                 }
 
                 extractor.selectTrack(audioTrackIndex);
+                String mime = format.getString(MediaFormat.KEY_MIME);
+
+                codec = MediaCodec.createDecoderByType(mime);
+                codec.configure(format, null, null, 0);
+                codec.start();
 
                 long intervalUs = durationUs / targetSamples;
                 double[] amplitudes = new double[targetSamples];
-                ByteBuffer buffer = ByteBuffer.allocateDirect(16384);
-
+                MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
                 double maxPeak = 0.0;
+
                 for (int i = 0; i < targetSamples; i++) {
                     long targetTimeUs = i * intervalUs;
                     extractor.seekTo(targetTimeUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-                    int sampleSize = extractor.readSampleData(buffer, 0);
+                    codec.flush();
 
-                    double amp = 0.0;
-                    if (sampleSize > 0) {
-                        buffer.rewind();
-                        int count = Math.min(sampleSize / 2, 256);
-                        long sumSq = 0;
-                        for (int s = 0; s < count; s++) {
-                            short val = buffer.getShort();
-                            sumSq += (long) val * val;
+                    int inIndex = codec.dequeueInputBuffer(10000);
+                    if (inIndex >= 0) {
+                        ByteBuffer inputBuffer = codec.getInputBuffer(inIndex);
+                        if (inputBuffer != null) {
+                            int sampleSize = extractor.readSampleData(inputBuffer, 0);
+                            if (sampleSize > 0) {
+                                long sampleTime = extractor.getSampleTime();
+                                codec.queueInputBuffer(inIndex, 0, sampleSize, sampleTime, 0);
+                            } else {
+                                codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            }
                         }
-                        amp = Math.sqrt((double) sumSq / Math.max(1, count));
                     }
+
+                    int outIndex = codec.dequeueOutputBuffer(bufferInfo, 10000);
+                    double amp = 0.0;
+                    if (outIndex >= 0) {
+                        ByteBuffer outputBuffer = codec.getOutputBuffer(outIndex);
+                        if (outputBuffer != null && bufferInfo.size > 0) {
+                            outputBuffer.position(bufferInfo.offset);
+                            outputBuffer.limit(bufferInfo.offset + bufferInfo.size);
+
+                            int shortCount = bufferInfo.size / 2;
+                            int count = Math.min(shortCount, 512);
+                            long sumSq = 0;
+                            for (int s = 0; s < count; s++) {
+                                short val = outputBuffer.getShort();
+                                sumSq += (long) val * val;
+                            }
+                            amp = Math.sqrt((double) sumSq / Math.max(1, count));
+                        }
+                        codec.releaseOutputBuffer(outIndex, false);
+                    }
+
                     amplitudes[i] = amp;
                     if (amp > maxPeak) {
                         maxPeak = amp;
@@ -223,6 +289,10 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
             } catch (Exception e) {
                 runOnMain(() -> result.success(null));
             } finally {
+                if (codec != null) {
+                    try { codec.stop(); } catch (Exception ignored) {}
+                    try { codec.release(); } catch (Exception ignored) {}
+                }
                 if (extractor != null) {
                     try { extractor.release(); } catch (Exception ignored) {}
                 }
@@ -245,8 +315,6 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
 
         long startUs = startMsNum.longValue() * 1000L;
         long endUs = endMsNum.longValue() * 1000L;
-        long fadeInMs = fadeInMsNum != null ? fadeInMsNum.longValue() : 0L;
-        long fadeOutMs = fadeOutMsNum != null ? fadeOutMsNum.longValue() : 0L;
 
         new Thread(() -> {
             try {
@@ -264,27 +332,35 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
                 // If MP3, attempt clean frame-based slicing; fallback to MediaExtractor+MediaMuxer
                 boolean isMp3 = inputPath.toLowerCase().endsWith(".mp3") || outputPath.toLowerCase().endsWith(".mp3");
                 boolean success = false;
+                String finalOutputPath = outputPath;
 
                 if (isMp3) {
                     success = trimMp3ByTime(inputFile, outFile, startMsNum.longValue(), endMsNum.longValue());
                 }
 
                 if (!success) {
-                    success = trimWithMediaMuxer(inputPath, outputPath, startUs, endUs);
+                    // For non-MP3 files, or if MP3 frame scan failed:
+                    // If output extension is .mp3 but we must use MediaMuxer (which produces MPEG_4),
+                    // adjust output file extension to .m4a so the container matches the extension.
+                    if (finalOutputPath.toLowerCase().endsWith(".mp3")) {
+                        finalOutputPath = finalOutputPath.substring(0, finalOutputPath.length() - 4) + ".m4a";
+                    }
+                    success = trimWithMediaMuxer(inputPath, finalOutputPath, startUs, endUs);
                 }
 
                 final boolean finalSuccess = success;
+                final String resolvedOutputPath = finalOutputPath;
                 if (finalSuccess && context != null) {
                     try {
                         Context appCtx = context.getApplicationContext() != null ? context.getApplicationContext() : context;
-                        MediaScannerConnection.scanFile(appCtx, new String[]{outputPath}, null, null);
+                        MediaScannerConnection.scanFile(appCtx, new String[]{resolvedOutputPath}, null, null);
                     } catch (Exception ignored) {}
                 }
                 runOnMain(() -> {
                     if (finalSuccess) {
                         Map<String, Object> res = new HashMap<>();
                         res.put("success", true);
-                        res.put("outputPath", outputPath);
+                        res.put("outputPath", resolvedOutputPath);
                         result.success(res);
                     } else {
                         result.error("TRIM_FAILED", "Failed to trim audio", null);
@@ -370,56 +446,155 @@ public class RingtonePlugin implements FlutterPlugin, ActivityAware, MethodChann
     }
 
     private boolean trimMp3ByTime(File inputFile, File outputFile, long startMs, long endMs) {
-        try (FileInputStream in = new FileInputStream(inputFile);
-             FileOutputStream out = new FileOutputStream(outputFile)) {
-
+        RandomAccessFile raf = null;
+        FileOutputStream fos = null;
+        try {
             long fileLength = inputFile.length();
-            if (fileLength == 0) return false;
+            if (fileLength < 128) return false;
 
-            // Determine total duration via MediaExtractor
-            MediaExtractor extractor = new MediaExtractor();
-            extractor.setDataSource(inputFile.getAbsolutePath());
-            long durationUs = 0;
-            for (int i = 0; i < extractor.getTrackCount(); i++) {
-                MediaFormat f = extractor.getTrackFormat(i);
-                String mime = f.getString(MediaFormat.KEY_MIME);
-                if (mime != null && mime.startsWith("audio/")) {
-                    if (f.containsKey(MediaFormat.KEY_DURATION)) {
-                        durationUs = f.getLong(MediaFormat.KEY_DURATION);
-                        break;
+            raf = new RandomAccessFile(inputFile, "r");
+            fos = new FileOutputStream(outputFile);
+
+            // 1. Detect and preserve ID3v2 header
+            long audioStartOffset = 0;
+            byte[] id3Header = new byte[10];
+            if (raf.read(id3Header) == 10) {
+                if (id3Header[0] == 'I' && id3Header[1] == 'D' && id3Header[2] == '3') {
+                    int tagSize = ((id3Header[6] & 0x7F) << 21)
+                            | ((id3Header[7] & 0x7F) << 14)
+                            | ((id3Header[8] & 0x7F) << 7)
+                            | (id3Header[9] & 0x7F);
+                    audioStartOffset = 10L + tagSize;
+                    if (audioStartOffset > fileLength) {
+                        audioStartOffset = 0;
+                    } else {
+                        // Write the ID3v2 header and tags to output file
+                        raf.seek(0);
+                        byte[] id3Buffer = new byte[8192];
+                        long id3Remaining = audioStartOffset;
+                        while (id3Remaining > 0) {
+                            int toRead = (int) Math.min(id3Buffer.length, id3Remaining);
+                            int read = raf.read(id3Buffer, 0, toRead);
+                            if (read <= 0) break;
+                            fos.write(id3Buffer, 0, read);
+                            id3Remaining -= read;
+                        }
                     }
                 }
             }
-            extractor.release();
 
-            long totalDurationMs = durationUs > 0 ? durationUs / 1000L : 0;
-            if (totalDurationMs <= 0) return false;
+            // 2. Scan MP3 frames to index [fileOffset, cumulativeMs, frameSize]
+            raf.seek(audioStartOffset);
+            List<long[]> frames = new ArrayList<>(); // each element: [byteOffset, cumulativeMs, frameSize]
+            long pos = audioStartOffset;
+            double cumulativeMs = 0.0;
+            byte[] headerBuf = new byte[4];
 
-            // Calculate byte offsets
-            long startByte = (long) (((double) startMs / (double) totalDurationMs) * fileLength);
-            long endByte = (long) (((double) endMs / (double) totalDurationMs) * fileLength);
+            while (pos + 4 <= fileLength) {
+                raf.seek(pos);
+                if (raf.read(headerBuf) != 4) break;
 
-            startByte = Math.max(0, Math.min(startByte, fileLength));
-            endByte = Math.max(startByte, Math.min(endByte, fileLength));
-            long bytesToRead = endByte - startByte;
+                int b0 = headerBuf[0] & 0xFF;
+                int b1 = headerBuf[1] & 0xFF;
+                int b2 = headerBuf[2] & 0xFF;
+                int b3 = headerBuf[3] & 0xFF;
 
-            // Skip to startByte
-            long skipped = in.skip(startByte);
+                if (b0 == 0xFF && (b1 & 0xE0) == 0xE0) {
+                    int version = (b1 >> 3) & 0x03; // 0=2.5, 2=2, 3=1
+                    int layer = (b1 >> 1) & 0x03;   // 1=III, 2=II, 3=I
+                    int brIdx = (b2 >> 4) & 0x0F;
+                    int srIdx = (b2 >> 2) & 0x03;
+                    int padding = (b2 >> 1) & 0x01;
 
-            byte[] buffer = new byte[8192];
-            long totalWritten = 0;
-            while (totalWritten < bytesToRead) {
-                int toRead = (int) Math.min(buffer.length, bytesToRead - totalWritten);
-                int read = in.read(buffer, 0, toRead);
-                if (read <= 0) break;
-                out.write(buffer, 0, read);
-                totalWritten += read;
+                    if (version == 1 || layer == 0 || brIdx == 0 || brIdx == 15 || srIdx == 3) {
+                        pos++;
+                        continue;
+                    }
+
+                    int bitrate = getMp3Bitrate(version, layer, brIdx);
+                    int sampleRate = getMp3SampleRate(version, srIdx);
+                    if (bitrate <= 0 || sampleRate <= 0) {
+                        pos++;
+                        continue;
+                    }
+
+                    int samplesPerFrame;
+                    int frameSize;
+                    if (layer == 3) { // Layer I
+                        samplesPerFrame = 384;
+                        frameSize = ((12 * bitrate * 1000) / sampleRate + padding) * 4;
+                    } else if (layer == 2) { // Layer II
+                        samplesPerFrame = 1152;
+                        frameSize = (144 * bitrate * 1000) / sampleRate + padding;
+                    } else { // Layer III
+                        samplesPerFrame = (version == 3) ? 1152 : 576;
+                        int multiplier = (version == 3) ? 144 : 72;
+                        frameSize = (multiplier * bitrate * 1000) / sampleRate + padding;
+                    }
+
+                    if (frameSize <= 0 || pos + frameSize > fileLength) {
+                        break;
+                    }
+
+                    double frameDurationMs = ((double) samplesPerFrame * 1000.0) / sampleRate;
+                    frames.add(new long[]{pos, (long) cumulativeMs, frameSize});
+                    cumulativeMs += frameDurationMs;
+                    pos += frameSize;
+                } else {
+                    pos++;
+                }
             }
 
-            out.flush();
-            return totalWritten > 0;
+            if (frames.isEmpty()) {
+                return false;
+            }
+
+            // 3. Find start and end frame indices
+            int startFrame = 0;
+            int endFrame = frames.size() - 1;
+            for (int i = 0; i < frames.size(); i++) {
+                if (frames.get(i)[1] >= startMs) {
+                    startFrame = i;
+                    break;
+                }
+            }
+            for (int i = frames.size() - 1; i >= 0; i--) {
+                if (frames.get(i)[1] <= endMs) {
+                    endFrame = i;
+                    break;
+                }
+            }
+            if (startFrame > endFrame) {
+                endFrame = startFrame;
+            }
+
+            long startByte = frames.get(startFrame)[0];
+            long endByte = frames.get(endFrame)[0] + frames.get(endFrame)[2];
+            long bytesToCopy = endByte - startByte;
+
+            // 4. Stream copy the exact frame slices
+            raf.seek(startByte);
+            byte[] copyBuffer = new byte[8192];
+            long remaining = bytesToCopy;
+            while (remaining > 0) {
+                int toRead = (int) Math.min(copyBuffer.length, remaining);
+                int read = raf.read(copyBuffer, 0, toRead);
+                if (read <= 0) break;
+                fos.write(copyBuffer, 0, read);
+                remaining -= read;
+            }
+
+            fos.flush();
+            return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            if (raf != null) {
+                try { raf.close(); } catch (Exception ignored) {}
+            }
+            if (fos != null) {
+                try { fos.close(); } catch (Exception ignored) {}
+            }
         }
     }
 

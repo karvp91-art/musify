@@ -259,7 +259,13 @@ class LocalFilesScanner {
 
             // FAST CACHE RE-USE: If file was already scanned and size matches, re-use in 0ms!
             final existing = existingTrackMap[normPath];
-            if (existing != null && existing.durationMs > 0 && existing.fileSizeBytes == msFile.fileSizeBytes) {
+            final bool isCacheFresh = existing != null &&
+                existing.durationMs > 0 &&
+                existing.fileSizeBytes == msFile.fileSizeBytes &&
+                existing.artistName != 'Unknown Artist' &&
+                !AudioNameSanitizer.isJunkTitle(existing.title);
+
+            if (isCacheFresh) {
               collectedTracks.add(
                 LocalTracksCompanion(
                   id: Value(existing.id),
@@ -510,7 +516,13 @@ class LocalFilesScanner {
               final stat = await entity.stat();
               // Fast cache re-use in Phase 2
               final existing = existingTrackMap?[normPath];
-              if (existing != null && existing.durationMs > 0 && existing.fileSizeBytes == stat.size) {
+              final bool isCacheFresh = existing != null &&
+                  existing.durationMs > 0 &&
+                  existing.fileSizeBytes == stat.size &&
+                  existing.artistName != 'Unknown Artist' &&
+                  !AudioNameSanitizer.isJunkTitle(existing.title);
+
+              if (isCacheFresh) {
                 collectedTracks.add(
                   LocalTracksCompanion(
                     id: Value(existing.id),
@@ -601,8 +613,12 @@ class LocalFilesScanner {
       final bool hasFullMediaStore = preloadedMediaStore != null &&
           preloadedMediaStore.title != null &&
           preloadedMediaStore.title!.isNotEmpty &&
+          !AudioNameSanitizer.isJunkTitle(preloadedMediaStore.title) &&
           preloadedMediaStore.durationMs != null &&
-          preloadedMediaStore.durationMs! > 0;
+          preloadedMediaStore.durationMs! > 0 &&
+          preloadedMediaStore.artist != null &&
+          preloadedMediaStore.artist!.trim().isNotEmpty &&
+          !AudioNameSanitizer.isJunkArtist(preloadedMediaStore.artist);
 
       final ParsedAudioMetadata? id3 = hasFullMediaStore
           ? null
@@ -631,7 +647,11 @@ class LocalFilesScanner {
           : null;
       final String? id3Album = id3?.album;
 
-      final String? msTitle = mediaStore?.title;
+      final String? msTitle = (mediaStore?.title != null &&
+              mediaStore!.title!.trim().isNotEmpty &&
+              !AudioNameSanitizer.isJunkTitle(mediaStore.title))
+          ? AudioNameSanitizer.cleanText(mediaStore.title!)
+          : null;
       final String? msArtist = (mediaStore?.artist != null && !AudioNameSanitizer.isJunkArtist(mediaStore!.artist))
           ? mediaStore.artist
           : null;

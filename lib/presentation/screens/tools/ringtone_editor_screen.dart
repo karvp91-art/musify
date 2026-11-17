@@ -64,6 +64,7 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
   bool _isDraggingWindow = false;
   double _dragWindowInitialStart = 0.0;
   double _dragWindowInitialEnd = 0.0;
+  double _dragWindowStartDx = 0.0;
 
   @override
   void initState() {
@@ -345,7 +346,7 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
               filePath: Value(trimmedPath),
               fileSizeBytes: Value(fileStat.size),
               codec: Value(trimmedPath.endsWith('.m4a') ? 'm4a' : 'mp3'),
-              bitrate: const Value(320),
+              bitrate: Value(widget.track.bitrate > 0 ? widget.track.bitrate : 320),
               isLiked: const Value(false),
               isDownloaded: const Value(true),
               addedAt: Value(DateTime.now()),
@@ -488,7 +489,7 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  '320 KBPS',
+                                  '${widget.track.bitrate > 0 ? widget.track.bitrate : 320} KBPS',
                                   style: AppTypography.style(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w800,
@@ -659,13 +660,15 @@ class _RingtoneEditorScreenState extends ConsumerState<RingtoneEditorScreen> {
                                       onHorizontalDragStart: (details) {
                                         _dragWindowInitialStart = _startMs;
                                         _dragWindowInitialEnd = _endMs;
+                                        _dragWindowStartDx = details.localPosition.dx;
                                         setState(() => _isDraggingWindow = true);
                                       },
                                       onHorizontalDragUpdate: (details) {
-                                        final deltaMs = (details.primaryDelta! / totalWidth) * _totalDurationMs;
-                                        final windowDuration = _dragWindowInitialEnd - _dragWindowInitialStart;
+                                        final totalDeltaPx = details.localPosition.dx - _dragWindowStartDx;
+                                        final totalDeltaMs = (totalDeltaPx / totalWidth) * _totalDurationMs;
+                                        final windowDuration = max(1000.0, _dragWindowInitialEnd - _dragWindowInitialStart);
                                         final maxStart = max(0.0, _totalDurationMs - windowDuration);
-                                        final newStart = (_startMs + deltaMs).clamp(0.0, maxStart);
+                                        final newStart = (_dragWindowInitialStart + totalDeltaMs).clamp(0.0, maxStart);
                                         final newEnd = (newStart + windowDuration).clamp(0.0, _totalDurationMs);
                                         setState(() {
                                           _startMs = newStart;
@@ -1532,7 +1535,7 @@ class _FadeTransitionControls extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'FADE TRANSITIONS',
+                'FADE TRANSITIONS (PREVIEW)',
                 style: AppTypography.caption.copyWith(
                   fontSize: 11,
                   fontWeight: FontWeight.w800,

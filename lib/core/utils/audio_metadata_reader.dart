@@ -37,11 +37,31 @@ class AudioMetadataReader {
             header[1] == 0x44 && // 'D'
             header[2] == 0x33) { // '3'
           final version = header[3]; // 3 for ID3v2.3, 4 for ID3v2.4
+          final flags = header[5];
           final tagSize = _decodeSynchsafe(header.sublist(6, 10));
 
           // Read up to 8MB of ID3 frame data so embedded APIC artworks are not truncated
           final bytesToRead = tagSize < 8388608 ? tagSize : 8388608;
-          final frameBytes = await raf.read(bytesToRead);
+          var frameBytes = await raf.read(bytesToRead);
+
+          // Skip extended header if present (flag bit 6)
+          if ((flags & 0x40) != 0 && frameBytes.length >= 4) {
+            int extHeaderSize;
+            if (version == 4) {
+              // ID3v2.4: extended header size is synchsafe and includes the 4 size bytes
+              extHeaderSize = _decodeSynchsafe(frameBytes.sublist(0, 4));
+            } else {
+              // ID3v2.3: extended header size is 32-bit big-endian excluding the 4 size bytes
+              extHeaderSize = (frameBytes[0] << 24) |
+                  (frameBytes[1] << 16) |
+                  (frameBytes[2] << 8) |
+                  frameBytes[3];
+              extHeaderSize += 4; // Add the 4 size bytes themselves
+            }
+            if (extHeaderSize > 0 && extHeaderSize < frameBytes.length) {
+              frameBytes = frameBytes.sublist(extHeaderSize);
+            }
+          }
 
           final metadata = _parseId3v2Frames(frameBytes, version);
           if (metadata.title != null || metadata.artist != null || metadata.artworkBytes != null) {

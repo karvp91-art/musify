@@ -9,6 +9,7 @@ import 'package:musify/presentation/widgets/app_confirmation_dialog.dart';
 import 'package:musify/presentation/widgets/add_to_playlist_modal.dart';
 import 'package:musify/presentation/widgets/edit_track_info_dialog.dart';
 import 'package:musify/presentation/screens/tools/ringtone_editor_screen.dart';
+import 'package:musify/presentation/widgets/choose_artwork_bottom_sheet.dart';
 import 'package:musify/services/online_artwork_enricher.dart';
 import '../providers/audio_providers.dart';
 
@@ -172,14 +173,14 @@ void showTrackDropdownMenu({
           ],
         ),
       ),
-      if (track.source == AudioSourceType.local)
+      if (track.source == AudioSourceType.local || isDownloaded)
         PopupMenuItem(
           value: 'fetch_artwork',
           child: Row(
             children: [
               Icon(Icons.image_search_rounded, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.75)),
               const SizedBox(width: 12),
-              const Text('Get Online Artwork', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              const Text('Album Artwork', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             ],
           ),
         ),
@@ -266,30 +267,7 @@ void showTrackDropdownMenu({
     }
   } else if (selected == 'fetch_artwork') {
     if (context.mounted) {
-      AppSnackBar.show(
-        context,
-        message: 'Searching online album artwork for "${track.title}"...',
-        type: AppSnackBarType.info,
-        icon: Icons.image_search_rounded,
-      );
-    }
-    final updated = await OnlineArtworkEnricher.enrichTrack(track, repo);
-    if (context.mounted) {
-      if (updated) {
-        AppSnackBar.show(
-          context,
-          message: 'Official album cover found and updated!',
-          type: AppSnackBarType.success,
-          icon: Icons.check_circle_rounded,
-        );
-      } else {
-        AppSnackBar.show(
-          context,
-          message: 'No matching online artwork found for this track',
-          type: AppSnackBarType.info,
-          icon: Icons.info_outline_rounded,
-        );
-      }
+      showChooseArtworkBottomSheet(context, ref, track);
     }
   } else if (selected == 'ringtone') {
     if (context.mounted) {
