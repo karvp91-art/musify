@@ -49,13 +49,16 @@ jobs:
 
       - name: Build Release APK
         run: |
-          flutter build apk --release 2>&1 | tee build.log || {
-            echo "## ❌ Build Failure Output" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 build.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee build.log
+
+      - name: Output Build Log on Failure
+        if: failure()
+        run: |
+          echo "## ❌ Build Failure Log" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 150 build.log >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Prepare Release Artifacts
         id: prep
@@ -67,8 +70,16 @@ jobs:
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
           
           mkdir -p release_assets
-          cp build/app/outputs/flutter-apk/app-release.apk "release_assets/Musify.apk"
-          cp build/app/outputs/flutter-apk/app-release.apk "release_assets/Musify-${TAG_NAME}.apk"
+          APK_PATH=$(find build -name "app-release.apk" -o -name "*release*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "ERROR: Release APK not found in build directory!"
+            echo "Searching all APKs generated:"
+            find build -name "*.apk" || true
+            exit 1
+          fi
+          echo "Found release APK at: $APK_PATH"
+          cp "$APK_PATH" "release_assets/Musify.apk"
+          cp "$APK_PATH" "release_assets/Musify-${TAG_NAME}.apk"
 
       - name: Upload Build Artifact to GitHub Actions
         uses: actions/upload-artifact@v4
