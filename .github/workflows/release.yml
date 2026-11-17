@@ -36,8 +36,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
-          cache-key: "flutter-:os:-:channel:-:version:-:arch:-:hash:"
+          cache: false
 
       - name: Verify Flutter Installation
         run: flutter --version
@@ -45,8 +44,18 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Make Gradlew Executable
+        run: chmod +x android/gradlew
+
       - name: Build Release APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release 2>&1 | tee build.log || {
+            echo "## ❌ Build Failure Output" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 build.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Prepare Release Artifacts
         id: prep
